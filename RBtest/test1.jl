@@ -3,7 +3,18 @@
 # Load some standard libraries that we will need
 using Printf
 using Oceananigans
+using JLD2
 using PlotlyJS
+
+
+#dir variable
+dirpath = string(@__DIR__)
+open(dirpath * "/.gitignore", "w") do io
+    println(io, "training_frames/*")
+    println(io, "saves/*")
+end
+
+
 
 # First, we need to set some physical parameters for the simulation
 # Set the domain size in non-dimensional coordinates
@@ -15,8 +26,9 @@ Nx = 96  # number of gridpoints in the x-direction
 Nz = 64   # number of gridpoints in the z-direction
 
 # Some timestepping parameters
-Δt = 0.05 # maximum allowable timestep 
-duration = 300 # The non-dimensional duration of the simulation
+Δt = 0.005 # maximum allowable time step 
+Δt_snap = 0.1 # time step for capturing frames
+duration = 45 # The non-dimensional duration of the simulation
 
 # Set the Reynolds number (Re=Ul/ν)
 Re = 5000
@@ -28,12 +40,12 @@ Re = 5000
 kick = 0.1
 
 
-chebychev_spaced_z_faces(k) = - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
+chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
 
 # construct a rectilinear grid using an inbuilt Oceananigans function
 # Here, the topology parameter sets the style of boundaries in the x, y, and z directions
 # 'Bounded' corresponds to wall-bounded directions and 'Flat' corresponds to the dimension that is not considered (here, that is the y direction)
-grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
+grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = chebychev_spaced_z_faces, topology = (Periodic, Flat, Bounded))
 
 
 
@@ -107,13 +119,13 @@ u, v, w = model.velocities # unpack velocity `Field`s
 b = model.tracers.b # extract the buoyancy
 
 # Set the name of the output file
-filename = "rayleighbenard"
+filename = dirpath * "/rayleighbenard"
 
 simulation.output_writers[:xz_slices] =
     JLD2OutputWriter(model, (; u, v, w, b),
                           filename = filename * ".jld2",
                           indices = (:, 1, :),
-                         schedule = TimeInterval(1.5),
+                         schedule = TimeInterval(Δt_snap),
                             overwrite_existing = true)
 
 # If you are running in 3D, you could save an xy slice like this:                             
@@ -130,4 +142,47 @@ nothing # hide
 run!(simulation)
 
 
-# Plot
+# Plots
+rm(dirpath * "/training_frames/", recursive=true, force=true)
+mkdir(dirpath * "/training_frames/")
+
+# Read in the first iteration.  We do this to load the grid
+# filename * ".jld2" concatenates the extension to the end of the filename
+u_ic = FieldTimeSeries(filename * ".jld2", "u", iterations = 0)
+w_ic = FieldTimeSeries(filename * ".jld2", "w", iterations = 0)
+b_ic = FieldTimeSeries(filename * ".jld2", "b", iterations = 0)
+
+## Load in coordinate arrays
+## We do this separately for each variable since Oceananigans uses a staggered grid
+xu, yu, zu = nodes(u_ic)
+xw, yw, zw = nodes(w_ic)
+xb, yb, zb = nodes(b_ic)
+
+## Now, open the file with our data
+file_xz = jldopen(filename * ".jld2")
+
+## Extract a vector of iterations
+iterations = parse.(Int, keys(file_xz["timeseries/t"]))
+
+
+
+
+for (i, iter) in enumerate(iterations)
+
+  b_xz = file_xz["timeseries/b/$iter"][:, 1, :];
+
+  # If you want an x-y slice, you can get it this way:
+  # b_xy = file_xy["timeseries/b/$iter"][:, :, 1];
+
+  t = file_xz["timeseries/t/$iter"];
+
+  p = plot(heatmap(x=xb, y=zb, z=b_xz'))
+
+  savefig(p, dirpath * "/training_frames//a$(lpad(string(i), 5, '0')).png"; width=1000, height=800)
+
+  iter == iterations[end] && close(file_xz)
+end
+
+
+rm(dirpath * "/rb.mp4", force=true)
+run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -strict -2 -preset slow -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -f mp4  $(dirpath * "/rb.mp4")`)
