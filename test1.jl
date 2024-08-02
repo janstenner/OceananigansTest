@@ -15,17 +15,17 @@ Nx = 96  # number of gridpoints in the x-direction
 Nz = 64   # number of gridpoints in the z-direction
 
 # Some timestepping parameters
-Δt = 0.2 # maximum allowable timestep 
-duration = 50 # The non-dimensional duration of the simulation
+Δt = 0.05 # maximum allowable timestep 
+duration = 300 # The non-dimensional duration of the simulation
 
 # Set the Reynolds number (Re=Ul/ν)
-Re = 50000
+Re = 5000
 
 # Set the change in the non-dimensional buouancy 
 Δb = 1 
 
 # Set the amplitude of the random perturbation (kick)
-kick = 0.4
+kick = 0.1
 
 
 chebychev_spaced_z_faces(k) = - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
@@ -47,8 +47,10 @@ grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Pe
 # hence, we could remove the following lines and get the same result, but we show them here as a demonstration
 u_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
                                 bottom = ValueBoundaryCondition(0))
-b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1+Δb),
-                                bottom = ValueBoundaryCondition(1))
+w_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
+                                bottom = ValueBoundaryCondition(0))
+b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1),
+                                bottom = ValueBoundaryCondition(1+Δb))
 
 
 
@@ -59,7 +61,7 @@ model = NonhydrostaticModel(; grid,
                 tracers = (:b),  # Set the name(s) of any tracers, here b is buoyancy
                buoyancy = Buoyancy(model=BuoyancyTracer()), # this tells the model that b will act as the buoyancy (and influence momentum) 
                 closure = (ScalarDiffusivity(ν = 1 / Re, κ = 1 / Re)),  # set a constant kinematic viscosity and diffusivty, here just 1/Re since we are solving the non-dimensional equations 
-                boundary_conditions = (u = u_bcs, b = b_bcs), # specify the boundary conditions that we defiend above
+                boundary_conditions = (u = u_bcs, b = b_bcs,), # specify the boundary conditions that we defiend above
                coriolis = nothing # this line tells the mdoel not to include system rotation (no Coriolis acceleration)
 )
 
@@ -67,7 +69,7 @@ model = NonhydrostaticModel(; grid,
 # Here, we start with a tanh function for buoyancy and add a random perturbation to the velocity. 
 uᵢ(x, z) = kick * randn()
 wᵢ(x, z) = kick * randn()
-bᵢ(x, z) =  1 + ((z+1)/2) * Δb + kick * randn()
+bᵢ(x, z) =  1 + (1 - z) * Δb #+ kick * randn()
 
 # Send the initial conditions to the model to initialize the variables
 set!(model, u = uᵢ, w = wᵢ, b = bᵢ)
