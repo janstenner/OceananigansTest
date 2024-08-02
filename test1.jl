@@ -15,17 +15,17 @@ Nx = 96  # number of gridpoints in the x-direction
 Nz = 64   # number of gridpoints in the z-direction
 
 # Some timestepping parameters
-Δt = 0.02 # maximum allowable timestep 
-duration = 300 # The non-dimensional duration of the simulation
+Δt = 0.2 # maximum allowable timestep 
+duration = 50 # The non-dimensional duration of the simulation
 
 # Set the Reynolds number (Re=Ul/ν)
-Re = 300000
+Re = 50000
 
 # Set the change in the non-dimensional buouancy 
 Δb = 1 
 
 # Set the amplitude of the random perturbation (kick)
-kick = 0.05
+kick = 0.4
 
 
 chebychev_spaced_z_faces(k) = - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
@@ -45,8 +45,8 @@ grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Pe
 # north/south correspond to the boundaries in the y-direction (not used for periodic topology)
 # by default, Oceananigans imposes no flux and no normal flow boundary conditions in bounded directions
 # hence, we could remove the following lines and get the same result, but we show them here as a demonstration
-u_bcs = FieldBoundaryConditions(top = FluxBoundaryCondition(0),
-                                bottom = FluxBoundaryCondition(0))
+u_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
+                                bottom = ValueBoundaryCondition(0))
 b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1+Δb),
                                 bottom = ValueBoundaryCondition(1))
 
@@ -67,7 +67,7 @@ model = NonhydrostaticModel(; grid,
 # Here, we start with a tanh function for buoyancy and add a random perturbation to the velocity. 
 uᵢ(x, z) = kick * randn()
 wᵢ(x, z) = kick * randn()
-bᵢ(x, z) =  1 + ((z+1)/2) * Δb + 0.4 * randn()
+bᵢ(x, z) =  1 + ((z+1)/2) * Δb + kick * randn()
 
 # Send the initial conditions to the model to initialize the variables
 set!(model, u = uᵢ, w = wᵢ, b = bᵢ)
