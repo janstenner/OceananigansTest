@@ -22,22 +22,23 @@ Lx = 2*pi  # size in the x-direction
 Lz = 2   # size in the vertical (z) direction 
 
 # Set the grid size
-Nx = 96  # number of gridpoints in the x-direction
-Nz = 64   # number of gridpoints in the z-direction
+Nx = 1280#96  # number of gridpoints in the x-direction
+Nz = 128#64   # number of gridpoints in the z-direction
+Nz = 720
 
 # Some timestepping parameters
-Δt = 0.005 # maximum allowable time step 
+Δt = 0.003 # maximum allowable time step 
 Δt_snap = 0.1 # time step for capturing frames
-duration = 45 # The non-dimensional duration of the simulation
+duration = 5 # The non-dimensional duration of the simulation
 
 # Set the Reynolds number (Re=Ul/ν)
-Re = 5000
+Re = 4000
 
 # Set the change in the non-dimensional buouancy 
 Δb = 1 
 
 # Set the amplitude of the random perturbation (kick)
-kick = 0.1
+kick = 0.2
 
 
 chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
@@ -45,7 +46,8 @@ chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
 # construct a rectilinear grid using an inbuilt Oceananigans function
 # Here, the topology parameter sets the style of boundaries in the x, y, and z directions
 # 'Bounded' corresponds to wall-bounded directions and 'Flat' corresponds to the dimension that is not considered (here, that is the y direction)
-grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = chebychev_spaced_z_faces, topology = (Periodic, Flat, Bounded))
+#grid = RectilinearGrid(GPU(), size = (Nx, Nz), x = (0, Lx), z = chebychev_spaced_z_faces, topology = (Periodic, Flat, Bounded))
+grid = RectilinearGrid(GPU(), size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
 
 
 
@@ -81,7 +83,7 @@ model = NonhydrostaticModel(; grid,
 # Here, we start with a tanh function for buoyancy and add a random perturbation to the velocity. 
 uᵢ(x, z) = kick * randn()
 wᵢ(x, z) = kick * randn()
-bᵢ(x, z) =  1 + (1 - z) * Δb #+ kick * randn()
+bᵢ(x, z) =  1 + (2 - z) * Δb/2 + kick * randn()
 
 # Send the initial conditions to the model to initialize the variables
 set!(model, u = uᵢ, w = wᵢ, b = bᵢ)
@@ -166,23 +168,28 @@ iterations = parse.(Int, keys(file_xz["timeseries/t"]))
 
 
 
+if true
 
-for (i, iter) in enumerate(iterations)
+  for (i, iter) in enumerate(iterations)
 
-  b_xz = file_xz["timeseries/b/$iter"][:, 1, :];
+    b_xz = file_xz["timeseries/b/$iter"][:, 1, :];
 
-  # If you want an x-y slice, you can get it this way:
-  # b_xy = file_xy["timeseries/b/$iter"][:, :, 1];
+    # If you want an x-y slice, you can get it this way:
+    # b_xy = file_xy["timeseries/b/$iter"][:, :, 1];
 
-  t = file_xz["timeseries/t/$iter"];
+    t = file_xz["timeseries/t/$iter"];
 
-  p = plot(heatmap(x=xb, y=zb, z=b_xz'))
+    p = plot(heatmap(x=xb, y=zb, z=b_xz'))
 
-  savefig(p, dirpath * "/training_frames//a$(lpad(string(i), 5, '0')).png"; width=1000, height=800)
+    savefig(p, dirpath * "/training_frames//a$(lpad(string(i), 5, '0')).png"; width=1400, height=800)
 
-  iter == iterations[end] && close(file_xz)
+    iter == iterations[end] && close(file_xz)
+  end
+
+
+  rm(dirpath * "/rb.mp4", force=true)
+  run(`ffmpeg -framerate 29 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -strict -2 -preset slow -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -f mp4  $(dirpath * "/rb.mp4")`)
+else
+    
+  close(file_xz)
 end
-
-
-rm(dirpath * "/rb.mp4", force=true)
-run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -strict -2 -preset slow -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -f mp4  $(dirpath * "/rb.mp4")`)
