@@ -22,16 +22,16 @@ Lx = 2*pi  # size in the x-direction
 Lz = 2   # size in the vertical (z) direction 
 
 # Set the grid size
-Nx = 96  # number of gridpoints in the x-direction
-Nz = 64   # number of gridpoints in the z-direction
+Nx = 150#96  # number of gridpoints in the x-direction
+Nz = 100#64   # number of gridpoints in the z-direction
 
 # Some timestepping parameters
-Δt = 0.3 # maximum allowable time step 
-Δt_snap = 0.1 # time step for capturing frames
-duration = 50 # The non-dimensional duration of the simulation
+Δt = 0.01 # maximum allowable time step 
+Δt_snap = 0.3 # time step for capturing frames
+duration = 30 # The non-dimensional duration of the simulation
 
 # Set the Reynolds number (Re=Ul/ν)
-Re = 600
+Re = 60
 
 # Set the change in the non-dimensional buouancy 
 Δb = 1 
