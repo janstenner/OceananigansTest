@@ -22,16 +22,19 @@ Lx = 2*pi  # size in the x-direction
 Lz = 2   # size in the vertical (z) direction 
 
 # Set the grid size
-Nx = 150#96  # number of gridpoints in the x-direction
-Nz = 100#64   # number of gridpoints in the z-direction
+Nx = 96  # number of gridpoints in the x-direction
+Nz = 64   # number of gridpoints in the z-direction
 
 # Some timestepping parameters
 Δt = 0.01 # maximum allowable time step 
 Δt_snap = 0.3 # time step for capturing frames
-duration = 30 # The non-dimensional duration of the simulation
+duration = 50 # The non-dimensional duration of the simulation
 
 # Set the Reynolds number (Re=Ul/ν)
 Re = 60
+
+Ra = 1e4
+Pr = 0.71
 
 # Set the change in the non-dimensional buouancy 
 Δb = 1 
@@ -58,12 +61,14 @@ grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Pe
 # north/south correspond to the boundaries in the y-direction (not used for periodic topology)
 # by default, Oceananigans imposes no flux and no normal flow boundary conditions in bounded directions
 # hence, we could remove the following lines and get the same result, but we show them here as a demonstration
+bottom_T(x, t) = cos(4 * x ) * 0.75 + 1 + Δb
+
 u_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
                                 bottom = ValueBoundaryCondition(0))
 w_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
                                 bottom = ValueBoundaryCondition(0))
 b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1),
-                                bottom = ValueBoundaryCondition(1+Δb))
+                                bottom = ValueBoundaryCondition(bottom_T))#1+Δb))
 
 
 
@@ -73,7 +78,7 @@ model = NonhydrostaticModel(; grid,
             timestepper = :RungeKutta3, # Set the timestepping scheme, here 3rd order Runge-Kutta
                 tracers = (:b),  # Set the name(s) of any tracers, here b is buoyancy
                buoyancy = Buoyancy(model=BuoyancyTracer()), # this tells the model that b will act as the buoyancy (and influence momentum) 
-                closure = (ScalarDiffusivity(ν = 1 / Re, κ = 1 / Re)),  # set a constant kinematic viscosity and diffusivty, here just 1/Re since we are solving the non-dimensional equations 
+                closure = (ScalarDiffusivity(ν = sqrt(Pr/Ra), κ = 1/sqrt(Pr*Ra))),  # set a constant kinematic viscosity and diffusivty, here just 1/Re since we are solving the non-dimensional equations 
                 boundary_conditions = (u = u_bcs, b = b_bcs,), # specify the boundary conditions that we defiend above
                coriolis = nothing # this line tells the mdoel not to include system rotation (no Coriolis acceleration)
 )
