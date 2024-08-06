@@ -26,7 +26,7 @@ Nx = 96  # number of gridpoints in the x-direction
 Nz = 64   # number of gridpoints in the z-direction
 
 # Some timestepping parameters
-Δt = 0.01 # maximum allowable time step 
+Δt = 0.03 # maximum allowable time step 
 Δt_snap = 0.3 # time step for capturing frames
 duration = 50 # The non-dimensional duration of the simulation
 
