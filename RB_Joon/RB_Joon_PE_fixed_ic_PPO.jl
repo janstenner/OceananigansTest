@@ -99,7 +99,7 @@ logσ_is_network = false
 max_σ = 0.2f0
 entropy_loss_weight = 0.01
 
-actions = rand(num_actuators) * 2 .- 1
+actions = rand(actuators) * 2 .- 1
 
 
 function collate_actions_colin(actions, x, t)
@@ -115,7 +115,7 @@ function collate_actions_colin(actions, x, t)
     K2 = maximum([1.0, maximum(abs.(values .- Mean)) / ampl])
 
 
-    segment_length = domain/num_actuators
+    segment_length = domain/actuators
 
     # determine segment of x
     x_segment = Int(floor(x / segment_length) + 1)
@@ -128,7 +128,7 @@ function collate_actions_colin(actions, x, t)
 
     T1 = 2 + (ampl * actions[x_segment] - Mean)/K2
 
-    if x_segment == num_actuators
+    if x_segment == actuators
         T2 = 2 + (ampl * actions[1] - Mean)/K2
     else
         T2 = 2 + (ampl * actions[x_segment + 1] - Mean)/K2
