@@ -22,20 +22,19 @@ Nz = 64
 
 
 Δt = 0.03
-Δt_snap = 1.5
 duration = 300
 
 Ra = 1e4
 Pr = 0.71
 
-Δb = 1 
+Δb = 1
 
 # Set the amplitude of the random perturbation (kick)
 kick = 0.2
 
 
 
-actions = rand(num_actuators) * 2 .- 1
+actions = ones(12)
 
 
 chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
@@ -144,32 +143,20 @@ bᵢ(x, z) =  1 + (2 - z) * Δb/2 + kick * randn()
 set!(model, u = uᵢ, w = wᵢ, b = bᵢ)
 
 # Now, we create a 'simulation' to run the model for a specified length of time
-simulation = Simulation(model, Δt = Δt, stop_time = Δt_snap)
+simulation = Simulation(model, Δt = Δt, stop_time = duration)
 
-cur_time = 0.0
+# simulation.output_writers[:checkpointer] = Checkpointer(model,
+#                                                 schedule=TimeInterval(300.0),
+#                                                 prefix="RBcheckpoint300",
+#                                                 overwrite_existing = true,
+#                                                 verbose = true,
+#                                                 cleanup = true,
+#                                                 )
 
-simulation.verbose = false
+run!(simulation)
 
 
+model.clock.time = 0.0
+model.clock.iteration = 0
 
-# Now, run the simulation
-totalsteps = Int(duration/Δt_snap)
-results = zeros(totalsteps+1,Nx,Nz)
-results[1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
-
-for i in 1:totalsteps
-    #new boundary conditions
-    global actions = rand(num_actuators) * 2 .- 1
-    #model.tracers.b.boundary_conditions.bottom = ValueBoundaryCondition(bottom_T)
-
-    # simulation = Simulation(model, Δt = Δt, stop_time = Δt_snap*i)
-    global simulation.stop_time = Δt_snap*i
-
-    run!(simulation)
-    global cur_time += Δt_snap
-
-    # collect T
-    results[i+1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
-
-    println(cur_time)
-end
+save("RBmodel300.jld2", "model", model)
