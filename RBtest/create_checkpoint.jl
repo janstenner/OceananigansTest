@@ -1,5 +1,6 @@
 using Printf
 using Oceananigans
+using FileIO
 using JLD2
 using PlotlyJS
 using Statistics
@@ -159,4 +160,4 @@ run!(simulation)
 model.clock.time = 0.0
 model.clock.iteration = 0
 
-save("RBmodel300.jld2", "model", model)
+FileIO.save("RBmodel300.jld2", "model", model)
