@@ -146,18 +146,18 @@ set!(model, u = uᵢ, w = wᵢ, b = bᵢ)
 # Now, we create a 'simulation' to run the model for a specified length of time
 simulation = Simulation(model, Δt = Δt, stop_time = duration)
 
-# simulation.output_writers[:checkpointer] = Checkpointer(model,
-#                                                 schedule=TimeInterval(300.0),
-#                                                 prefix="RBcheckpoint300",
-#                                                 overwrite_existing = true,
-#                                                 verbose = true,
-#                                                 cleanup = true,
-#                                                 )
+simulation.output_writers[:checkpointer] = Checkpointer(model,
+                                                schedule=TimeInterval(300.0),
+                                                prefix="RBmodel300",
+                                                overwrite_existing = true,
+                                                verbose = true,
+                                                cleanup = true,
+                                                )
 
 run!(simulation)
 
 
-model.clock.time = 0.0
-model.clock.iteration = 0
+# model.clock.time = 0.0
+# model.clock.iteration = 0
 
-FileIO.save("RBmodel300.jld2", "model", model)
+# FileIO.save("RBmodel300.jld2", "model", model)

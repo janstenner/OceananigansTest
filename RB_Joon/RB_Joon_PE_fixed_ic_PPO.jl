@@ -18,9 +18,6 @@ inner_dt = 0.03
 
 
 
-#model = FileIO.load("RBmodel300.jld2", "model");
-simulation = Simulation(model, Δt = inner_dt, stop_time = dt)
-simulation.verbose = false
 
 scriptname = "RB_AC_$(dt)_$(sensors[2])"
 
@@ -55,13 +52,7 @@ sim_space = Space(fill(0..1, (Nx, Nz)))
 
 
 
-y0 = zeros(3,Nx,Nz)
 
-y0[1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
-y0[2,:,:] = model.velocities.u[1:Nx,1,1:Nz]
-y0[3,:,:] = model.velocities.w[1:Nx,1,1:Nz]
-
-y0 = Float32.(y0)
 
 
 
@@ -86,7 +77,7 @@ temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
 window_size = 23
-use_gpu = true
+use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
 # additional agent parameters
@@ -173,6 +164,50 @@ end
 
 
 
+Ra = 1e5
+Pr = 0.71
+
+Δb = 1 
+
+grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
+
+u_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
+                                bottom = ValueBoundaryCondition(0))
+w_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
+                                bottom = ValueBoundaryCondition(0))
+b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1),
+                                bottom = ValueBoundaryCondition(bottom_T))#1+Δb))
+
+model = NonhydrostaticModel(; grid,
+              advection = UpwindBiasedFifthOrder(),
+              timestepper = :RungeKutta3,
+              tracers = (:b),
+              buoyancy = Buoyancy(model=BuoyancyTracer()),
+              closure = (ScalarDiffusivity(ν = sqrt(Pr/Ra), κ = 1/sqrt(Pr*Ra))),
+              boundary_conditions = (u = u_bcs, b = b_bcs,),
+              coriolis = nothing
+)
+
+values = FileIO.load("RBmodel300_iteration10001.jld2");
+
+set!(model, u = values["u/data"][1:Nx,:,1:Nz], w = values["w/data"][1:Nx,:,1:Nz+1], b = values["b/data"][1:Nx,:,1:Nz])
+
+simulation = Simulation(model, Δt = inner_dt, stop_time = dt)
+simulation.verbose = false
+
+y0 = zeros(3,Nx,Nz)
+
+y0[1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
+y0[2,:,:] = model.velocities.u[1:Nx,1,1:Nz]
+y0[3,:,:] = model.velocities.w[1:Nx,1,1:Nz]
+
+y0 = Float32.(y0)
+
+
+
+
+
+
 
 
 function do_step(env)
@@ -184,6 +219,8 @@ function do_step(env)
     global model
 
     run!(simulation)
+
+    simulation.stop_time += dt
 
     result = zeros(3,Nx,Nz)
 
@@ -378,7 +415,20 @@ end
 
 function generate_random_init()
 
-    #global model = FileIO.load("RBmodel300.jld2", "model");
+    global model = NonhydrostaticModel(; grid,
+                advection = UpwindBiasedFifthOrder(),
+                timestepper = :RungeKutta3,
+                tracers = (:b),
+                buoyancy = Buoyancy(model=BuoyancyTracer()),
+                closure = (ScalarDiffusivity(ν = sqrt(Pr/Ra), κ = 1/sqrt(Pr*Ra))),
+                boundary_conditions = (u = u_bcs, b = b_bcs,),
+                coriolis = nothing
+    )
+
+    global values
+    set!(model, u = values["u/data"][1:Nx,:,1:Nz], w = values["w/data"][1:Nx,:,1:Nz+1], b = values["b/data"][1:Nx,:,1:Nz])
+
+
     global simulation = Simulation(model, Δt = inner_dt, stop_time = dt)
     simulation.verbose = false
 
@@ -523,16 +573,16 @@ end
 
 function render_run()
 
-    copyto!(agent.policy.behavior_actor, hook.bestNNA)
+    # copyto!(agent.policy.behavior_actor, hook.bestNNA)
 
-    temp_noise = agent.policy.act_noise
-    agent.policy.act_noise = 0.0
+    # temp_noise = agent.policy.act_noise
+    # agent.policy.act_noise = 0.0
 
     temp_start_steps = agent.policy.start_steps
     agent.policy.start_steps  = -1
     
-    temp_update_after = agent.policy.update_after
-    agent.policy.update_after = 100000
+    temp_update_after = agent.policy.update_freq
+    agent.policy.update_freq = 100000
 
     agent.policy.update_step = 0
     global rewards = Float64[]
@@ -551,23 +601,22 @@ function render_run()
         )
 
 
-    RLBase.reset!(env)
+    reset!(env)
     generate_random_init()
 
-    for i in 1:1000
+    for i in 1:200
         action = agent(env)
 
         env(action)
 
         result = env.y[1,:,:]
 
-        p = plot(heatmap(z=result, coloraxis="coloraxis"), layout)
+        p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
 
         savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1000, height=800)
         #body!(w,p)
 
-        #temp_reward = py"c.get_Nusselt()"
-        temp_reward = 0.0
+        temp_reward = env.reward[1]
         println(temp_reward)
 
         reward_sum += temp_reward
@@ -581,11 +630,10 @@ function render_run()
 
     println(reward_sum)
 
-    copyto!(agent.policy.behavior_actor, hook.currentNNA)
+    #copyto!(agent.policy.behavior_actor, hook.currentNNA)
 
     agent.policy.start_steps = temp_start_steps
-    agent.policy.act_noise = temp_noise
-    agent.policy.update_after = temp_update_after
+    agent.policy.update_freq = temp_update_after
 
     if true
         isdir("video_output") || mkdir("video_output")

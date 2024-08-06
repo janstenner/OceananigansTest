@@ -1,1 +1,4 @@
 /Manifest.toml
+
+frames/*
+video_output/*
