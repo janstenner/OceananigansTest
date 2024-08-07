@@ -28,11 +28,14 @@ Nz = 720
 
 # Some timestepping parameters
 Δt = 0.003 # maximum allowable time step 
-Δt_snap = 0.1 # time step for capturing frames
-duration = 5 # The non-dimensional duration of the simulation
+Δt_snap = 1.5 # time step for capturing frames
+duration = 50 # The non-dimensional duration of the simulation
 
 # Set the Reynolds number (Re=Ul/ν)
-Re = 4000
+Ra = 1e4
+Pr = 0.7
+
+Re = sqrt(Ra/Pr)
 
 # Set the change in the non-dimensional buouancy 
 Δb = 1 

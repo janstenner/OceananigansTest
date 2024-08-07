@@ -28,6 +28,11 @@ duration = 300
 Ra = 1e4
 Pr = 0.71
 
+Re = sqrt(Ra/Pr)
+
+ν = 1 / Re
+κ = 1 / Re
+
 Δb = 1
 
 # Set the amplitude of the random perturbation (kick)
@@ -130,7 +135,7 @@ model = NonhydrostaticModel(; grid,
               timestepper = :RungeKutta3,
               tracers = (:b),
               buoyancy = Buoyancy(model=BuoyancyTracer()),
-              closure = (ScalarDiffusivity(ν = sqrt(Pr/Ra), κ = 1/sqrt(Pr*Ra))),
+              closure = (ScalarDiffusivity(ν = ν, κ = κ)),
               boundary_conditions = (u = u_bcs, b = b_bcs,),
               coriolis = nothing
 )

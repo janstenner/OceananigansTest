@@ -163,9 +163,27 @@ function bottom_T(x, t)
 end
 
 
+# test plot
+xx = collect(LinRange(0,2*pi-0.0000001,1000))
 
-Ra = 1e5
+res = Float64[]
+
+for x in xx
+    append!(res, bottom_T(x,0))
+end
+
+plot(scatter(x=xx,y=res))
+
+
+
+Ra = 1e4
 Pr = 0.71
+
+Re = sqrt(Ra/Pr)
+
+ν = 1 / Re
+κ = 1 / Re
+
 
 Δb = 1 
 
@@ -183,14 +201,14 @@ model = NonhydrostaticModel(; grid,
               timestepper = :RungeKutta3,
               tracers = (:b),
               buoyancy = Buoyancy(model=BuoyancyTracer()),
-              closure = (ScalarDiffusivity(ν = sqrt(Pr/Ra), κ = 1/sqrt(Pr*Ra))),
+              closure = (ScalarDiffusivity(ν = ν, κ = κ)),
               boundary_conditions = (u = u_bcs, b = b_bcs,),
               coriolis = nothing
 )
 
 values = FileIO.load("RBmodel300_iteration10001.jld2");
 
-set!(model, u = values["u/data"][1:Nx,:,1:Nz], w = values["w/data"][1:Nx,:,1:Nz+1], b = values["b/data"][1:Nx,:,1:Nz])
+set!(model, u = values["u/data"][4:Nx+3,:,4:Nz+3], w = values["w/data"][4:Nx+3,:,4:Nz+4], b = values["b/data"][4:Nx+3,:,4:Nz+3])
 
 simulation = Simulation(model, Δt = inner_dt, stop_time = dt)
 simulation.verbose = false
@@ -198,8 +216,8 @@ simulation.verbose = false
 y0 = zeros(3,Nx,Nz)
 
 y0[1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
-y0[2,:,:] = model.velocities.u[1:Nx,1,1:Nz]
-y0[3,:,:] = model.velocities.w[1:Nx,1,1:Nz]
+y0[2,:,:] = model.velocities.w[1:Nx,1,1:Nz]
+y0[3,:,:] = model.velocities.u[1:Nx,1,1:Nz]
 
 y0 = Float32.(y0)
 
@@ -226,8 +244,8 @@ function do_step(env)
 
 
     result[1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
-    result[2,:,:] = model.velocities.u[1:Nx,1,1:Nz]
-    result[3,:,:] = model.velocities.w[1:Nx,1,1:Nz]
+    result[2,:,:] = model.velocities.w[1:Nx,1,1:Nz]
+    result[3,:,:] = model.velocities.u[1:Nx,1,1:Nz]
 
     result
 end
@@ -260,7 +278,7 @@ function reward_function(env)
 
     q_1_mean = mean(env.y[1,:,:] .* env.y[2,:,:])
 
-    Tx = mean(env.y[1,:,:], dims = 2)
+    Tx = mean(env.y[1,:,:]', dims = 2)
 
     q_2 = kappa * mean(array_gradient(Tx))
 
@@ -435,8 +453,8 @@ function generate_random_init()
     result = zeros(3,Nx,Nz)
 
     result[1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
-    result[2,:,:] = model.velocities.u[1:Nx,1,1:Nz]
-    result[3,:,:] = model.velocities.w[1:Nx,1,1:Nz]
+    result[2,:,:] = model.velocities.w[1:Nx,1,1:Nz]
+    result[3,:,:] = model.velocities.u[1:Nx,1,1:Nz]
 
     env.y0 = Float32.(result)
     env.y = deepcopy(env.y0)
