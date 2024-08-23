@@ -68,8 +68,8 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 
 # agent tuning parameters
 memory_size = 0
-nna_scale = 4.0
-nna_scale_critic = 5.0
+nna_scale = 10.0
+nna_scale_critic = 7.0
 drop_middle_layer = false
 drop_middle_layer_critic = false
 fun = leakyrelu
@@ -92,15 +92,17 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 80
 
 
-learning_rate = 8e-4
-n_epochs = 10
+learning_rate = 2e-4
+n_epochs = 5
 n_microbatches = 16
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
 clip_grad = 0.5
-target_kl = 0.015
+target_kl = 0.08
 clip1 = false
+start_logσ = -0.8
+tanh_end = false
 
 
 actions = rand(actuators) * 2 .- 1
@@ -427,7 +429,9 @@ function initialize_setup(;use_random_init = false)
                 max_σ = max_σ,
                 entropy_loss_weight = entropy_loss_weight,
                 clip_grad = clip_grad,
-                target_kl = target_kl,)
+                target_kl = target_kl,
+                start_logσ = start_logσ,
+                tanh_end = tanh_end,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
