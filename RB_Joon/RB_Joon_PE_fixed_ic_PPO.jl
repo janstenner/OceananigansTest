@@ -89,15 +89,19 @@ p = 0.9995f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 40
+update_freq = 80
 
 
-learning_rate = 3e-3
-n_epochs = 4
-n_microbatches = 8
+learning_rate = 8e-4
+n_epochs = 10
+n_microbatches = 16
 logσ_is_network = false
-max_σ = 0.3f0
+max_σ = 10000.0f0
 entropy_loss_weight = 0.01
+clip_grad = 0.5
+target_kl = 0.015
+clip1 = false
+
 
 actions = rand(actuators) * 2 .- 1
 
@@ -416,12 +420,14 @@ function initialize_setup(;use_random_init = false)
                 drop_middle_layer = drop_middle_layer,
                 drop_middle_layer_critic = drop_middle_layer_critic,
                 fun = fun,
-                clip1 = true,
+                clip1 = clip1,
                 n_epochs = n_epochs,
                 n_microbatches = n_microbatches,
                 logσ_is_network = logσ_is_network,
                 max_σ = max_σ,
-                entropy_loss_weight = entropy_loss_weight)
+                entropy_loss_weight = entropy_loss_weight,
+                clip_grad = clip_grad,
+                target_kl = target_kl,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
