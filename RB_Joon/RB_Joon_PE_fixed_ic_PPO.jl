@@ -89,7 +89,7 @@ p = 0.9995f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 40
+update_freq = 200
 
 
 learning_rate = 3e-4
@@ -97,11 +97,11 @@ n_epochs = 7
 n_microbatches = 24
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.0
-clip_grad = 0.5
-target_kl = 0.5
+entropy_loss_weight = 0.01
+clip_grad = 0.3
+target_kl = 0.8
 clip1 = false
-start_logσ = -0.8
+start_logσ = -1.1
 tanh_end = false
 
 
