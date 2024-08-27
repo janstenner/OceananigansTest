@@ -68,15 +68,15 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 
 # agent tuning parameters
 memory_size = 0
-nna_scale = 10.0
-nna_scale_critic = 7.0
+nna_scale = 51.2
+nna_scale_critic = 25.6
 drop_middle_layer = false
 drop_middle_layer_critic = false
 fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 23
+window_size = 47
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -89,17 +89,17 @@ p = 0.9995f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 80
+update_freq = 40
 
 
-learning_rate = 2e-4
-n_epochs = 5
-n_microbatches = 16
+learning_rate = 3e-4
+n_epochs = 7
+n_microbatches = 24
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.01
+entropy_loss_weight = 0.0
 clip_grad = 0.5
-target_kl = 0.08
+target_kl = 0.5
 clip1 = false
 start_logσ = -0.8
 tanh_end = false
@@ -183,12 +183,12 @@ plot(scatter(x=xx,y=res))
 
 
 Ra = 1e4
-Pr = 0.71
+Pr = 0.7
 
 Re = sqrt(Ra/Pr)
 
 ν = 1 / Re
-κ = 1 / Re
+κ = 1 / sqrt(Ra*Pr)
 
 
 Δb = 1 
@@ -276,43 +276,44 @@ end
 function reward_function(env)
     H = Lz
 
-    delta_T = 1.0
+    delta_T = Δb
 
     kappa = model.closure.κ[1]
 
     den = kappa * delta_T / H
 
-    q_1_mean = mean(env.y[1,:,:] .* env.y[2,:,:])
+    sensordata = env.y[:,sensor_positions[1],sensor_positions[2]]
 
-    Tx = mean(env.y[1,:,:]', dims = 2)
-
+    q_1_mean = mean(sensordata[1,:,:] .* sensordata[2,:,:])
+    Tx = mean(sensordata[1,:,:]', dims = 2)
     q_2 = kappa * mean(array_gradient(Tx))
 
     globalNu = (q_1_mean - q_2) / den
 
     rewards = zeros(actuators)
 
+    hor_inv_probes = Int(sensors[1] / actuators)
+
     for i in 1:actuators
         tempstate = env.state[:,i]
 
         tempT = tempstate[1:3:length(tempstate)]
-        tempU1 = tempstate[2:3:length(tempstate)]
+        tempW = tempstate[2:3:length(tempstate)]
 
-        q_1_mean = mean(tempT .* tempU1)
+        tempT = reshape(tempT, window_size, sensors[2])
+        tempW = reshape(tempW, window_size, sensors[2])
 
-        #Tx = mean(env.y[1,:,:], dims = 2)
-        Tx = zeros(sensors[2])
+        tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
 
-        for j in 1:window_size
-            Tx .+= tempT[ 8*(j-1)+1 : j*8 ]
-        end
-
+        q_1_mean = mean(tempT .* tempW)
+        Tx = mean(tempT', dims = 2)
         q_2 = kappa * mean(array_gradient(Tx))
 
         localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = - (globalNu/2.89)^2
+        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
     end
  
     return rewards
