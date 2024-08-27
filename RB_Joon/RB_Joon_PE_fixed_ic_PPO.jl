@@ -273,7 +273,7 @@ function array_gradient(a)
     result
 end
 
-function reward_function(env)
+function reward_function(env; returnGlobalNu = false)
     H = Lz
 
     delta_T = Δb
@@ -289,6 +289,10 @@ function reward_function(env)
     q_2 = kappa * mean(array_gradient(Tx))
 
     globalNu = (q_1_mean - q_2) / den
+
+    if returnGlobalNu
+        return globalNu
+    end
 
     rewards = zeros(actuators)
 
@@ -645,7 +649,7 @@ function render_run()
         savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1000, height=800)
         #body!(w,p)
 
-        temp_reward = env.reward[1]
+        temp_reward = reward_function(env; returnGlobalNu = true)
         println(temp_reward)
 
         reward_sum += temp_reward
