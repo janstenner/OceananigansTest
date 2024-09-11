@@ -22,7 +22,6 @@ Nx = 96
 Nz = 64
 
 
-Δt = 0.03
 duration = 300
 
 Ra = 1e4
@@ -31,22 +30,26 @@ Pr = 0.71
 Re = sqrt(Ra/Pr)
 
 ν = 1 / Re
-κ = 1 / Re
+κ = 1 / sqrt(Ra*Pr)#Re
 
 Δb = 1
 
 # Set the amplitude of the random perturbation (kick)
 kick = 0.2
 
-
+chebychev_z = false
 
 actions = ones(12)
 
 
-chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
-
-#grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = chebychev_spaced_z_faces, topology = (Periodic, Flat, Bounded))
-grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
+if chebychev_z
+    chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
+    grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = chebychev_spaced_z_faces, topology = (Periodic, Flat, Bounded))
+    Δt = 0.00012
+else
+    grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
+    Δt = 0.03
+end
 
 
 function collate_actions_colin(actions, x, t)
@@ -151,9 +154,36 @@ set!(model, u = uᵢ, w = wᵢ, b = bᵢ)
 # Now, we create a 'simulation' to run the model for a specified length of time
 simulation = Simulation(model, Δt = Δt, stop_time = duration)
 
+if chebychev_z
+    # ### The `TimeStepWizard`
+    #
+    # The TimeStepWizard manages the time-step adaptively, keeping the
+    # Courant-Freidrichs-Lewy (CFL) number close to `1.0` while ensuring
+    # the time-step does not increase beyond the maximum allowable value
+    wizard = TimeStepWizard(cfl = 2.4e-2, max_change = 1.00001, max_Δt = 0.007, min_Δt = 0.8 * Δt)
+    # A "Callback" pauses the simulation after a specified number of timesteps and calls a function (here the timestep wizard to update the timestep)
+    # To update the timestep more or less often, change IterationInterval in the next line
+    simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
+end
+
+
+
+start_time = time_ns()
+
+progress(sim) = @printf("i: % 6d, sim time: % 10s, wall time: % 10s, Δt: % 10s, CFL: %.2e\n",
+                        sim.model.clock.iteration,
+                        sim.model.clock.time,
+                        prettytime(1e-9 * (time_ns() - start_time)),
+                        sim.Δt,
+                        AdvectiveCFL(sim.Δt)(sim.model))
+
+simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
+
+
+
 simulation.output_writers[:checkpointer] = Checkpointer(model,
                                                 schedule=TimeInterval(300.0),
-                                                prefix="RBmodel300",
+                                                prefix="RBmodel300Test",
                                                 overwrite_existing = true,
                                                 verbose = true,
                                                 cleanup = true,

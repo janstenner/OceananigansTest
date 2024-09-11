@@ -9,12 +9,13 @@ using Random
 using PlotlyJS
 using FileIO, JLD2
 using Statistics
+using Printf
 #using Blink
 
 sensors = (48,8)
 actuators = 12
 dt = 1.5
-inner_dt = 0.03
+
 
 
 
@@ -83,8 +84,8 @@ actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 # additional agent parameters
 rng = StableRNG(seed)
 Random.seed!(seed)
-y = 0.99997f0
-p = 0.9995f0
+y = 0.99f0
+p = 0.95f0
 
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
@@ -101,8 +102,11 @@ entropy_loss_weight = 0.01
 clip_grad = 0.3
 target_kl = 0.8
 clip1 = false
-start_logσ = -1.1
+start_logσ = -0.5
 tanh_end = false
+
+
+chebychev_z = false
 
 
 actions = rand(actuators) * 2 .- 1
@@ -193,7 +197,17 @@ Re = sqrt(Ra/Pr)
 
 Δb = 1 
 
-grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
+
+if chebychev_z
+    chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
+    grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = chebychev_spaced_z_faces, topology = (Periodic, Flat, Bounded))
+
+    inner_dt = 0.00012
+else
+    grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
+
+    inner_dt = 0.03
+end
 
 u_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
                                 bottom = ValueBoundaryCondition(0))
@@ -212,7 +226,11 @@ model = NonhydrostaticModel(; grid,
               coriolis = nothing
 )
 
-values = FileIO.load("RBmodel300_iteration10001.jld2");
+if chebychev_z
+    values = FileIO.load("RBmodel300_chebychev.jld2")
+else
+    values = FileIO.load("RBmodel300.jld2")
+end
 
 set!(model, u = values["u/data"][4:Nx+3,:,4:Nz+3], w = values["w/data"][4:Nx+3,:,4:Nz+4], b = values["b/data"][4:Nx+3,:,4:Nz+3])
 
@@ -228,7 +246,21 @@ y0[3,:,:] = model.velocities.u[1:Nx,1,1:Nz]
 y0 = Float32.(y0)
 
 
+if chebychev_z
+    wizard = TimeStepWizard(cfl = 2.4e-2, max_change = 1.00001, max_Δt = 0.007, min_Δt = 0.8 * inner_dt)
+    simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
+    
+    start_time = time_ns()
+    progress(sim) = @printf("i: % 6d, sim time: % 10s, wall time: % 10s, Δt: % 10s, CFL: %.2e\n",
+                            sim.model.clock.iteration,
+                            sim.model.clock.time,
+                            prettytime(1e-9 * (time_ns() - start_time)),
+                            sim.Δt,
+                            AdvectiveCFL(sim.Δt)(sim.model))
+    simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
+    simulation.verbose = true
+end
 
 
 
@@ -604,7 +636,7 @@ end
 
 
 
-function render_run()
+function render_run(;use_zeros = false)
 
     # copyto!(agent.policy.behavior_actor, hook.bestNNA)
 
@@ -626,7 +658,7 @@ function render_run()
     rm("frames/", recursive=true, force=true)
     mkdir("frames")
 
-    colorscale = [[0, "rgb(34, 74, 168)"], [0.5, "rgb(224, 224, 180)"], [1, "rgb(156, 33, 11)"], ]
+    colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
     ymax = 30
     layout = Layout(
             plot_bgcolor="#f1f3f7",
@@ -638,7 +670,12 @@ function render_run()
     generate_random_init()
 
     for i in 1:200
-        action = agent(env)
+
+        if use_zeros
+            action = zeros(12)'
+        else
+            action = agent(env)
+        end
 
         env(action)
 
