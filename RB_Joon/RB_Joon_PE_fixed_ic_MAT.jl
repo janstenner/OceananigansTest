@@ -34,6 +34,7 @@ end
 # env parameters
 
 seed = Int(floor(rand()*1000))
+seed = 9
 
 te = 300.0
 t0 = 0.0
@@ -93,16 +94,16 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 200
 
 
-learning_rate = 4e-6
+learning_rate = 1e-5
 n_epochs = 7
 n_microbatches = 20
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
-clip_grad = 0.3
-target_kl = 0.8
+clip_grad = 0.4
+target_kl = 0.3
 clip1 = false
-start_logσ = -0.5
+start_logσ = -0.4
 tanh_end = false
 
 
@@ -543,6 +544,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
             println("")
             
             stop_condition = StopAfterEpisodeWithMinSteps(num_steps)
+            #stop_condition = StopAfterStep(num_steps)
 
 
             # run start
