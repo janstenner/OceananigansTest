@@ -107,6 +107,15 @@ start_logσ = -0.4
 tanh_end = false
 
 
+dim_model = 64
+block_num = 1
+head_num = 4
+ffn_dim = 120
+drop_out = 0.1
+
+
+
+
 chebychev_z = false
 
 
@@ -469,7 +478,11 @@ function initialize_setup(;use_random_init = false)
                 clip_grad = clip_grad,
                 target_kl = target_kl,
                 start_logσ = start_logσ,
-                tanh_end = tanh_end,)
+                dim_model = dim_model,
+                block_num = block_num,
+                head_num = head_num,
+                ffn_dim = ffn_dim,
+                drop_out = drop_out,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
