@@ -113,6 +113,8 @@ head_num = 4
 ffn_dim = 256
 drop_out = 0.1
 
+betas = (0.99, 0.99)
+
 
 
 
@@ -482,7 +484,8 @@ function initialize_setup(;use_random_init = false)
                 block_num = block_num,
                 head_num = head_num,
                 ffn_dim = ffn_dim,
-                drop_out = drop_out,)
+                drop_out = drop_out,
+                betas = betas,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
