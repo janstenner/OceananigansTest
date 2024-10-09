@@ -34,7 +34,7 @@ end
 # env parameters
 
 seed = Int(floor(rand()*1000))
-seed = 9
+#seed = 9
 
 te = 300.0
 t0 = 0.0
@@ -78,7 +78,7 @@ fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 5
+window_size = 7
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -91,26 +91,26 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 200
+update_freq = 120
 
 
-learning_rate = 1e-2
-n_epochs = 7
-n_microbatches = 20
+learning_rate = 4e-4
+n_epochs = 20
+n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
-clip_grad = 0.7
-target_kl = 0.5
+clip_grad = 0.8
+target_kl = 0.7
 clip1 = false
-start_logσ = -0.2
-tanh_end = false
+start_logσ = -0.0
 
 
-dim_model = 256
-block_num = 1
-head_num = 4
-ffn_dim = 256
+block_num = 2
+dim_model = 60
+head_num = 8
+head_dim = 20
+ffn_dim = 120
 drop_out = 0.1
 
 betas = (0.99, 0.99)
@@ -362,6 +362,7 @@ function reward_function(env; returnGlobalNu = false)
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
         rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = sign(rewards[i]) * rewards[i]^2
     end
  
     return rewards
@@ -483,6 +484,7 @@ function initialize_setup(;use_random_init = false)
                 dim_model = dim_model,
                 block_num = block_num,
                 head_num = head_num,
+                head_dim = head_dim,
                 ffn_dim = ffn_dim,
                 drop_out = drop_out,
                 betas = betas,)
@@ -587,6 +589,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                         p = plot(heatmap(z=env.y[1,:,:]', coloraxis="coloraxis"), layout)
 
                         savefig(p, dirpath * "/training_frames//a$(lpad(string(frame), 5, '0')).png"; width=1000, height=800)
+
                     end
 
                     frame += 1
