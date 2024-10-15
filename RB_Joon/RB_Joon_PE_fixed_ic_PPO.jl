@@ -35,6 +35,8 @@ end
 
 seed = Int(floor(rand()*1000))
 
+seed = 172
+
 te = 300.0
 t0 = 0.0
 min_best_episode = 1
