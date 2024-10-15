@@ -15,3 +15,4 @@ cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 [compat]
 JLD2 = "0.4.50"
 Kaleido_jll = "0.1"
+Flux="0.4.19"
