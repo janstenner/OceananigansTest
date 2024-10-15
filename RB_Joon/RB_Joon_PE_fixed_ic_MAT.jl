@@ -10,6 +10,7 @@ using PlotlyJS
 using FileIO, JLD2
 using Statistics
 using Printf
+using Optimisers
 #using Blink
 
 sensors = (48,8)
@@ -94,26 +95,39 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 120
 
 
-learning_rate = 4e-4
+learning_rate = 3e-4
 n_epochs = 20
 n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
-clip_grad = 0.8
-target_kl = 0.7
+clip_grad = 0.5
+target_kl = 0.1
 clip1 = false
 start_logσ = -0.0
 
 
 block_num = 2
 dim_model = 60
-head_num = 8
+head_num = 5
 head_dim = 20
-ffn_dim = 120
+ffn_dim = 100
 drop_out = 0.1
 
 betas = (0.99, 0.99)
+
+jointPPO = false
+
+
+
+
+
+# eta = agent.policy.decoder_state_tree.head.layers[1].bias.rule.opts[2].eta
+# rate = 0.3
+# println("adjusting learning rate:                             from $(eta) to $(eta*rate)")
+# Optimisers.adjust!(agent.policy.decoder_state_tree, eta*rate)
+# eta2 = agent.policy.encoder_state_tree.head.layers[1].bias.rule.opts[2].eta
+# Optimisers.adjust!(agent.policy.encoder_state_tree, eta2*rate)
 
 
 
@@ -487,7 +501,8 @@ function initialize_setup(;use_random_init = false)
                 head_dim = head_dim,
                 ffn_dim = ffn_dim,
                 drop_out = drop_out,
-                betas = betas,)
+                betas = betas,
+                jointPPO = jointPPO,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
