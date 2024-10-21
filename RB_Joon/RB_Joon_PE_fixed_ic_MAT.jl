@@ -35,7 +35,7 @@ end
 # env parameters
 
 seed = Int(floor(rand()*1000))
-#seed = 841
+seed = 857
 
 te = 300.0
 t0 = 0.0
@@ -95,28 +95,28 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 120
 
 
-learning_rate = 3e-4
+learning_rate = 2e-4
 n_epochs = 7
 n_microbatches = 24
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
 clip_grad = 0.3
-target_kl = 0.8
+target_kl = 0.2
 clip1 = false
-start_logσ = -1.1
+start_logσ = -0.4
 
 
 block_num = 2
-dim_model = 35
-head_num = 10
-head_dim = 5
-ffn_dim = 70
+dim_model = 30
+head_num = 7
+head_dim = 10
+ffn_dim = 40
 drop_out = 0.1
 
 betas = (0.99, 0.99)
 
-customCrossAttention = true
+customCrossAttention = false
 jointPPO = false
 
 
