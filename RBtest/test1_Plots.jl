@@ -27,7 +27,7 @@ Nz = 64   # number of gridpoints in the z-direction
 
 # Some timestepping parameters
 Δt = 0.03 # maximum allowable time step 
-Δt_snap = 1.5 # time step for capturing frames
+Δt_snap = 0.1 # time step for capturing frames
 duration = 50 # The non-dimensional duration of the simulation
 
 # Set the Reynolds number (Re=Ul/ν)
@@ -35,6 +35,9 @@ Ra = 1e4
 Pr = 0.7
 
 Re = sqrt(Ra/Pr)
+
+ν = 1 / Re
+κ = 1 / sqrt(Ra*Pr)
 
 
 # Set the change in the non-dimensional buouancy 
@@ -69,7 +72,7 @@ u_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
 w_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
                                 bottom = ValueBoundaryCondition(0))
 b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1),
-                                bottom = ValueBoundaryCondition(bottom_T))#1+Δb))
+                                bottom = ValueBoundaryCondition(1+Δb))#bottom_T))
 
 
 
@@ -79,7 +82,7 @@ model = NonhydrostaticModel(; grid,
             timestepper = :RungeKutta3, # Set the timestepping scheme, here 3rd order Runge-Kutta
                 tracers = (:b),  # Set the name(s) of any tracers, here b is buoyancy
                buoyancy = Buoyancy(model=BuoyancyTracer()), # this tells the model that b will act as the buoyancy (and influence momentum) 
-                closure = (ScalarDiffusivity(ν = 1 / Re, κ = 1 / Re)),  # set a constant kinematic viscosity and diffusivty, here just 1/Re since we are solving the non-dimensional equations 
+                closure = (ScalarDiffusivity(ν = ν, κ = κ)),  # set a constant kinematic viscosity and diffusivty, here just 1/Re since we are solving the non-dimensional equations 
                 boundary_conditions = (u = u_bcs, b = b_bcs,), # specify the boundary conditions that we defiend above
                coriolis = nothing # this line tells the mdoel not to include system rotation (no Coriolis acceleration)
 )

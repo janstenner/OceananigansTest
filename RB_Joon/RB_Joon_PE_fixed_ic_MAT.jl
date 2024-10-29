@@ -35,7 +35,7 @@ end
 # env parameters
 
 seed = Int(floor(rand()*1000))
-seed = 857
+#seed = 857
 
 te = 300.0
 t0 = 0.0
@@ -73,8 +73,6 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 memory_size = 0
 nna_scale = 51.2
 nna_scale_critic = 25.6
-drop_middle_layer = false
-drop_middle_layer_critic = false
 fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
@@ -95,39 +93,42 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 120
 
 
-learning_rate = 2e-4
+learning_rate = 7e-4
 n_epochs = 7
 n_microbatches = 24
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
-clip_grad = 0.3
-target_kl = 0.2
+clip_grad = 0.7
+target_kl = 0.1
 clip1 = false
 start_logσ = -0.4
 
+faktor = 1
 
+drop_middle_layer = true
+drop_middle_layer_critic = true
 block_num = 2
-dim_model = 30
-head_num = 7
-head_dim = 10
-ffn_dim = 40
+dim_model = 30 * faktor
+head_num = 9
+head_dim = 10 * faktor
+ffn_dim = 40 * faktor
 drop_out = 0.1
 
 betas = (0.99, 0.99)
 
-customCrossAttention = false
+customCrossAttention = true
 jointPPO = false
 
 
 
 
 
-# eta = agent.policy.decoder_state_tree.head.layers[1].bias.rule.opts[2].eta
+# eta = agent.policy.decoder_state_tree.embedding.weight.rule.opts[2].eta
 # rate = 0.3
 # println("adjusting learning rate:                             from $(eta) to $(eta*rate)")
 # Optimisers.adjust!(agent.policy.decoder_state_tree, eta*rate)
-# eta2 = agent.policy.encoder_state_tree.head.layers[1].bias.rule.opts[2].eta
+# eta2 = agent.policy.encoder_state_tree.embedding.weight.rule.opts[2].eta
 # Optimisers.adjust!(agent.policy.encoder_state_tree, eta2*rate)
 
 

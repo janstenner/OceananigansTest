@@ -26,12 +26,12 @@ Nz = 64
 duration = 300
 
 Ra = 1e4
-Pr = 0.71
+Pr = 0.7
 
 Re = sqrt(Ra/Pr)
 
 ν = 1 / Re
-κ = 1 / Re
+κ = 1 / sqrt(Ra*Pr)
 
 
 # Temperature difference between bottom and top plate
