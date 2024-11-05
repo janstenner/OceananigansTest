@@ -35,7 +35,7 @@ end
 # env parameters
 
 seed = Int(floor(rand()*1000))
-#seed = 9
+#seed = 857
 
 te = 300.0
 t0 = 0.0
@@ -94,40 +94,42 @@ update_freq = 120
 
 
 learning_rate = 4e-4
-n_epochs = 20
-n_microbatches = 10
+n_epochs = 7
+n_microbatches = 24
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.2
-clip_grad = 0.8
-target_kl = 0.7
+entropy_loss_weight = 0.01
+clip_grad = 0.7
+target_kl = 0.1
 clip1 = false
-start_logσ = -0.8
+start_logσ = -0.4
 
+faktor = 1
 
 drop_middle_layer = true
 drop_middle_layer_critic = true
 block_num = 2
-dim_model = 30
-head_num = 7
-head_dim = 10
-ffn_dim = 40
+dim_model = 30 * faktor
+head_num = 9
+head_dim = 10 * faktor
+ffn_dim = 40 * faktor
 drop_out = 0.1
 
 betas = (0.99, 0.99)
 
-customCrossAttention = false
-jointPPO = true
+customCrossAttention = true
+jointPPO = false
+one_by_one_training = false
 
 
 
 
 
-# eta = agent.policy.decoder_state_tree.head.layers[1].bias.rule.opts[2].eta
+# eta = agent.policy.decoder_state_tree.embedding.weight.rule.opts[2].eta
 # rate = 0.3
 # println("adjusting learning rate:                             from $(eta) to $(eta*rate)")
 # Optimisers.adjust!(agent.policy.decoder_state_tree, eta*rate)
-# eta2 = agent.policy.encoder_state_tree.head.layers[1].bias.rule.opts[2].eta
+# eta2 = agent.policy.encoder_state_tree.embedding.weight.rule.opts[2].eta
 # Optimisers.adjust!(agent.policy.encoder_state_tree, eta2*rate)
 
 
@@ -259,7 +261,17 @@ else
     values = FileIO.load("RBmodel300.jld2")
 end
 
-set!(model, u = values["u/data"][4:Nx+3,:,4:Nz+3], w = values["w/data"][4:Nx+3,:,4:Nz+4], b = values["b/data"][4:Nx+3,:,4:Nz+3])
+uu = values["u/data"][4:Nx+3,:,4:Nz+3]
+ww = values["w/data"][4:Nx+3,:,4:Nz+4]
+bb = values["b/data"][4:Nx+3,:,4:Nz+3]
+
+circshift_amount = rand(1:Nx)
+
+uu = circshift(uu, (circshift_amount,0,0))
+ww = circshift(ww, (circshift_amount,0,0))
+bb = circshift(bb, (circshift_amount,0,0))
+
+set!(model, u = uu, w = ww, b = bb)
 
 simulation = Simulation(model, Δt = inner_dt, stop_time = dt)
 simulation.verbose = false
@@ -353,9 +365,32 @@ function reward_function(env; returnGlobalNu = false)
         return globalNu
     end
 
-    rewards = 2.6726 .* ones(Float32, actuators) - ones(Float32, actuators) .* globalNu
-    rewards = sign.(rewards) .* (rewards.^2)
+    rewards = zeros(actuators)
 
+    hor_inv_probes = Int(sensors[1] / actuators)
+
+    for i in 1:actuators
+        tempstate = env.state[:,i]
+
+        tempT = tempstate[1:3:length(tempstate)]
+        tempW = tempstate[2:3:length(tempstate)]
+
+        tempT = reshape(tempT, window_size, sensors[2])
+        tempW = reshape(tempW, window_size, sensors[2])
+
+        #tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        #tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+
+        q_1_mean = mean(tempT .* tempW)
+        Tx = mean(tempT', dims = 2)
+        q_2 = kappa * mean(array_gradient(Tx))
+
+        localNu = (q_1_mean - q_2) / den
+
+        # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
+        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = sign(rewards[i]) * rewards[i]^2
+    end
  
     return rewards
 end
@@ -506,7 +541,18 @@ function generate_random_init()
     )
 
     global values
-    set!(model, u = values["u/data"][1:Nx,:,1:Nz], w = values["w/data"][1:Nx,:,1:Nz+1], b = values["b/data"][1:Nx,:,1:Nz])
+
+    uu = values["u/data"][4:Nx+3,:,4:Nz+3]
+    ww = values["w/data"][4:Nx+3,:,4:Nz+4]
+    bb = values["b/data"][4:Nx+3,:,4:Nz+3]
+
+    circshift_amount = rand(1:Nx)
+
+    uu = circshift(uu, (circshift_amount,0,0))
+    ww = circshift(ww, (circshift_amount,0,0))
+    bb = circshift(bb, (circshift_amount,0,0))
+
+    set!(model, u = uu, w = ww, b = bb)
 
 
     global simulation = Simulation(model, Δt = inner_dt, stop_time = dt)

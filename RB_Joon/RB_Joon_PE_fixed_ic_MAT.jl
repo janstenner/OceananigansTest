@@ -119,7 +119,7 @@ betas = (0.99, 0.99)
 
 customCrossAttention = true
 jointPPO = false
-one_by_one_training = true
+one_by_one_training = false
 
 
 
@@ -398,14 +398,14 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     sensordata = y[:,sensor_positions[1],sensor_positions[2]]
 
     # New Positional Encoding
-    P_Temp = zeros(sensors[1], sensors[2])
+    # P_Temp = zeros(sensors[1], sensors[2])
 
-    for j in 1:sensors[1]
-        i_rad = (2*pi/sensors[1])*j
-        P_Temp[j,:] .= sin(i_rad)
-    end
+    # for j in 1:sensors[1]
+    #     i_rad = (2*pi/sensors[1])*j
+    #     P_Temp[j,:] .= sin(i_rad)
+    # end
 
-    sensordata[1,:,:] += P_Temp
+    # sensordata[1,:,:] += P_Temp
 
     window_half_size = Int(floor(window_size/2))
 
