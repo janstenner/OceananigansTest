@@ -73,8 +73,6 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 memory_size = 0
 nna_scale = 51.2
 nna_scale_critic = 25.6
-drop_middle_layer = false
-drop_middle_layer_critic = false
 fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
@@ -100,22 +98,25 @@ n_epochs = 20
 n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.01
+entropy_loss_weight = 0.2
 clip_grad = 0.8
 target_kl = 0.7
 clip1 = false
-start_logσ = -0.5
+start_logσ = -0.8
 
 
+drop_middle_layer = true
+drop_middle_layer_critic = true
 block_num = 2
-dim_model = 60
-head_num = 6
-head_dim = 20
-ffn_dim = 120
+dim_model = 30
+head_num = 7
+head_dim = 10
+ffn_dim = 40
 drop_out = 0.1
 
 betas = (0.99, 0.99)
 
+customCrossAttention = false
 jointPPO = true
 
 
@@ -479,7 +480,10 @@ function initialize_setup(;use_random_init = false)
                 ffn_dim = ffn_dim,
                 drop_out = drop_out,
                 betas = betas,
-                jointPPO = jointPPO,)
+                jointPPO = jointPPO,
+                customCrossAttention = customCrossAttention,
+                one_by_one_training = one_by_one_training,
+                )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,

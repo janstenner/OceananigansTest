@@ -93,7 +93,7 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 120
 
 
-learning_rate = 7e-4
+learning_rate = 4e-4
 n_epochs = 7
 n_microbatches = 24
 logσ_is_network = false
@@ -119,6 +119,7 @@ betas = (0.99, 0.99)
 
 customCrossAttention = true
 jointPPO = false
+one_by_one_training = true
 
 
 
@@ -505,7 +506,9 @@ function initialize_setup(;use_random_init = false)
                 drop_out = drop_out,
                 betas = betas,
                 jointPPO = jointPPO,
-                customCrossAttention = customCrossAttention,)
+                customCrossAttention = customCrossAttention,
+                one_by_one_training = one_by_one_training,
+                )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
