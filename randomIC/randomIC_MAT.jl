@@ -93,7 +93,7 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 120
 
 
-learning_rate = 1e-4
+learning_rate = 4e-4
 n_epochs = 3
 n_microbatches = 6
 logσ_is_network = false
@@ -103,7 +103,7 @@ clip_grad = 0.7
 target_kl = 0.01
 clip1 = false
 start_logσ = -0.8
-clip_range = 0.05f0
+clip_range = 0.01f0
 
 
 
