@@ -1503,12 +1503,8 @@ class Runner(object):
     def __init__(self, config):
 
         self.all_args = config['all_args']
-        self.envs = config['envs']
-        self.eval_envs = config['eval_envs']
         self.device = config['device']
         self.num_agents = config['num_agents']
-        if config.__contains__("render_envs"):
-            self.render_envs = config['render_envs']       
 
         # parameters
         self.env_name = self.all_args.env_name
@@ -1559,25 +1555,6 @@ class Runner(object):
                                         share_observation_space,
                                         self.envs.action_space[0],
                                          self.all_args.env_name)
-
-    def run(self):
-        """Collect training data, perform training updates, and evaluate policy."""
-        raise NotImplementedError
-
-    def warmup(self):
-        """Collect warmup pre-training data."""
-        raise NotImplementedError
-
-    def collect(self, step):
-        """Collect rollouts for training."""
-        raise NotImplementedError
-
-    def insert(self, data):
-        """
-        Insert data into buffer.
-        :param data: (Tuple) data to insert into training buffer.
-        """
-        raise NotImplementedError
     
     @torch.no_grad()
     def compute(self):
@@ -1611,14 +1588,7 @@ class Runner(object):
     def restore(self, model_dir):
         """Restore policy's networks from a saved model."""
         return
- 
-    def log_train(self, train_infos, total_num_steps):
-        """
-        Log training info.
-        :param train_infos: (dict) information about training update.
-        :param total_num_steps: (int) total number of training env steps.
-        """
-        return
+
 
     def log_env(self, env_infos, total_num_steps):
         """
@@ -1627,11 +1597,6 @@ class Runner(object):
         :param total_num_steps: (int) total number of training env steps.
         """
         return
-
-class FootballRunner(Runner):
-    """Runner class to perform training, evaluation. and data collection for SMAC. See parent class for details."""
-    def __init__(self, config):
-        super(FootballRunner, self).__init__(config)
 
     def run(self):
         self.warmup()
@@ -1840,55 +1805,6 @@ class FootballRunner(Runner):
 
 
 
-
-"""Train script for SMAC."""
-
-
-def make_train_env(all_args):
-    def get_env_fn(rank):
-        def init_env():
-            if all_args.env_name == "football":
-                env_args = {"scenario": all_args.scenario,
-                            "n_agent": all_args.n_agent,
-                            "reward": "scoring"}
-
-                env = FootballEnv(env_args=env_args)
-            else:
-                print("Can not support the " + all_args.env_name + " environment.")
-                raise NotImplementedError
-            env.seed(all_args.seed + rank * 1000)
-            return env
-
-        return init_env
-
-    if all_args.n_rollout_threads == 1:
-        return ShareDummyVecEnv([get_env_fn(0)])
-    else:
-        return ShareSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
-
-
-def make_eval_env(all_args):
-    def get_env_fn(rank):
-        def init_env():
-            if all_args.env_name == "football":
-                env_args = {"scenario": all_args.scenario,
-                            "n_agent": all_args.n_agent,
-                            "reward": "scoring"}
-                env = FootballEnv(env_args=env_args)
-            else:
-                print("Can not support the " + all_args.env_name + " environment.")
-                raise NotImplementedError
-            env.seed(all_args.seed * 50000 + rank * 10000)
-            return env
-
-        return init_env
-
-    if all_args.eval_episodes == 1:
-        return ShareDummyVecEnv([get_env_fn(0)])
-    else:
-        return ShareSubprocVecEnv([get_env_fn(i) for i in range(all_args.eval_episodes)])
-
-
 def parse_args(args, parser):
     parser.add_argument('--scenario', type=str, default='academy_3_vs_1_with_keeper')
     parser.add_argument('--n_agent', type=int, default=3)
@@ -1915,18 +1831,7 @@ def main(args):
     all_args = parse_args(args, parser)
     print("mumu config: ", all_args)
 
-    if all_args.algorithm_name == "rmappo":
-        all_args.use_recurrent_policy = True
-        assert (all_args.use_recurrent_policy or all_args.use_naive_recurrent_policy), ("check recurrent policy!")
-    elif all_args.algorithm_name == "mappo" or all_args.algorithm_name == "mat" or all_args.algorithm_name == "mat_dec":
-        assert (all_args.use_recurrent_policy == False and all_args.use_naive_recurrent_policy == False), (
-            "check recurrent policy!")
-    else:
-        raise NotImplementedError
-
-    if all_args.algorithm_name == "mat_dec":
-        all_args.dec_actor = True
-        all_args.share_actor = True
+    assert (all_args.use_recurrent_policy == False and all_args.use_naive_recurrent_policy == False), ("check recurrent policy!")
 
     # cuda
     if all_args.cuda and torch.cuda.is_available():
@@ -1947,27 +1852,13 @@ def main(args):
     torch.cuda.manual_seed_all(all_args.seed)
     np.random.seed(all_args.seed)
 
-    # env
-    envs = make_train_env(all_args)
-    eval_envs = make_eval_env(all_args) if all_args.use_eval else None
-    num_agents = envs.n_agents
+    num_agents = all_args.n_agent
 
     config = {
         "all_args": all_args,
-        "envs": envs,
-        "eval_envs": eval_envs,
         "num_agents": num_agents,
         "device": device,
     }
 
     runner = Runner(config)
-    runner.run()
-
-    # post process
-    envs.close()
-    if all_args.use_eval and eval_envs is not envs:
-        eval_envs.close()
-
-
-if __name__ == "__main__":
-    main(sys.argv[1:])
+    #runner.run()
