@@ -48,7 +48,7 @@ Nx = 96
 Nz = 64
 Lx = 2*pi
 Lz = 2
-dx  = Lx/Nx;        
+dx  = Lx/Nx;
 dz  = Lz/Nz;
 sim_space = Space(fill(0..1, (Nx, Nz)))
 
@@ -93,31 +93,31 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 120
 
 
-learning_rate = 4e-4
-n_epochs = 7
-n_microbatches = 24
+learning_rate = 1e-4
+n_epochs = 3
+n_microbatches = 6
 logσ_is_network = false
-max_σ = 10000.0f0
+max_σ = 0.5f0
 entropy_loss_weight = 0.01
 clip_grad = 0.7
 target_kl = 0.1
 clip1 = false
-start_logσ = -0.4
+start_logσ = -0.8
 
-faktor = 1
+
 
 drop_middle_layer = true
-drop_middle_layer_critic = true
+drop_middle_layer_critic = false
 block_num = 2
-dim_model = 30 * faktor
-head_num = 9
-head_dim = 10 * faktor
-ffn_dim = 40 * faktor
-drop_out = 0.1
+dim_model = 30
+head_num = 7
+head_dim = 10
+ffn_dim = 40
+drop_out = 0.05
 
 betas = (0.99, 0.99)
 
-customCrossAttention = true
+customCrossAttention = false
 jointPPO = false
 one_by_one_training = false
 
@@ -674,12 +674,12 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global hook = FileIO.load(dirpath * "/saves/hook.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agent.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookMAT.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentMAT.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env.jld2","env")
     else
-        global hook = FileIO.load(dirpath * "/saves/hook$number.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agent$number.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookMAT$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentMAT$number.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env$number.jld2","env")
     end
 end
@@ -688,12 +688,12 @@ function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
     if isnothing(number)
-        FileIO.save(dirpath * "/saves/hook.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agent.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookMAT.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentMAT.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env.jld2","env",env)
     else
-        FileIO.save(dirpath * "/saves/hook$number.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agent$number.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookMAT$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentMAT$number.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env$number.jld2","env",env)
     end
 end
@@ -782,3 +782,8 @@ end
 # t2 = scatter(y=rewards2)
 # t3 = scatter(y=rewards3)
 # plot([t1, t2, t3])
+
+
+
+#results = FileIO.load("randomICresults.jld2","results")
+#FileIO.save("randomICresults.jld2","results",results)

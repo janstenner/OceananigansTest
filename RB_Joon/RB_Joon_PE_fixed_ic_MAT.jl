@@ -98,7 +98,7 @@ n_epochs = 7
 n_microbatches = 24
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.01
+entropy_loss_weight = 0.2
 clip_grad = 0.7
 target_kl = 0.1
 clip1 = false
@@ -117,7 +117,7 @@ drop_out = 0.1
 
 betas = (0.99, 0.99)
 
-customCrossAttention = true
+customCrossAttention = false
 jointPPO = false
 one_by_one_training = false
 

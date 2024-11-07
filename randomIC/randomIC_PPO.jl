@@ -35,7 +35,7 @@ end
 
 seed = Int(floor(rand()*1000))
 
-seed = 172
+#seed = 172
 
 te = 300.0
 t0 = 0.0
@@ -48,7 +48,7 @@ Nx = 96
 Nz = 64
 Lx = 2*pi
 Lz = 2
-dx  = Lx/Nx;        
+dx  = Lx/Nx;
 dz  = Lz/Nz;
 sim_space = Space(fill(0..1, (Nx, Nz)))
 
@@ -634,12 +634,12 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global hook = FileIO.load(dirpath * "/saves/hook.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agent.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookPPO.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentPPO.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env.jld2","env")
     else
-        global hook = FileIO.load(dirpath * "/saves/hook$number.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agent$number.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookPPO$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentPPO$number.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env$number.jld2","env")
     end
 end
@@ -648,12 +648,12 @@ function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
     if isnothing(number)
-        FileIO.save(dirpath * "/saves/hook.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agent.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookPPO.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentPPO.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env.jld2","env",env)
     else
-        FileIO.save(dirpath * "/saves/hook$number.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agent$number.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookPPO$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentPPO$number.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env$number.jld2","env",env)
     end
 end
