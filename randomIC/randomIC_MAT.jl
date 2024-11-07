@@ -98,11 +98,12 @@ n_epochs = 3
 n_microbatches = 6
 logσ_is_network = false
 max_σ = 0.5f0
-entropy_loss_weight = 0.01
+entropy_loss_weight = 0.1
 clip_grad = 0.7
-target_kl = 0.1
+target_kl = 0.01
 clip1 = false
 start_logσ = -0.8
+clip_range = 0.05f0
 
 
 
@@ -518,6 +519,7 @@ function initialize_setup(;use_random_init = false)
                 jointPPO = jointPPO,
                 customCrossAttention = customCrossAttention,
                 one_by_one_training = one_by_one_training,
+                clip_range = clip_range,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,

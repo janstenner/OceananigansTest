@@ -8,6 +8,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 from torch.distributions import Categorical, Normal
 import copy
+import time
+import math
 
 
 
@@ -159,9 +161,6 @@ def get_config():
         --ifi <float>
             the play interval of each rendered image in saved video.
     
-    Pretrained parameters:
-        --model_dir <str>
-            by default None. set the path to pretrained model.
     """
     parser = argparse.ArgumentParser(
         description='onpolicy', formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -291,8 +290,6 @@ def get_config():
     parser.add_argument("--render_episodes", type=int, default=5, help="the number of episodes to render a given env")
     parser.add_argument("--ifi", type=float, default=0.1, help="the play interval of each rendered image in saved video.")
 
-    # pretrained parameters
-    parser.add_argument("--model_dir", type=str, default=None, help="by default None. set the path to pretrained model.")
 
 
     # add for transformer
@@ -1240,12 +1237,8 @@ class MultiAgentTransformer(nn.Module):
 
         batch_size = np.shape(state)[0]
         v_loc, obs_rep = self.encoder(state, obs)
-        if self.action_type == 'Discrete':
-            action = action.long()
-            action_log, entropy = discrete_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
-                                                        self.n_agent, self.action_dim, self.tpdv, available_actions)
-        else:
-            action_log, entropy = continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
+
+        action_log, entropy = continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
                                                           self.n_agent, self.action_dim, self.tpdv)
 
         return action_log, v_loc, entropy
@@ -1262,12 +1255,8 @@ class MultiAgentTransformer(nn.Module):
 
         batch_size = np.shape(obs)[0]
         v_loc, obs_rep = self.encoder(state, obs)
-        if self.action_type == "Discrete":
-            output_action, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
-                                                                           self.n_agent, self.action_dim, self.tpdv,
-                                                                           available_actions, deterministic)
-        else:
-            output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
+
+        output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                              self.n_agent, self.action_dim, self.tpdv,
                                                                              deterministic)
 
@@ -1490,12 +1479,10 @@ class TransformerPolicy:
         return actions, rnn_states_actor
 
     def save(self, save_dir, episode):
-        torch.save(self.transformer.state_dict(), str(save_dir) + "/transformer_" + str(episode) + ".pt")
+        return
 
     def restore(self, model_dir):
-        transformer_state_dict = torch.load(model_dir)
-        self.transformer.load_state_dict(transformer_state_dict)
-        # self.transformer.reset_std()
+        return
 
     def train(self):
         self.transformer.train()
@@ -1546,21 +1533,6 @@ class Runner(object):
         self.eval_interval = self.all_args.eval_interval
         self.log_interval = self.all_args.log_interval
 
-        # dir
-        self.model_dir = self.all_args.model_dir
-
-        if self.use_wandb:
-            self.save_dir = str(wandb.run.dir)
-            self.run_dir = str(wandb.run.dir)
-        else:
-            self.run_dir = config["run_dir"]
-            self.log_dir = str(self.run_dir / 'logs')
-            if not os.path.exists(self.log_dir):
-                os.makedirs(self.log_dir)
-            self.writter = SummaryWriter(self.log_dir)
-            self.save_dir = str(self.run_dir / 'models')
-            if not os.path.exists(self.save_dir):
-                os.makedirs(self.save_dir)
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
 
@@ -1569,15 +1541,13 @@ class Runner(object):
         print("act_space: ", self.envs.action_space)
 
         # policy network
-        self.policy = Policy(self.all_args,
+        self.policy = TransformerPolicy(self.all_args,
                              self.envs.observation_space[0],
                              share_observation_space,
                              self.envs.action_space[0],
                              self.num_agents,
                              device=self.device)
 
-        if self.model_dir is not None:
-            self.restore(self.model_dir)
 
         # algorithm
         self.trainer = MATTrainer(self.all_args, self.policy, self.num_agents, device=self.device)
@@ -1636,11 +1606,11 @@ class Runner(object):
 
     def save(self, episode):
         """Save policy's actor and critic networks."""
-        self.policy.save(self.save_dir, episode)
+        return
 
     def restore(self, model_dir):
         """Restore policy's networks from a saved model."""
-        self.policy.restore(model_dir)
+        return
  
     def log_train(self, train_infos, total_num_steps):
         """
@@ -1648,11 +1618,7 @@ class Runner(object):
         :param train_infos: (dict) information about training update.
         :param total_num_steps: (int) total number of training env steps.
         """
-        for k, v in train_infos.items():
-            if self.use_wandb:
-                wandb.log({k: v}, step=total_num_steps)
-            else:
-                self.writter.add_scalars(k, {k: v}, total_num_steps)
+        return
 
     def log_env(self, env_infos, total_num_steps):
         """
@@ -1660,12 +1626,7 @@ class Runner(object):
         :param env_infos: (dict) information about env state.
         :param total_num_steps: (int) total number of training env steps.
         """
-        for k, v in env_infos.items():
-            if len(v)>0:
-                if self.use_wandb:
-                    wandb.log({k: np.mean(v)}, step=total_num_steps)
-                else:
-                    self.writter.add_scalars(k, {k: np.mean(v)}, total_num_steps)
+        return
 
 class FootballRunner(Runner):
     """Runner class to perform training, evaluation. and data collection for SMAC. See parent class for details."""
@@ -1743,11 +1704,9 @@ class FootballRunner(Runner):
 
                 if len(done_episodes_rewards) > 0:
                     aver_episode_rewards = np.mean(done_episodes_rewards)
-                    self.writter.add_scalars("train_episode_rewards", {"aver_rewards": aver_episode_rewards}, total_num_steps)
                     done_episodes_rewards = []
 
                     aver_episode_scores = np.mean(done_episodes_scores)
-                    self.writter.add_scalars("train_episode_scores", {"aver_scores": aver_episode_scores}, total_num_steps)
                     done_episodes_scores = []
                     print("some episodes done, average rewards: {}, scores: {}"
                           .format(aver_episode_rewards, aver_episode_scores))
@@ -1815,11 +1774,6 @@ class FootballRunner(Runner):
     def log_train(self, train_infos, total_num_steps):
         train_infos["average_step_rewards"] = np.mean(self.buffer.rewards)
         print("average_step_rewards is {}.".format(train_infos["average_step_rewards"]))
-        for k, v in train_infos.items():
-            if self.use_wandb:
-                wandb.log({k: v}, step=total_num_steps)
-            else:
-                self.writter.add_scalars(k, {k: v}, total_num_steps)
 
     @torch.no_grad()
     def eval(self, total_num_steps):
@@ -1987,40 +1941,6 @@ def main(args):
         device = torch.device("cpu")
         torch.set_num_threads(all_args.n_training_threads)
 
-    run_dir = Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[
-                       0] + "/results") / all_args.env_name / all_args.scenario / all_args.algorithm_name / all_args.experiment_name
-    if not run_dir.exists():
-        os.makedirs(str(run_dir))
-
-    if all_args.use_wandb:
-        run = wandb.init(config=all_args,
-                         project=all_args.env_name,
-                         entity=all_args.user_name,
-                         notes=socket.gethostname(),
-                         name=str(all_args.algorithm_name) + "_" +
-                              str(all_args.experiment_name) +
-                              "_seed" + str(all_args.seed),
-                         group=all_args.map_name,
-                         dir=str(run_dir),
-                         job_type="training",
-                         reinit=True)
-    else:
-        if not run_dir.exists():
-            curr_run = 'run1'
-        else:
-            exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in run_dir.iterdir() if
-                             str(folder.name).startswith('run')]
-            if len(exst_run_nums) == 0:
-                curr_run = 'run1'
-            else:
-                curr_run = 'run%i' % (max(exst_run_nums) + 1)
-        run_dir = run_dir / curr_run
-        if not run_dir.exists():
-            os.makedirs(str(run_dir))
-
-    setproctitle.setproctitle(
-        str(all_args.algorithm_name) + "-" + str(all_args.env_name) + "-" + str(all_args.experiment_name) + "@" + str(
-            all_args.user_name))
 
     # seed
     torch.manual_seed(all_args.seed)
@@ -2038,7 +1958,6 @@ def main(args):
         "eval_envs": eval_envs,
         "num_agents": num_agents,
         "device": device,
-        "run_dir": run_dir
     }
 
     runner = Runner(config)
@@ -2048,12 +1967,6 @@ def main(args):
     envs.close()
     if all_args.use_eval and eval_envs is not envs:
         eval_envs.close()
-
-    if all_args.use_wandb:
-        run.finish()
-    else:
-        runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
-        runner.writter.close()
 
 
 if __name__ == "__main__":
