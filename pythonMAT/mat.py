@@ -10,6 +10,7 @@ from torch.distributions import Categorical, Normal
 import copy
 import time
 import math
+import shlex
 
 
 
@@ -176,7 +177,7 @@ def get_config():
                         action='store_false', default=True, help="by default, make sure random seed effective. if set, bypass such function.")
     parser.add_argument("--n_training_threads", type=int,
                         default=1, help="Number of torch threads for training")
-    parser.add_argument("--n_rollout_threads", type=int, default=32,
+    parser.add_argument("--n_rollout_threads", type=int, default=1,
                         help="Number of parallel envs for training rollouts")
     parser.add_argument("--n_eval_rollout_threads", type=int, default=1,
                         help="Number of parallel envs for evaluating rollouts")
@@ -334,7 +335,7 @@ class SharedReplayBuffer(object):
     :param act_space: (gym.Space) action space for agents.
     """
 
-    def __init__(self, args, num_agents, obs_space, cent_obs_space, act_space, env_name):
+    def __init__(self, args, num_agents, obs_dim, act_dim, env_name):
         self.episode_length = args.episode_length
         self.n_rollout_threads = args.n_rollout_threads
         self.hidden_size = args.hidden_size
@@ -349,18 +350,9 @@ class SharedReplayBuffer(object):
         self.num_agents = num_agents
         self.env_name = env_name
 
-        obs_shape = get_shape_from_obs_space(obs_space)
-        share_obs_shape = get_shape_from_obs_space(cent_obs_space)
-
-        if type(obs_shape[-1]) == list:
-            obs_shape = obs_shape[:1]
-
-        if type(share_obs_shape[-1]) == list:
-            share_obs_shape = share_obs_shape[:1]
-
-        self.share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *share_obs_shape),
+        self.share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, obs_dim),
                                   dtype=np.float32)
-        self.obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *obs_shape), dtype=np.float32)
+        self.obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, obs_dim), dtype=np.float32)
 
         self.rnn_states = np.zeros(
             (self.episode_length + 1, self.n_rollout_threads, num_agents, self.recurrent_N, self.hidden_size),
@@ -373,18 +365,14 @@ class SharedReplayBuffer(object):
         self.advantages = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
 
-        if act_space.__class__.__name__ == 'Discrete':
-            self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
-                                             dtype=np.float32)
-        else:
-            self.available_actions = None
+        
+        self.available_actions = None
 
-        act_shape = get_shape_from_act_space(act_space)
 
         self.actions = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, num_agents, act_dim), dtype=np.float32)
         self.action_log_probs = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, num_agents, act_dim), dtype=np.float32)
         self.rewards = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
 
@@ -885,27 +873,6 @@ def huber_loss(e, d):
 def mse_loss(e):
     return e**2/2
 
-def get_shape_from_obs_space(obs_space):
-    if obs_space.__class__.__name__ == 'Box':
-        obs_shape = obs_space.shape
-    elif obs_space.__class__.__name__ == 'list':
-        obs_shape = obs_space
-    else:
-        raise NotImplementedError
-    return obs_shape
-
-def get_shape_from_act_space(act_space):
-    if act_space.__class__.__name__ == 'Discrete':
-        act_shape = 1
-    elif act_space.__class__.__name__ == "MultiDiscrete":
-        act_shape = act_space.shape
-    elif act_space.__class__.__name__ == "Box":
-        act_shape = act_space.shape[0]
-    elif act_space.__class__.__name__ == "MultiBinary":
-        act_shape = act_space.shape[0]
-    else:  # agar
-        act_shape = act_space[0].shape[0] + 1  
-    return act_shape
 
 
 def tile_images(img_nhwc):
@@ -1283,27 +1250,20 @@ class TransformerPolicy:
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
 
-    def __init__(self, args, obs_space, cent_obs_space, act_space, num_agents, device=torch.device("cpu")):
+    def __init__(self, args, obs_dim, act_dim, num_agents, device=torch.device("cpu")):
         self.device = device
         self.algorithm_name = args.algorithm_name
         self.lr = args.lr
         self.opti_eps = args.opti_eps
         self.weight_decay = args.weight_decay
         self._use_policy_active_masks = args.use_policy_active_masks
-        if act_space.__class__.__name__ == 'Box':
-            self.action_type = 'Continuous'
-        else:
-            self.action_type = 'Discrete'
 
-        self.obs_dim = get_shape_from_obs_space(obs_space)[0]
-        self.share_obs_dim = get_shape_from_obs_space(cent_obs_space)[0]
-        if self.action_type == 'Discrete':
-            self.act_dim = act_space.n
-            self.act_num = 1
-        else:
-            print("act high: ", act_space.high)
-            self.act_dim = act_space.shape[0]
-            self.act_num = self.act_dim
+        self.action_type = 'Continuous'
+
+        self.obs_dim = obs_dim
+        self.share_obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.act_num = self.act_dim
 
         print("obs_dim: ", self.obs_dim)
         print("share_obs_dim: ", self.share_obs_dim)
@@ -1312,18 +1272,8 @@ class TransformerPolicy:
         self.num_agents = num_agents
         self.tpdv = dict(dtype=torch.float32, device=device)
 
-        if self.algorithm_name in ["mat", "mat_dec"]:
-            from mat.algorithms.mat.algorithm.ma_transformer import MultiAgentTransformer as MAT
-        elif self.algorithm_name == "mat_gru":
-            from mat.algorithms.mat.algorithm.mat_gru import MultiAgentGRU as MAT
-        elif self.algorithm_name == "mat_decoder":
-            from mat.algorithms.mat.algorithm.mat_decoder import MultiAgentDecoder as MAT
-        elif self.algorithm_name == "mat_encoder":
-            from mat.algorithms.mat.algorithm.mat_encoder import MultiAgentEncoder as MAT
-        else:
-            raise NotImplementedError
 
-        self.transformer = MAT(self.share_obs_dim, self.obs_dim, self.act_dim, num_agents,
+        self.transformer = MultiAgentTransformer(self.share_obs_dim, self.obs_dim, self.act_dim, num_agents,
                                n_block=args.n_block, n_embd=args.n_embd, n_head=args.n_head,
                                encode_state=args.encode_state, device=device,
                                action_type=self.action_type, dec_actor=args.dec_actor,
@@ -1380,6 +1330,7 @@ class TransformerPolicy:
 
         cent_obs = cent_obs.reshape(-1, self.num_agents, self.share_obs_dim)
         obs = obs.reshape(-1, self.num_agents, self.obs_dim)
+
         if available_actions is not None:
             available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
 
@@ -1392,9 +1343,7 @@ class TransformerPolicy:
         action_log_probs = action_log_probs.view(-1, self.act_num)
         values = values.view(-1, 1)
 
-        # unused, just for compatibility
-        rnn_states_actor = check(rnn_states_actor).to(**self.tpdv)
-        rnn_states_critic = check(rnn_states_critic).to(**self.tpdv)
+
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     def get_values(self, cent_obs, obs, rnn_states_critic, masks, available_actions=None):
@@ -1530,17 +1479,13 @@ class Runner(object):
         self.log_interval = self.all_args.log_interval
 
 
-        share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
-
-        print("obs_space: ", self.envs.observation_space)
-        print("share_obs_space: ", self.envs.share_observation_space)
-        print("act_space: ", self.envs.action_space)
+        self.obs_dim = self.all_args.obs_dim
+        self.act_dim = self.all_args.act_dim
 
         # policy network
         self.policy = TransformerPolicy(self.all_args,
-                             self.envs.observation_space[0],
-                             share_observation_space,
-                             self.envs.action_space[0],
+                             self.obs_dim,
+                             self.act_dim,
                              self.num_agents,
                              device=self.device)
 
@@ -1551,10 +1496,9 @@ class Runner(object):
         # buffer
         self.buffer = SharedReplayBuffer(self.all_args,
                                         self.num_agents,
-                                        self.envs.observation_space[0],
-                                        share_observation_space,
-                                        self.envs.action_space[0],
-                                         self.all_args.env_name)
+                                        self.obs_dim,
+                                        self.act_dim,
+                                        self.all_args.env_name)
     
     @torch.no_grad()
     def compute(self):
@@ -1646,39 +1590,6 @@ class Runner(object):
             self.compute()
             train_infos = self.train()
 
-            # post process
-            total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
-            # save model
-            if (episode % self.save_interval == 0 or episode == episodes - 1):
-                self.save(episode)
-
-            # log information
-            if episode % self.log_interval == 0:
-                end = time.time()
-                print("\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n"
-                        .format(self.all_args.scenario,
-                                self.algorithm_name,
-                                self.experiment_name,
-                                episode,
-                                episodes,
-                                total_num_steps,
-                                self.num_env_steps,
-                                int(total_num_steps / (end - start))))
-
-                self.log_train(train_infos, total_num_steps)
-
-                if len(done_episodes_rewards) > 0:
-                    aver_episode_rewards = np.mean(done_episodes_rewards)
-                    done_episodes_rewards = []
-
-                    aver_episode_scores = np.mean(done_episodes_scores)
-                    done_episodes_scores = []
-                    print("some episodes done, average rewards: {}, scores: {}"
-                          .format(aver_episode_rewards, aver_episode_scores))
-
-            # eval
-            if episode % self.eval_interval == 0 and self.use_eval:
-                self.eval(total_num_steps)
 
     def warmup(self):
         # reset env
@@ -1710,6 +1621,23 @@ class Runner(object):
         rnn_states_critic = np.array(np.split(_t2n(rnn_state_critic), self.n_rollout_threads))
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic
+    
+    @torch.no_grad()
+    def collect2(self, obs):
+        self.trainer.prep_rollout()
+        value, action, action_log_prob, rnn_state, rnn_state_critic \
+            = self.trainer.policy.get_actions(np.concatenate(obs),
+                                              np.concatenate(obs),
+                                              None,
+                                              None,
+                                              None,
+                                              None)
+        # [self.envs, agents, dim]
+        values = np.array(np.split(_t2n(value), self.n_rollout_threads))
+        actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
+        action_log_probs = np.array(np.split(_t2n(action_log_prob), self.n_rollout_threads))
+
+        return values, actions, action_log_probs, rnn_state, rnn_state_critic
 
     def insert(self, data):
         obs, share_obs, rewards, dones, infos, available_actions, \
@@ -1821,12 +1749,21 @@ def parse_args(args, parser):
     parser.add_argument("--use_mustalive", action='store_false', default=True)
     parser.add_argument("--add_center_xy", action='store_true', default=False)
 
+    parser.add_argument("--obs_dim", type=int, default=2)
+    parser.add_argument("--act_dim", type=int, default=1)
+
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
 
 
-def main(args):
+
+
+
+def setup(args_string):
+    #args_string = "--obs_dim 3 --act_dim 1"
+    args = shlex.split(args_string)
+
     parser = get_config()
     all_args = parse_args(args, parser)
     print("mumu config: ", all_args)
@@ -1860,5 +1797,6 @@ def main(args):
         "device": device,
     }
 
+    global runner
     runner = Runner(config)
     #runner.run()
