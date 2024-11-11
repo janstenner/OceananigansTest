@@ -401,8 +401,8 @@ class SharedReplayBuffer(object):
         """
         self.share_obs[self.step + 1] = share_obs.copy()
         self.obs[self.step + 1] = obs.copy()
-        self.rnn_states[self.step + 1] = rnn_states_actor.copy()
-        self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
+        self.rnn_states[self.step + 1] = rnn_states_actor
+        self.rnn_states_critic[self.step + 1] = rnn_states_critic
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
         self.value_preds[self.step] = value_preds.copy()
@@ -1520,6 +1520,7 @@ class Runner(object):
     
     def train(self):
         """Train policies with data in buffer. """
+        print("training...")
         self.trainer.prep_training()
         train_infos = self.trainer.train(self.buffer)      
         self.buffer.after_update()
@@ -1590,6 +1591,13 @@ class Runner(object):
             self.compute()
             train_infos = self.train()
 
+    def after_action(self, obs, rewards, dones, values, actions, action_log_probs):
+        data = obs, obs, rewards, dones, None, None, \
+                       values, actions, action_log_probs, \
+                       None, None
+
+        # insert data into buffer
+        self.insert(data)
 
     def warmup(self):
         # reset env
@@ -1602,6 +1610,11 @@ class Runner(object):
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
         self.buffer.available_actions[0] = ava.copy()
+
+    def warmup2(self, obs):
+        self.buffer.share_obs[0] = obs
+        self.buffer.obs[0] = obs
+        #self.buffer.available_actions[0] = None
 
     @torch.no_grad()
     def collect(self, step):
@@ -1644,9 +1657,6 @@ class Runner(object):
         values, actions, action_log_probs, rnn_states, rnn_states_critic = data
 
         dones_env = np.all(dones, axis=1)
-
-        rnn_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-        rnn_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
 
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         masks[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)

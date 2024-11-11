@@ -533,7 +533,6 @@ function initialize_setup(;use_random_init = false)
 
     
     global test_obs, valuesss, actionsss
-    test_obs = rand(1,12,168)
 
     py"""
     exec(open("./pythonMAT/mat.py").read())
@@ -543,14 +542,7 @@ function initialize_setup(;use_random_init = false)
     print(arg_string)
     
     setup(arg_string)
-    
-    obss = np.array($(test_obs))
-    
-    values, actions, action_log_probs, rnn_states, rnn_states_critic = runner.collect2(obss)
     """
-    
-    valuesss = py"values"
-    actionsss = py"actions"
 end
 
 function generate_random_init()
@@ -593,6 +585,11 @@ function generate_random_init()
     env.y = deepcopy(env.y0)
     env.state = env.featurize(; env = env)
 
+    py"""
+    obss = $( reshape(permutedims(env.state),(1,actuators,size(env.state_space)[1])) )
+    runner.warmup2(obss)
+    """
+
     Float32.(result)
 end
 
@@ -622,6 +619,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
         hook.generate_random_init = false
     end
     
+    py_step = 1
 
     for i = 1:outer_loops
         
@@ -634,22 +632,44 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
 
             # run start
             hook(PRE_EXPERIMENT_STAGE, agent, env)
-            agent(PRE_EXPERIMENT_STAGE, env)
+            #agent(PRE_EXPERIMENT_STAGE, env)
             is_stop = false
             while !is_stop
                 reset!(env)
-                agent(PRE_EPISODE_STAGE, env)
+                #agent(PRE_EPISODE_STAGE, env)
                 hook(PRE_EPISODE_STAGE, agent, env)
 
                 while !is_terminated(env) # one episode
-                    action = agent(env)
+                    #action = agent(env)
 
-                    agent(PRE_ACT_STAGE, env, action)
+                    py"""
+                    obss = $( reshape(permutedims(env.state),(1,actuators,size(env.state_space)[1])) )
+                    values, actions, action_log_probs, rnn_states, rnn_states_critic = runner.collect2(obss)
+                    """
+
+                    action = py"actions"
+
+                    #agent(PRE_ACT_STAGE, env, action)
                     hook(PRE_ACT_STAGE, agent, env, action)
 
                     env(action)
 
-                    agent(POST_ACT_STAGE, env)
+                    dones = [env.done for i in 1:actuators]
+
+                    py"""
+                    rewards = np.array( $( reshape(env.reward, 1,actuators,1) ) )
+                    dones = np.array( $( reshape(dones, 1,actuators) ) )
+                    runner.after_action(obss, rewards, dones, values, actions, action_log_probs)
+                    """
+
+                    if py_step % 200 == 0
+                        py"""
+                        runner.compute()
+                        runner.train()
+                        """
+                    end
+
+                    #agent(POST_ACT_STAGE, env)
                     hook(POST_ACT_STAGE, agent, env)
 
                     if visuals
@@ -660,6 +680,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                     end
 
                     frame += 1
+                    py_step += 1
 
                     if stop_condition(agent, env)
                         is_stop = true
@@ -668,7 +689,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                 end # end of an episode
 
                 if is_terminated(env)
-                    agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
+                    #agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
                     hook(POST_EPISODE_STAGE, agent, env)
                 end
             end
