@@ -390,7 +390,7 @@ function reward_function(env; returnGlobalNu = false)
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
         rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
-        rewards[i] = sign(rewards[i]) * rewards[i]^2
+        #rewards[i] = sign(rewards[i]) * rewards[i]^2
     end
  
     return rewards

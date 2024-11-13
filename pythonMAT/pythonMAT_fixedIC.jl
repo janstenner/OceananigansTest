@@ -11,6 +11,8 @@ using FileIO, JLD2
 using Statistics
 using Printf
 using Optimisers
+using PyCall
+using Conda
 #using Blink
 
 sensors = (48,8)
@@ -35,7 +37,7 @@ end
 # env parameters
 
 seed = Int(floor(rand()*1000))
-#seed = 9
+#seed = 857
 
 te = 300.0
 t0 = 0.0
@@ -48,7 +50,7 @@ Nx = 96
 Nz = 64
 Lx = 2*pi
 Lz = 2
-dx  = Lx/Nx;        
+dx  = Lx/Nx;
 dz  = Lz/Nz;
 sim_space = Space(fill(0..1, (Nx, Nz)))
 
@@ -93,16 +95,18 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 120
 
 
-learning_rate = 1e-4
-n_epochs = 7
-n_microbatches = 24
+learning_rate = 4e-4
+n_epochs = 3
+n_microbatches = 6
 logσ_is_network = false
-max_σ = 10000.0f0
-entropy_loss_weight = 0.01
+max_σ = 1000.0f0
+entropy_loss_weight = 0.1
 clip_grad = 0.7
-target_kl = 0.1
+target_kl = 0.01
 clip1 = false
-start_logσ = -0.4
+start_logσ = -0.8
+clip_range = 0.01f0
+
 
 
 drop_middle_layer = true
@@ -111,24 +115,24 @@ block_num = 2
 dim_model = 30
 head_num = 7
 head_dim = 10
-ffn_dim = 50
-drop_out = 0.1
+ffn_dim = 40
+drop_out = 0.05
 
 betas = (0.99, 0.99)
 
 customCrossAttention = false
-jointPPO = true
+jointPPO = false
+one_by_one_training = false
 
 
 
 
 
-# eta = agent.policy.decoder_state_tree.head.layers[1].bias.rule.opts[2].eta
-# rate = 0.1
+# eta = agent.policy.decoder_state_tree.embedding.weight.rule.opts[2].eta
+# rate = 0.3
 # println("adjusting learning rate:                             from $(eta) to $(eta*rate)")
 # Optimisers.adjust!(agent.policy.decoder_state_tree, eta*rate)
-# Optimisers.adjust!(agent.policy.encoder_state_tree, eta*rate)
-# eta2 = agent.policy.encoder_state_tree.head.layers[1].bias.rule.opts[2].eta
+# eta2 = agent.policy.encoder_state_tree.embedding.weight.rule.opts[2].eta
 # Optimisers.adjust!(agent.policy.encoder_state_tree, eta2*rate)
 
 
@@ -260,7 +264,17 @@ else
     values = FileIO.load("RBmodel300.jld2")
 end
 
-set!(model, u = values["u/data"][4:Nx+3,:,4:Nz+3], w = values["w/data"][4:Nx+3,:,4:Nz+4], b = values["b/data"][4:Nx+3,:,4:Nz+3])
+uu = values["u/data"][4:Nx+3,:,4:Nz+3]
+ww = values["w/data"][4:Nx+3,:,4:Nz+4]
+bb = values["b/data"][4:Nx+3,:,4:Nz+3]
+
+circshift_amount = 0#rand(1:Nx)
+
+uu = circshift(uu, (circshift_amount,0,0))
+ww = circshift(ww, (circshift_amount,0,0))
+bb = circshift(bb, (circshift_amount,0,0))
+
+Oceananigans.set!(model, u = uu, w = ww, b = bb)
 
 simulation = Simulation(model, Δt = inner_dt, stop_time = dt)
 simulation.verbose = false
@@ -354,9 +368,32 @@ function reward_function(env; returnGlobalNu = false)
         return globalNu
     end
 
-    rewards = 2.6726 .* ones(Float32, actuators) - ones(Float32, actuators) .* globalNu
-    #rewards = sign.(rewards) .* (rewards.^2)
+    rewards = zeros(actuators)
 
+    hor_inv_probes = Int(sensors[1] / actuators)
+
+    for i in 1:actuators
+        tempstate = env.state[:,i]
+
+        tempT = tempstate[1:3:length(tempstate)]
+        tempW = tempstate[2:3:length(tempstate)]
+
+        tempT = reshape(tempT, window_size, sensors[2])
+        tempW = reshape(tempW, window_size, sensors[2])
+
+        #tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        #tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+
+        q_1_mean = mean(tempT .* tempW)
+        Tx = mean(tempT', dims = 2)
+        q_2 = kappa * mean(array_gradient(Tx))
+
+        localNu = (q_1_mean - q_2) / den
+
+        # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
+        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        #rewards[i] = sign(rewards[i]) * rewards[i]^2
+    end
  
     return rewards
 end
@@ -483,6 +520,8 @@ function initialize_setup(;use_random_init = false)
                 betas = betas,
                 jointPPO = jointPPO,
                 customCrossAttention = customCrossAttention,
+                one_by_one_training = one_by_one_training,
+                clip_range = clip_range,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
@@ -491,6 +530,19 @@ function initialize_setup(;use_random_init = false)
                 collect_history = false,
                 collect_rewards_all_timesteps = true,
                 early_success_possible = false)
+
+    
+    global test_obs, valuesss, actionsss
+
+    py"""
+    exec(open("./pythonMAT/mat.py").read())
+
+    arg_string = "--obs_dim " + str( $(size(env.state_space)[1]) ) + " --act_dim 1 --n_agent " + str( $(actuators) )
+
+    print(arg_string)
+    
+    setup(arg_string)
+    """
 end
 
 function generate_random_init()
@@ -506,7 +558,18 @@ function generate_random_init()
     )
 
     global values
-    set!(model, u = values["u/data"][1:Nx,:,1:Nz], w = values["w/data"][1:Nx,:,1:Nz+1], b = values["b/data"][1:Nx,:,1:Nz])
+
+    uu = values["u/data"][4:Nx+3,:,4:Nz+3]
+    ww = values["w/data"][4:Nx+3,:,4:Nz+4]
+    bb = values["b/data"][4:Nx+3,:,4:Nz+3]
+
+    circshift_amount = 0#rand(1:Nx)
+
+    uu = circshift(uu, (circshift_amount,0,0))
+    ww = circshift(ww, (circshift_amount,0,0))
+    bb = circshift(bb, (circshift_amount,0,0))
+
+    Oceananigans.set!(model, u = uu, w = ww, b = bb)
 
 
     global simulation = Simulation(model, Δt = inner_dt, stop_time = dt)
@@ -521,6 +584,11 @@ function generate_random_init()
     env.y0 = Float32.(result)
     env.y = deepcopy(env.y0)
     env.state = env.featurize(; env = env)
+
+    py"""
+    obss = $( reshape(permutedims(env.state),(1,actuators,size(env.state_space)[1])) )
+    runner.warmup2(obss)
+    """
 
     Float32.(result)
 end
@@ -551,6 +619,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
         hook.generate_random_init = false
     end
     
+    py_step = 1
 
     for i = 1:outer_loops
         
@@ -563,22 +632,44 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
 
             # run start
             hook(PRE_EXPERIMENT_STAGE, agent, env)
-            agent(PRE_EXPERIMENT_STAGE, env)
+            #agent(PRE_EXPERIMENT_STAGE, env)
             is_stop = false
             while !is_stop
                 reset!(env)
-                agent(PRE_EPISODE_STAGE, env)
+                #agent(PRE_EPISODE_STAGE, env)
                 hook(PRE_EPISODE_STAGE, agent, env)
 
                 while !is_terminated(env) # one episode
-                    action = agent(env)
+                    #action = agent(env)
 
-                    agent(PRE_ACT_STAGE, env, action)
+                    py"""
+                    obss = $( reshape(permutedims(env.state),(1,actuators,size(env.state_space)[1])) )
+                    values, actions, action_log_probs, rnn_states, rnn_states_critic = runner.collect2(obss)
+                    """
+
+                    action = py"actions"
+
+                    #agent(PRE_ACT_STAGE, env, action)
                     hook(PRE_ACT_STAGE, agent, env, action)
 
                     env(action)
 
-                    agent(POST_ACT_STAGE, env)
+                    dones = [env.done for i in 1:actuators]
+
+                    py"""
+                    rewards = np.array( $( reshape(env.reward, 1,actuators,1) ) )
+                    dones = np.array( $( reshape(dones, 1,actuators) ) )
+                    runner.after_action(obss, rewards, dones, values, actions, action_log_probs)
+                    """
+
+                    if py_step % 200 == 0
+                        py"""
+                        runner.compute()
+                        runner.train()
+                        """
+                    end
+
+                    #agent(POST_ACT_STAGE, env)
                     hook(POST_ACT_STAGE, agent, env)
 
                     if visuals
@@ -589,6 +680,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                     end
 
                     frame += 1
+                    py_step += 1
 
                     if stop_condition(agent, env)
                         is_stop = true
@@ -597,7 +689,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                 end # end of an episode
 
                 if is_terminated(env)
-                    agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
+                    #agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
                     hook(POST_EPISODE_STAGE, agent, env)
                 end
             end
@@ -628,12 +720,12 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global hook = FileIO.load(dirpath * "/saves/hook.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agent.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookMAT.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentMAT.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env.jld2","env")
     else
-        global hook = FileIO.load(dirpath * "/saves/hook$number.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agent$number.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookMAT$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentMAT$number.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env$number.jld2","env")
     end
 end
@@ -642,12 +734,12 @@ function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
     if isnothing(number)
-        FileIO.save(dirpath * "/saves/hook.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agent.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookMAT.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentMAT.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env.jld2","env",env)
     else
-        FileIO.save(dirpath * "/saves/hook$number.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agent$number.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookMAT$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentMAT$number.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env$number.jld2","env",env)
     end
 end
@@ -736,3 +828,8 @@ end
 # t2 = scatter(y=rewards2)
 # t3 = scatter(y=rewards3)
 # plot([t1, t2, t3])
+
+
+
+#results = FileIO.load("randomICresults.jld2","results")
+#FileIO.save("randomICresults.jld2","results",results)
