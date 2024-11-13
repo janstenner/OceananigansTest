@@ -77,7 +77,7 @@ fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 7
+window_size = 9
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -90,34 +90,33 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 120
+update_freq = 200
 
 
 learning_rate = 4e-4
 n_epochs = 7
-n_microbatches = 24
+n_microbatches = 20
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.2
+entropy_loss_weight = 0.01
 clip_grad = 0.7
 target_kl = 0.1
 clip1 = false
 start_logσ = -0.4
 
-faktor = 1
 
 drop_middle_layer = true
 drop_middle_layer_critic = true
-block_num = 2
-dim_model = 30 * faktor
-head_num = 9
-head_dim = 10 * faktor
-ffn_dim = 40 * faktor
+block_num = 1
+dim_model = 80
+head_num = 3
+head_dim = 30
+ffn_dim = 120
 drop_out = 0.1
 
 betas = (0.99, 0.99)
 
-customCrossAttention = false
+customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
 
