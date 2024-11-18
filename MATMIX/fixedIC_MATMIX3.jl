@@ -10,6 +10,7 @@ using PlotlyJS
 using FileIO, JLD2
 using Statistics
 using Printf
+using Optimisers
 #using Blink
 
 sensors = (48,8)
@@ -33,9 +34,8 @@ end
 
 # env parameters
 
-seed = Int(floor(rand()*100000))
-
-seed = 172
+seed = Int(floor(rand()*1000))
+#seed = 857
 
 te = 300.0
 t0 = 0.0
@@ -73,8 +73,6 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 memory_size = 0
 nna_scale = 51.2
 nna_scale_critic = 25.6
-drop_middle_layer = false
-drop_middle_layer_critic = false
 fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
@@ -95,20 +93,47 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 200
 
 
-learning_rate = 3e-4
-n_epochs = 7
-n_microbatches = 24
+learning_rate = 1e-3
+n_epochs = 3
+n_microbatches = 20
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
-clip_grad = 0.3
+clip_grad = 0.7
 target_kl = 0.8
 clip1 = false
-start_logσ = -1.1
-tanh_end = false
+start_logσ = -0.4
+clip_range = 0.05f0
 
-betas = (0.9, 0.999)#(0.99,0.99)
+
+drop_middle_layer = true
+drop_middle_layer_critic = true
+block_num = 1
+dim_model = 80
+head_num = 3
+head_dim = 30
+ffn_dim = 120
+drop_out = 0.1
+
+betas = (0.99, 0.99)
+
+matmix_variant = 3
+joon_PE = true
+customCrossAttention = true
+jointPPO = false
+one_by_one_training = false
 square_rewards = true
+
+
+
+
+
+# eta = agent.policy.decoder_state_tree.embedding.weight.rule.opts[2].eta
+# rate = 0.3
+# println("adjusting learning rate:                             from $(eta) to $(eta*rate)")
+# Optimisers.adjust!(agent.policy.decoder_state_tree, eta*rate)
+# eta2 = agent.policy.encoder_state_tree.embedding.weight.rule.opts[2].eta
+# Optimisers.adjust!(agent.policy.encoder_state_tree, eta2*rate)
 
 
 
@@ -346,8 +371,8 @@ function reward_function(env; returnGlobalNu = false)
         tempT = reshape(tempT, window_size, sensors[2])
         tempW = reshape(tempW, window_size, sensors[2])
 
-        tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-        tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        #tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        #tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
 
         q_1_mean = mean(tempT .* tempW)
         Tx = mean(tempT', dims = 2)
@@ -378,14 +403,16 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     sensordata = y[:,sensor_positions[1],sensor_positions[2]]
 
     # New Positional Encoding
-    P_Temp = zeros(sensors[1], sensors[2])
+    if joon_PE
+        P_Temp = zeros(sensors[1], sensors[2])
 
-    for j in 1:sensors[1]
-        i_rad = (2*pi/sensors[1])*j
-        P_Temp[j,:] .= sin(i_rad)
+        for j in 1:sensors[1]
+            i_rad = (2*pi/sensors[1])*j
+            P_Temp[j,:] .= sin(i_rad)
+        end
     end
 
-    sensordata[1,:,:] += P_Temp
+    # sensordata[1,:,:] += P_Temp
 
     window_half_size = Int(floor(window_size/2))
 
@@ -454,7 +481,7 @@ function initialize_setup(;use_random_init = false)
                 max_value = max_value,
                 check_max_value = check_max_value)
 
-    global agent = create_agent_ppo(n_envs = actuators,
+    global agent = create_agent_matmix(n_actors = actuators,
                 action_space = actionspace,
                 state_space = env.state_space,
                 use_gpu = use_gpu, 
@@ -478,8 +505,19 @@ function initialize_setup(;use_random_init = false)
                 clip_grad = clip_grad,
                 target_kl = target_kl,
                 start_logσ = start_logσ,
-                tanh_end = tanh_end,
-                betas = betas,)
+                dim_model = dim_model,
+                block_num = block_num,
+                head_num = head_num,
+                head_dim = head_dim,
+                ffn_dim = ffn_dim,
+                drop_out = drop_out,
+                betas = betas,
+                jointPPO = jointPPO,
+                customCrossAttention = customCrossAttention,
+                one_by_one_training = one_by_one_training,
+                matmix_variant = matmix_variant,
+                clip_range = clip_range,
+                )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
@@ -526,11 +564,12 @@ initialize_setup()
 # plotrun(use_best = false, plot3D = true)
 
 function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
-    rm(dirpath * "/training_frames/", recursive=true, force=true)
-    mkdir(dirpath * "/training_frames/")
+    
     frame = 1
 
     if visuals
+        rm(dirpath * "/training_frames/", recursive=true, force=true)
+        mkdir(dirpath * "/training_frames/")
         colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
         ymax = 30
         layout = Layout(
@@ -553,6 +592,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
             println("")
             
             stop_condition = StopAfterEpisodeWithMinSteps(num_steps)
+            #stop_condition = StopAfterStep(num_steps)
 
 
             # run start
@@ -579,6 +619,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                         p = plot(heatmap(z=env.y[1,:,:]', coloraxis="coloraxis"), layout)
 
                         savefig(p, dirpath * "/training_frames//a$(lpad(string(frame), 5, '0')).png"; width=1000, height=800)
+
                     end
 
                     frame += 1

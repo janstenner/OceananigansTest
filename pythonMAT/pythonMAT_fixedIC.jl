@@ -123,6 +123,7 @@ betas = (0.99, 0.99)
 customCrossAttention = false
 jointPPO = false
 one_by_one_training = false
+square_rewards = true
 
 
 
@@ -392,7 +393,9 @@ function reward_function(env; returnGlobalNu = false)
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
         rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
-        #rewards[i] = sign(rewards[i]) * rewards[i]^2
+        if square_rewards
+            rewards[i] = sign(rewards[i]) * rewards[i]^2
+        end
     end
  
     return rewards
@@ -538,6 +541,8 @@ function initialize_setup(;use_random_init = false)
     exec(open("./pythonMAT/mat.py").read())
 
     arg_string = "--obs_dim " + str( $(size(env.state_space)[1]) ) + " --act_dim 1 --n_agent " + str( $(actuators) )
+
+    arg_string += " --n_head 8 --n_block 2 --n_embd 56"
 
     print(arg_string)
     

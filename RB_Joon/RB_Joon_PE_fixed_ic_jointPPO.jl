@@ -118,6 +118,7 @@ betas = (0.99, 0.99)
 
 customCrossAttention = false
 jointPPO = true
+square_rewards = true
 
 
 
@@ -355,7 +356,9 @@ function reward_function(env; returnGlobalNu = false)
     end
 
     rewards = 2.6726 .* ones(Float32, actuators) - ones(Float32, actuators) .* globalNu
-    #rewards = sign.(rewards) .* (rewards.^2)
+    if square_rewards
+        rewards = sign.(rewards) .* rewards.^2
+    end
 
  
     return rewards

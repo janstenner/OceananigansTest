@@ -103,24 +103,26 @@ clip_grad = 0.7
 target_kl = 0.1
 clip1 = false
 start_logσ = -0.4
+clip_range = 0.05f0
 
 
 drop_middle_layer = true
 drop_middle_layer_critic = true
-block_num = 1
+block_num = 2
 dim_model = 80
-head_num = 3
-head_dim = 30
+head_num = 5
+head_dim = 20
 ffn_dim = 120
 drop_out = 0.1
 
-betas = (0.99, 0.99)
+betas = (0.9, 0.999)#(0.99, 0.99)
 
 matmix_variant = 1
 joon_PE = true
 customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
+square_rewards = true
 
 
 
@@ -380,7 +382,9 @@ function reward_function(env; returnGlobalNu = false)
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
         rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
-        #rewards[i] = sign(rewards[i]) * rewards[i]^2
+        if square_rewards
+            rewards[i] = sign(rewards[i]) * rewards[i]^2
+        end
     end
  
     return rewards
@@ -512,6 +516,7 @@ function initialize_setup(;use_random_init = false)
                 customCrossAttention = customCrossAttention,
                 one_by_one_training = one_by_one_training,
                 matmix_variant = matmix_variant,
+                clip_range = clip_range,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,

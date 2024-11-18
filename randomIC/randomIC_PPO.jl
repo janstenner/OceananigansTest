@@ -35,7 +35,7 @@ end
 
 seed = Int(floor(rand()*1000))
 
-#seed = 172
+seed = 172
 
 te = 300.0
 t0 = 0.0
@@ -106,6 +106,11 @@ target_kl = 0.8
 clip1 = false
 start_logσ = -1.1
 tanh_end = false
+
+
+
+square_rewards = true
+
 
 
 chebychev_z = false
@@ -362,7 +367,9 @@ function reward_function(env; returnGlobalNu = false)
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
         rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
-        #rewards[i] = sign(rewards[i]) * rewards[i]^2
+        if square_rewards
+            rewards[i] = sign(rewards[i]) * rewards[i]^2
+        end
     end
  
     return rewards
