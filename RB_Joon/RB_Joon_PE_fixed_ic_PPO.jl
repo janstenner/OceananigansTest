@@ -35,7 +35,7 @@ end
 
 seed = Int(floor(rand()*100000))
 
-seed = 172
+#seed = 172
 
 te = 300.0
 t0 = 0.0
@@ -95,17 +95,18 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 200
 
 
-learning_rate = 3e-4
-n_epochs = 7
+learning_rate = 1e-4
+n_epochs = 3
 n_microbatches = 24
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
 clip_grad = 0.3
-target_kl = 0.8
+target_kl = 0.1
 clip1 = false
-start_logσ = -1.1
+start_logσ = -0.8
 tanh_end = false
+clip_range = 0.05f0
 
 betas = (0.9, 0.999)#(0.99,0.99)
 square_rewards = true
@@ -479,7 +480,8 @@ function initialize_setup(;use_random_init = false)
                 target_kl = target_kl,
                 start_logσ = start_logσ,
                 tanh_end = tanh_end,
-                betas = betas,)
+                betas = betas,
+                clip_range = clip_range,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
