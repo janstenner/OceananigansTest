@@ -90,12 +90,12 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 200
+update_freq = 40
 
 
 learning_rate = 1e-4
 n_epochs = 3
-n_microbatches = 20
+n_microbatches = 4
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01

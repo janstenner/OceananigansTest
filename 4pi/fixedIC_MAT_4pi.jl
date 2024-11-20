@@ -730,7 +730,7 @@ function render_run(;use_zeros = false)
 
         p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
 
-        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1000, height=800)
+        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=2000, height=800)
         #body!(w,p)
 
         temp_reward = reward_function(env; returnGlobalNu = true)
