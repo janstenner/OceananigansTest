@@ -37,7 +37,7 @@ end
 seed = Int(floor(rand()*1000))
 #seed = 857
 
-te = 2400.0
+te = 300.0
 t0 = 0.0
 min_best_episode = 1
 
@@ -77,7 +77,7 @@ fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 9
+window_size = 7
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -100,7 +100,7 @@ logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
 clip_grad = 0.5
-target_kl = 0.1
+target_kl = Inf
 clip1 = false
 start_logσ = -0.8
 clip_range = 0.05f0
@@ -109,10 +109,10 @@ clip_range = 0.05f0
 drop_middle_layer = true
 drop_middle_layer_critic = true
 block_num = 2
-dim_model = 80
+dim_model = 280
 head_num = 5
-head_dim = 20
-ffn_dim = 120
+head_dim = 50
+ffn_dim = 320
 drop_out = 0.1
 
 betas = (0.9, 0.999)
