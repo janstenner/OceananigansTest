@@ -190,7 +190,9 @@ function train!(model, state_tree, data; epochs = 10)
 
     for i in 1:epochs
         g_fno = Flux.gradient(model) do fno
-            loss = mean((fno(data[1]) - data[2]).^2)
+            result = fno(data[1]) - data[2]
+            #result = sum(result, dims=(1,2))
+            loss = mean((result).^2)
 
             ignore() do
                 push!(global_losses, Float64.(loss))
@@ -343,6 +345,9 @@ function train(training_runs = 8)
     display(plot(global_losses))
 
     save(3)
+
+    GC.gc(true)
+    CUDA.reclaim()
 end
 
 
@@ -473,4 +478,7 @@ function compare(one_by_one = false)
     #run(`ffmpeg -framerate 16 -i "compare_frames/a%05d.png" -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le "video_output/comparison.mp4"`)
 
     run(`ffmpeg -framerate 16 -i $(dirpath * "./compare_frames/a%05d.png") -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac $(dirpath * "./video_output/comparison.mp4")`)
+
+    GC.gc(true)
+    CUDA.reclaim()
 end
