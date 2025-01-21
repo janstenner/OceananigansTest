@@ -333,7 +333,7 @@ function train(training_runs = 8)
                 outputs[:,:,:,:,k] = permutedims(results[:,:,:,start+fno_input_timesteps:start+2*fno_input_timesteps-1],(1,2,4,3))
             end
 
-            data = [CuArray(inputs), CuArray(outputs)];
+            data = [CuArray(deepcopy(inputs)), CuArray(deepcopy(outputs))];
 
             train!(fno, state_tree, data; epochs=3)
         end
