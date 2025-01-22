@@ -58,7 +58,7 @@ chebychev_z = false
 
 actions = ones(12)
 
-use_gpu = false
+use_gpu = true
 
 
 if chebychev_z
