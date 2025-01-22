@@ -252,10 +252,10 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global fno = JLD2.load(dirpath * "./saves/fno.jld2","fno")
+        global fno = JLD2.load(dirpath * "/saves/fno.jld2","fno")
         #global fno = deserialize("saves/fno.dat")
     else
-        global fno = JLD2.load(dirpath * "./saves/fno$number.jld2","fno")
+        global fno = JLD2.load(dirpath * "/saves/fno$number.jld2","fno")
         #global fno = deserialize("saves/fno$number.dat")
     end
 end
@@ -264,10 +264,10 @@ function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
     if isnothing(number)
-        jldsave(dirpath * "./saves/fno.jld2"; fno)
+        jldsave(dirpath * "/saves/fno.jld2"; fno)
         #serialize("saves/fno.dat", fno)
     else
-        jldsave(dirpath * "./saves/fno$number.dat.jld2"; fno)
+        jldsave(dirpath * "/saves/fno$number.dat.jld2"; fno)
         #serialize("saves/fno$number.dat", fno)
     end
 end
@@ -327,7 +327,7 @@ function train(training_runs = 8)
             if visuals_training
                 p = plot(heatmap(z=model.tracers.b[1:Nx,1,1:Nz]', coloraxis="coloraxis"), layout)
 
-                savefig(p, dirpath * "./frames//a$(lpad(string((run-1)*totalsteps+i), 5, '0')).png"; width=1000, height=800)
+                savefig(p, dirpath * "/frames//a$(lpad(string((run-1)*totalsteps+i), 5, '0')).png"; width=1000, height=800)
             end
 
 
@@ -507,25 +507,25 @@ function compare(one_by_one = false)
 
 
 
-    rm(dirpath * "./compare_frames/", recursive=true, force=true)
-    mkdir(dirpath * "./compare_frames/")
+    rm(dirpath * "/compare_frames/", recursive=true, force=true)
+    mkdir(dirpath * "/compare_frames/")
 
     for i in 1:size(model_results)[3]
         p = make_subplots(rows=1, cols=2)
         add_trace!(p, heatmap(z=sim_results[:,:,i]', coloraxis="coloraxis"), col = 1)
         add_trace!(p, heatmap(z=model_results[:,:,i]', coloraxis="coloraxis"), col = 2)
         relayout!(p, layout.fields)
-        savefig(p, dirpath * "./compare_frames//a$(lpad(string(i), 5, '0')).png"; width=1600, height=800)
+        savefig(p, dirpath * "/compare_frames//a$(lpad(string(i), 5, '0')).png"; width=1600, height=800)
     end
 
 
 
 
-    isdir(dirpath * "./video_output") || mkdir(dirpath * "./video_output")
-    rm(dirpath * "./video_output/comparison.mp4", force=true)
+    isdir(dirpath * "/video_output") || mkdir(dirpath * "/video_output")
+    rm(dirpath * "/video_output/comparison.mp4", force=true)
     #run(`ffmpeg -framerate 16 -i "compare_frames/a%05d.png" -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le "video_output/comparison.mp4"`)
 
-    run(`ffmpeg -framerate 16 -i $(dirpath * "./compare_frames/a%05d.png") -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac $(dirpath * "./video_output/comparison.mp4")`)
+    run(`ffmpeg -framerate 16 -i $(dirpath * "/compare_frames/a%05d.png") -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac $(dirpath * "/video_output/comparison.mp4")`)
 
     GC.gc(true)
     if use_gpu
