@@ -46,3 +46,14 @@ x_inv = NeuralOperators.inverse(tform, x_padded, size(test_input))
 
 plot(heatmap(z=test_input[:,:,8,1,1]'))
 plot(heatmap(z=x_inv[:,:,8,1,1]'))
+
+
+#------------------------------------------------------------------------------------
+
+
+convtest = Conv((1,1), 2 => 2)
+
+convtest.weight[1,1,:,:] = Float32[-1.1714135 -0.17162837; -0.98613584 1.1780858]
+convtest.bias[:] = Float32[-0.14792423, -0.09325749]
+
+test_input = Float32[-0.5 -0.7; -0.2 1.1 ;;; 0.5 0.7; -1.4 0.1 ]
