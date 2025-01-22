@@ -344,7 +344,9 @@ function train(training_runs = 8)
 
         for i in 1:n_batches
             GC.gc(true)
-            CUDA.reclaim()
+            if use_gpu
+                CUDA.reclaim()
+            end
             println(i)
             
             for k in 1:batch_size
@@ -370,7 +372,9 @@ function train(training_runs = 8)
     save(3)
 
     GC.gc(true)
-    CUDA.reclaim()
+    if use_gpu
+        CUDA.reclaim()
+    end
 end
 
 
@@ -482,7 +486,9 @@ function compare(one_by_one = false)
     end
 
     GC.gc(true)
-    CUDA.reclaim()
+    if use_gpu
+        CUDA.reclaim()
+    end
 
     @time simulate_rest()
 
@@ -515,5 +521,7 @@ function compare(one_by_one = false)
     run(`ffmpeg -framerate 16 -i $(dirpath * "./compare_frames/a%05d.png") -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac $(dirpath * "./video_output/comparison.mp4")`)
 
     GC.gc(true)
-    CUDA.reclaim()
+    if use_gpu
+        CUDA.reclaim()
+    end
 end
