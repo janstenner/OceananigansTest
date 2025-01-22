@@ -58,6 +58,8 @@ chebychev_z = false
 
 actions = ones(12)
 
+use_gpu = false
+
 
 if chebychev_z
     chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
@@ -180,8 +182,12 @@ fan_in = first(Flux.nfan(size(project.layers[2].weight)))
 project.layers[2].bias[:] = custom_uniform(fan_in, size(project.layers[2].bias)...)
 
 
-dev = gpu_device()
-fno = FourierNeuralOperator(lifting, mapping, project) |> dev
+if use_gpu
+    dev = gpu_device()
+    fno = FourierNeuralOperator(lifting, mapping, project) |> dev
+else
+    fno = FourierNeuralOperator(lifting, mapping, project)
+end
 
 rng = Random.default_rng()
 
@@ -347,7 +353,12 @@ function train(training_runs = 8)
                 outputs[:,:,:,:,k] = permutedims(results[:,:,:,start+fno_input_timesteps:start+2*fno_input_timesteps-1],(1,2,4,3))
             end
 
-            data = [CuArray(deepcopy(inputs)), CuArray(deepcopy(outputs))];
+            if use_gpu
+                data = [CuArray(deepcopy(inputs)), CuArray(deepcopy(outputs))];
+            else
+                data = [inputs, outputs];
+            end
+            
 
             train!(fno, state_tree, data; epochs=3)
         end
@@ -430,7 +441,13 @@ function compare(one_by_one = false)
 
     function model_rest()
         global ps, st, fno
-        reshaped_input = CuArray(reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1)))
+        
+        if use_gpu
+            reshaped_input = CuArray(reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1)))
+        else
+            reshaped_input = reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1))
+        end
+
         for i in start_steps+fno_input_timesteps+1:fno_input_timesteps:totalsteps
             
             reshaped_input = fno(reshaped_input)
@@ -446,7 +463,13 @@ function compare(one_by_one = false)
 
     function model_rest_obo()
         global ps, st, fno
-        reshaped_input = CuArray(reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1)))
+
+        if use_gpu
+            reshaped_input = CuArray(reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1)))
+        else
+            reshaped_input = reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1))
+        end
+
         for i in start_steps+fno_input_timesteps+1:totalsteps
             
             new_reshaped_input = fno(reshaped_input)
