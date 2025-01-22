@@ -172,6 +172,13 @@ project = Chain(Conv((1,1,1), ch[6]=>ch[7], σ),
 
 
 #biases for conv layers
+function custom_uniform(rng::AbstractRNG, fan_in, dims...)
+    bound = Float32(1/ sqrt(fan_in)) # fan_in
+    return (rand(rng, Float32, dims...) .- 0.5f0) .* 2bound
+end
+
+custom_uniform(fan_in, dims...; kwargs...) = custom_uniform(Random.GLOBAL_RNG, fan_in, dims...; kwargs...)
+
 fan_in = first(Flux.nfan(size(lifting.weight)))
 lifting.bias[:] = custom_uniform(fan_in, size(lifting.bias)...)
 
