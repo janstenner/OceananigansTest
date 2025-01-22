@@ -167,8 +167,20 @@ mapping = Chain(OperatorKernel(ch[2] => ch[3], modes, Transform, σ; permuted = 
 project = Chain(Conv((1,1,1), ch[6]=>ch[7], σ),
                 Conv((1,1,1), ch[7]=>ch[8]))
 
-dev = gpu_device()
 
+
+#biases for conv layers
+fan_in = first(Flux.nfan(size(lifting.weight)))
+lifting.bias[:] = custom_uniform(fan_in, size(lifting.bias)...)
+
+fan_in = first(Flux.nfan(size(project.layers[1].weight)))
+project.layers[1].bias[:] = custom_uniform(fan_in, size(project.layers[1].bias)...)
+
+fan_in = first(Flux.nfan(size(project.layers[2].weight)))
+project.layers[2].bias[:] = custom_uniform(fan_in, size(project.layers[2].bias)...)
+
+
+dev = gpu_device()
 fno = FourierNeuralOperator(lifting, mapping, project) |> dev
 
 rng = Random.default_rng()
