@@ -165,7 +165,7 @@ lifting = Conv((1,1,1), ch[1]=>ch[2])
 mapping = Chain(OperatorKernel(ch[2] => ch[3], modes, Transform, σ; permuted = true),
                 OperatorKernel(ch[3] => ch[4], modes, Transform, σ; permuted = true),
                 OperatorKernel(ch[4] => ch[5], modes, Transform, σ; permuted = true),
-                OperatorKernel(ch[5] => ch[6], modes, Transform; permuted = true))
+                OperatorKernel(ch[5] => ch[6], modes, Transform, σ; permuted = true))
 project = Chain(Conv((1,1,1), ch[6]=>ch[7], σ),
                 Conv((1,1,1), ch[7]=>ch[8]))
 
@@ -200,6 +200,17 @@ mapping.layers[3].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[3]
 fan_in = first(Flux.nfan(size(mapping.layers[4].linear.weight)))
 mapping.layers[4].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[4].linear.bias)...)
 
+scale = one(eltype(FourierTransform)) / (ch[2] * ch[3])
+mapping.layers[1].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch[3],ch[2],prod(modes)), (3,2,1))
+
+scale = one(eltype(FourierTransform)) / (ch[3] * ch[4])
+mapping.layers[2].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch[4],ch[3],prod(modes)), (3,2,1))
+
+scale = one(eltype(FourierTransform)) / (ch[4] * ch[5])
+mapping.layers[3].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch[5],ch[4],prod(modes)), (3,2,1))
+
+scale = one(eltype(FourierTransform)) / (ch[5] * ch[6])
+mapping.layers[4].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch[6],ch[5],prod(modes)), (3,2,1))
 
 if use_gpu
     dev = gpu_device()
