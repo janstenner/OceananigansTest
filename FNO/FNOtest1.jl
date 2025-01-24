@@ -188,6 +188,18 @@ project.layers[1].bias[:] = custom_uniform(fan_in, size(project.layers[1].bias).
 fan_in = first(Flux.nfan(size(project.layers[2].weight)))
 project.layers[2].bias[:] = custom_uniform(fan_in, size(project.layers[2].bias)...)
 
+fan_in = first(Flux.nfan(size(mapping.layers[1].linear.weight)))
+mapping.layers[1].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[1].linear.bias)...)
+
+fan_in = first(Flux.nfan(size(mapping.layers[2].linear.weight)))
+mapping.layers[2].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[2].linear.bias)...)
+
+fan_in = first(Flux.nfan(size(mapping.layers[3].linear.weight)))
+mapping.layers[3].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[3].linear.bias)...)
+
+fan_in = first(Flux.nfan(size(mapping.layers[4].linear.weight)))
+mapping.layers[4].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[4].linear.bias)...)
+
 
 if use_gpu
     dev = gpu_device()
