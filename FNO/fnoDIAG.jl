@@ -322,3 +322,50 @@ loss
 
 
 output_after = fno2(test_input)
+
+
+
+#-------------------------------------------------------------------------------------------------------------------------------
+
+
+
+function compare(x,y)
+    println("----------------")
+    println("$(mean(x))   vs   $(mean(y))")
+    println("$(std(x))   vs   $(std(y))")
+    if(typeof(x[1])==ComplexF32)
+        println("$(minimum(real(x)))   vs   $(minimum(real(y)))")
+        println("$(maximum(real(x)))   vs   $(maximum(real(y)))")
+        println("$(minimum(imag(x)))   vs   $(minimum(imag(y)))")
+        println("$(maximum(imag(x)))   vs   $(maximum(imag(y)))")
+    else
+        println("$(minimum(x))   vs   $(minimum(y))")
+        println("$(maximum(x))   vs   $(maximum(y))")
+    end
+    println("----------------")
+end
+
+compare(lifting.weight, ps.layer_1.weight)    # min and max dont match
+compare(lifting.bias, ps.layer_1.bias)
+
+compare(mapping.layers[1].linear.weight, ps.layer_2.layer_1.layer_1.weight)
+compare(mapping.layers[1].linear.bias, ps.layer_2.layer_1.layer_1.bias)
+compare(mapping.layers[1].conv.weight, permutedims(ps.layer_2.layer_1.layer_2.weight[:,:,:], (3,2,1))) # min and max of imag shifted
+
+# compare(mapping.layers[2].linear.weight, ps.layer_2.layer_2.layer_1.weight)
+# compare(mapping.layers[2].linear.bias, ps.layer_2.layer_2.layer_1.bias)
+# compare(mapping.layers[2].conv.weight, permutedims(ps.layer_2.layer_2.layer_2.weight[:,:,:], (3,2,1)))
+
+# compare(mapping.layers[3].linear.weight, ps.layer_2.layer_3.layer_1.weight)
+# compare(mapping.layers[3].linear.bias, ps.layer_2.layer_3.layer_1.bias)
+# compare(mapping.layers[3].conv.weight, permutedims(ps.layer_2.layer_3.layer_2.weight[:,:,:], (3,2,1)))
+
+# compare(mapping.layers[4].linear.weight, ps.layer_2.layer_4.layer_1.weight)
+# compare(mapping.layers[4].linear.bias, ps.layer_2.layer_4.layer_1.bias)
+# compare(mapping.layers[4].conv.weight, permutedims(ps.layer_2.layer_4.layer_2.weight[:,:,:], (3,2,1)))
+
+compare(project.layers[1].weight, ps.layer_3.layer_1.weight)    # min and max dont match
+compare(project.layers[1].bias, ps.layer_3.layer_1.bias)
+
+compare(project.layers[2].weight, ps.layer_3.layer_2.weight)    # min and max dont match
+compare(project.layers[2].bias, ps.layer_3.layer_2.bias)

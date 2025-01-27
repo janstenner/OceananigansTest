@@ -6,3 +6,5 @@ video_output/*
 .vscode/*
 
 .CondaPkg/*
+
+parameters.jld2
