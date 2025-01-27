@@ -158,6 +158,31 @@ minimum(real(flux_change - lux_change))
 minimum(imag(flux_change - lux_change))
 
 
+test_input = reshape(collect(1:250).*-0.006, (5,5,5,2,1))
+
+test_output = reshape(collect(250:-1:1).*0.002, (5,5,5,2,1))
+
+optimizer = Optimisers.Adam(0.01)
+state_tree_okconv = Flux.setup(optimizer, okconv)
+
+loss = 0.0f0
+g_okconv = Flux.gradient(okconv) do okc
+    result = NeuralOperators.operator_conv(okc, test_input) - test_output
+    #result = sum(result, dims=(1,2))
+    inner_loss = mean((result).^2)
+
+    ignore() do
+        global loss = inner_loss
+    end
+
+    inner_loss
+end
+
+Flux.update!(state_tree_okconv, okconv, g_okconv[1])
+
+loss
+
+
 
 
 #------------------------------------------------------------------------------------
