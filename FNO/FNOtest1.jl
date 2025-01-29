@@ -156,7 +156,9 @@ b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1),
 
 fno_input_timesteps = 10
 
-ch=(3,64,64,64,64,64, 128, 3)
+batch_size = 8
+
+ch=(3,32,32,32,32,32, 128, 3)
 modes=(16,16,fno_input_timesteps,)
 σ = gelu
 
@@ -164,6 +166,8 @@ Transform = NeuralOperators.FourierTransform
 lifting = Conv((1,1,1), ch[1]=>ch[2])
 mapping = Chain(OperatorKernel(ch[2] => ch[3], modes, Transform, σ; permuted = true),
                 OperatorKernel(ch[3] => ch[4], modes, Transform, σ; permuted = true),
+                OperatorKernel(ch[4] => ch[5], modes, Transform, σ; permuted = true),
+                OperatorKernel(ch[4] => ch[5], modes, Transform, σ; permuted = true),
                 OperatorKernel(ch[4] => ch[5], modes, Transform, σ; permuted = true),
                 OperatorKernel(ch[5] => ch[6], modes, Transform, σ; permuted = true))
 project = Chain(Conv((1,1,1), ch[6]=>ch[7], σ),
@@ -181,36 +185,27 @@ custom_uniform(fan_in, dims...; kwargs...) = custom_uniform(Random.GLOBAL_RNG, f
 
 fan_in = first(Flux.nfan(size(lifting.weight)))
 lifting.bias[:] = custom_uniform(fan_in, size(lifting.bias)...)
+lifting.weight[:,:,:,:,:] = Flux.kaiming_uniform(size(lifting.weight)...; gain=1)
 
 fan_in = first(Flux.nfan(size(project.layers[1].weight)))
 project.layers[1].bias[:] = custom_uniform(fan_in, size(project.layers[1].bias)...)
+project.layers[1].weight[:,:,:,:,:] = Flux.kaiming_uniform(size(project.layers[1].weight)...; gain=1)
 
 fan_in = first(Flux.nfan(size(project.layers[2].weight)))
 project.layers[2].bias[:] = custom_uniform(fan_in, size(project.layers[2].bias)...)
+project.layers[2].weight[:,:,:,:,:] = Flux.kaiming_uniform(size(project.layers[2].weight)...; gain=1)
 
-fan_in = first(Flux.nfan(size(mapping.layers[1].linear.weight)))
-mapping.layers[1].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[1].linear.bias)...)
+for j in length(mapping.layers)
+    fan_in = first(Flux.nfan(size(mapping.layers[j].linear.weight)))
+    mapping.layers[j].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[1].linear.bias)...)
 
-fan_in = first(Flux.nfan(size(mapping.layers[2].linear.weight)))
-mapping.layers[2].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[2].linear.bias)...)
+    ch_in = size(mapping.layers[1].linear.weight)[4]
+    ch_out = size(mapping.layers[1].linear.weight)[5]
+    scale = one(eltype(FourierTransform)) / (ch_in * ch_out)
+    mapping.layers[j].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch_out,ch_in,prod(modes)), (3,2,1))
+end
 
-fan_in = first(Flux.nfan(size(mapping.layers[3].linear.weight)))
-mapping.layers[3].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[3].linear.bias)...)
 
-fan_in = first(Flux.nfan(size(mapping.layers[4].linear.weight)))
-mapping.layers[4].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[4].linear.bias)...)
-
-scale = one(eltype(FourierTransform)) / (ch[2] * ch[3])
-mapping.layers[1].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch[3],ch[2],prod(modes)), (3,2,1))
-
-scale = one(eltype(FourierTransform)) / (ch[3] * ch[4])
-mapping.layers[2].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch[4],ch[3],prod(modes)), (3,2,1))
-
-scale = one(eltype(FourierTransform)) / (ch[4] * ch[5])
-mapping.layers[3].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch[5],ch[4],prod(modes)), (3,2,1))
-
-scale = one(eltype(FourierTransform)) / (ch[5] * ch[6])
-mapping.layers[4].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch[6],ch[5],prod(modes)), (3,2,1))
 
 if use_gpu
     dev = gpu_device()
@@ -222,7 +217,7 @@ end
 rng = Random.default_rng()
 
 #ps, st = Lux.setup(rng, fno) |> dev;
-optimizer = Optimisers.Adam(0.001)
+optimizer = Optimisers.Adam(0.0001)
 state_tree = Flux.setup(optimizer, fno)
 
 
@@ -286,11 +281,13 @@ end
 function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
+    fno_cpu = fno |> cpu
+
     if isnothing(number)
-        jldsave(dirpath * "/saves/fno.jld2"; fno)
+        jldsave(dirpath * "/saves/fno.jld2"; fno_cpu)
         #serialize("saves/fno.dat", fno)
     else
-        jldsave(dirpath * "/saves/fno$number.dat.jld2"; fno)
+        jldsave(dirpath * "/saves/fno$number.jld2"; fno_cpu)
         #serialize("saves/fno$number.dat", fno)
     end
 end
@@ -360,12 +357,12 @@ function train(training_runs = 8)
                 results[:,:,3,i-start_steps] = model.velocities.u[1:Nx,1,1:Nz]
             end
 
-            println(cur_time)
+            #println(cur_time)
         end
 
 
         n_batches = 30
-        batch_size = 8
+        global batch_size
         global global_losses
 
         println("starting batches...")

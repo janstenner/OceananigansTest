@@ -324,11 +324,13 @@ end
 function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
+    fno_cpu = fno |> cpu
+
     if isnothing(number)
-        jldsave(dirpath * "/saves/fno.jld2"; fno)
+        jldsave(dirpath * "/saves/fno.jld2"; fno_cpu)
         #serialize("saves/fno.dat", fno)
     else
-        jldsave(dirpath * "/saves/fno$number.dat.jld2"; fno)
+        jldsave(dirpath * "/saves/fno$number.jld2"; fno_cpu)
         #serialize("saves/fno$number.dat", fno)
     end
 end
