@@ -12,7 +12,7 @@ using NeuralOperators
 using CUDA
 using JLD2
 using Zygote
-using JSON3
+using JSON
 
 
 
@@ -628,7 +628,7 @@ function generate_data(one_by_one = false)
 
 
     open("rbc_data.json", "w") do f
-        JSON3.write(f, sim_results)
+        JSON.print(f, sim_results)
         println(f)
     end
 
