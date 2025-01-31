@@ -60,6 +60,42 @@ actions = ones(12)
 
 use_gpu = true
 
+fno_input_timesteps = 10
+batch_size = 8
+
+n_batches = 30
+
+use_pressure = false
+auto_regressive_training = false
+
+
+
+if use_pressure
+    collect_fields = 5
+else
+    collect_fields = 3
+end
+
+ch=(collect_fields,64,64,64,64,64, 128, collect_fields)
+modes=(16,16,fno_input_timesteps,)
+σ = gelu
+
+
+Transform = NeuralOperators.FourierTransform
+lifting = Conv((1,1,1), ch[1]=>ch[2])
+mapping = Chain(OperatorKernel(ch[2] => ch[3], modes, Transform, σ; permuted = true),
+                OperatorKernel(ch[3] => ch[4], modes, Transform, σ; permuted = true),
+                OperatorKernel(ch[4] => ch[5], modes, Transform, σ; permuted = true),
+                OperatorKernel(ch[5] => ch[6], modes, Transform, σ; permuted = true))
+project = Chain(Conv((1,1,1), ch[6]=>ch[7], σ),
+                Conv((1,1,1), ch[7]=>ch[8]))
+
+
+
+
+
+
+
 
 if chebychev_z
     chebychev_spaced_z_faces(k) = 2 - Lz/2 - Lz/2 * cos(π * (k - 1) / Nz);
@@ -151,25 +187,6 @@ w_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
                                 bottom = ValueBoundaryCondition(0))
 b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1),
                                 bottom = ValueBoundaryCondition(bottom_T))#1+Δb))
-
-
-
-fno_input_timesteps = 3
-
-batch_size = 8
-
-ch=(3,64,64,64,64,64, 128, 3)
-modes=(16,16,fno_input_timesteps,)
-σ = gelu
-
-Transform = NeuralOperators.FourierTransform
-lifting = Conv((1,1,1), ch[1]=>ch[2])
-mapping = Chain(OperatorKernel(ch[2] => ch[3], modes, Transform, σ; permuted = true),
-                OperatorKernel(ch[3] => ch[4], modes, Transform, σ; permuted = true),
-                OperatorKernel(ch[4] => ch[5], modes, Transform, σ; permuted = true),
-                OperatorKernel(ch[5] => ch[6], modes, Transform, σ; permuted = true))
-project = Chain(Conv((1,1,1), ch[6]=>ch[7], σ),
-                Conv((1,1,1), ch[7]=>ch[8]))
 
 
 
@@ -329,7 +346,7 @@ function train(training_runs = 8)
 
         simulation.verbose = false
 
-        global results = zeros(Float32,Nx,Nz,3,totalsteps-20)     # order (x_1, ... , x_d, ch, batch)
+        global results = zeros(Float32,Nx,Nz,collect_fields,totalsteps-20)     # order (x_1, ... , x_d, ch, batch)
 
         for i in 1:totalsteps
             #new boundary conditions
@@ -353,19 +370,23 @@ function train(training_runs = 8)
                 results[:,:,1,i-start_steps] = model.tracers.b[1:Nx,1,1:Nz]
                 results[:,:,2,i-start_steps] = model.velocities.w[1:Nx,1,1:Nz]
                 results[:,:,3,i-start_steps] = model.velocities.u[1:Nx,1,1:Nz]
+                if use_pressure
+                    results[:,:,4,i-start_steps] = model.pressures.pHY′[1:Nx,1,1:Nz]
+                    results[:,:,5,i-start_steps] = model.pressures.pNHS[1:Nx,1,1:Nz]
+                end
             end
 
             #println(cur_time)
         end
 
 
-        n_batches = 30
+        global n_batches
         global batch_size
         global global_losses
 
         println("starting batches...")
-        inputs = zeros(Float32,Nx,Nz,fno_input_timesteps,3,batch_size) 
-        outputs = zeros(Float32,Nx,Nz,fno_input_timesteps,3,batch_size) 
+        inputs = zeros(Float32,Nx,Nz,fno_input_timesteps,collect_fields,batch_size) 
+        outputs = zeros(Float32,Nx,Nz,fno_input_timesteps,collect_fields,batch_size) 
 
         for i in 1:n_batches
             GC.gc(true)
@@ -376,8 +397,14 @@ function train(training_runs = 8)
             
             for k in 1:batch_size
                 start = rand(1:totalsteps-start_steps-2*fno_input_timesteps)
-                inputs[:,:,:,:,k] = permutedims(results[:,:,:,start:start+fno_input_timesteps-1],(1,2,4,3))
-                outputs[:,:,:,:,k] = permutedims(results[:,:,:,start+fno_input_timesteps:start+2*fno_input_timesteps-1],(1,2,4,3))
+
+                if auto_regressive_training
+                    inputs[:,:,:,:,k] = permutedims(results[:,:,:,start:start+fno_input_timesteps-1],(1,2,4,3))
+                    outputs[:,:,:,:,k] = permutedims(results[:,:,:,start+1:start+fno_input_timesteps],(1,2,4,3))
+                else
+                    inputs[:,:,:,:,k] = permutedims(results[:,:,:,start:start+fno_input_timesteps-1],(1,2,4,3))
+                    outputs[:,:,:,:,k] = permutedims(results[:,:,:,start+fno_input_timesteps:start+2*fno_input_timesteps-1],(1,2,4,3))
+                end
             end
 
             if use_gpu
@@ -415,6 +442,10 @@ end
 
 function compare(one_by_one = false)
 
+    if auto_regressive_training
+        one_by_one = true
+    end
+
     model = NonhydrostaticModel(; grid,
                 advection = UpwindBiasedFifthOrder(),
                 timestepper = :RungeKutta3,
@@ -441,7 +472,7 @@ function compare(one_by_one = false)
 
     global sim_results = zeros(Float32,Nx,Nz,totalsteps-start_steps-fno_input_timesteps)
     global model_results = zeros(Float32,Nx,Nz,totalsteps-start_steps-fno_input_timesteps)
-    global last_steps = zeros(Float32,Nx,Nz,fno_input_timesteps,3)
+    global last_steps = zeros(Float32,Nx,Nz,fno_input_timesteps,collect_fields)
 
     for i in 1:start_steps+fno_input_timesteps
         global simulation.stop_time = Δt_snap*i
@@ -453,6 +484,10 @@ function compare(one_by_one = false)
             last_steps[:,:,i-start_steps,1] = model.tracers.b[1:Nx,1,1:Nz]
             last_steps[:,:,i-start_steps,2] = model.velocities.w[1:Nx,1,1:Nz]
             last_steps[:,:,i-start_steps,3] = model.velocities.u[1:Nx,1,1:Nz]
+            if use_pressure
+                last_steps[:,:,i-start_steps,4] = model.pressures.pHY′[1:Nx,1,1:Nz]
+                last_steps[:,:,i-start_steps,5] = model.pressures.pNHS[1:Nx,1,1:Nz]
+            end
         end
 
         println(cur_time)
@@ -472,9 +507,9 @@ function compare(one_by_one = false)
         global ps, st, fno
         
         if use_gpu
-            reshaped_input = CuArray(reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1)))
+            reshaped_input = CuArray(reshape(last_steps,(Nx,Nz,fno_input_timesteps,collect_fields,1)))
         else
-            reshaped_input = reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1))
+            reshaped_input = reshape(last_steps,(Nx,Nz,fno_input_timesteps,collect_fields,1))
         end
 
         for i in start_steps+fno_input_timesteps+1:fno_input_timesteps:totalsteps
@@ -482,6 +517,7 @@ function compare(one_by_one = false)
             reshaped_input = fno(reshaped_input)
         
             if i-start_steps-1 > totalsteps-start_steps-fno_input_timesteps
+                #for when there are less frames left in the results than were generated
                 difference = i-start_steps-1-totalsteps+start_steps+fno_input_timesteps
                 model_results[:,:,i-start_steps-fno_input_timesteps:end] = Array(reshaped_input)[:,:,1:difference,1,1]
             else
@@ -494,9 +530,9 @@ function compare(one_by_one = false)
         global ps, st, fno
 
         if use_gpu
-            reshaped_input = CuArray(reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1)))
+            reshaped_input = CuArray(reshape(last_steps,(Nx,Nz,fno_input_timesteps,collect_fields,1)))
         else
-            reshaped_input = reshape(last_steps,(Nx,Nz,fno_input_timesteps,3,1))
+            reshaped_input = reshape(last_steps,(Nx,Nz,fno_input_timesteps,collect_fields,1))
         end
 
         for i in start_steps+fno_input_timesteps+1:totalsteps
