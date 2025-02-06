@@ -285,11 +285,16 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global fno = JLD2.load(dirpath * "/saves/fno.jld2","fno")
+        global fno = JLD2.load(dirpath * "/saves/fno.jld2","fno_cpu")
         #global fno = deserialize("saves/fno.dat")
     else
-        global fno = JLD2.load(dirpath * "/saves/fno$number.jld2","fno")
+        global fno = JLD2.load(dirpath * "/saves/fno$number.jld2","fno_cpu")
         #global fno = deserialize("saves/fno$number.dat")
+    end
+    global use_gpu
+    if use_gpu
+        dev = gpu_device()
+        fno = fno |> dev
     end
 end
 
@@ -440,7 +445,7 @@ end
 
 
 
-function compare(one_by_one = false)
+function compare(one_by_one = false, real_input = false)
 
     if auto_regressive_training
         one_by_one = true
@@ -470,7 +475,11 @@ function compare(one_by_one = false)
 
     simulation.verbose = false
 
-    global sim_results = zeros(Float32,Nx,Nz,totalsteps-start_steps-fno_input_timesteps)
+    if real_input
+        global sim_results = zeros(Float32,Nx,Nz,totalsteps-start_steps-fno_input_timesteps,collect_fields)
+    else
+        global sim_results = zeros(Float32,Nx,Nz,totalsteps-start_steps-fno_input_timesteps)
+    end
     global model_results = zeros(Float32,Nx,Nz,totalsteps-start_steps-fno_input_timesteps)
     global last_steps = zeros(Float32,Nx,Nz,fno_input_timesteps,collect_fields)
 
@@ -499,7 +508,17 @@ function compare(one_by_one = false)
         
             run!(simulation)
         
-            sim_results[:,:,i-start_steps-fno_input_timesteps] = model.tracers.b[1:Nx,1,1:Nz]
+            if real_input
+                sim_results[:,:,i-start_steps-fno_input_timesteps,1] = model.tracers.b[1:Nx,1,1:Nz]
+                sim_results[:,:,i-start_steps-fno_input_timesteps,2] = model.velocities.w[1:Nx,1,1:Nz]
+                sim_results[:,:,i-start_steps-fno_input_timesteps,3] = model.velocities.u[1:Nx,1,1:Nz]
+                if use_pressure
+                    sim_results[:,:,i-start_steps-fno_input_timestep,4] = model.pressures.pHY′[1:Nx,1,1:Nz]
+                    sim_results[:,:,i-start_steps-fno_input_timestep,5] = model.pressures.pNHS[1:Nx,1,1:Nz]
+                end
+            else
+                sim_results[:,:,i-start_steps-fno_input_timesteps] = model.tracers.b[1:Nx,1,1:Nz]
+            end
         end
     end
 
@@ -523,6 +542,15 @@ function compare(one_by_one = false)
             else
                 model_results[:,:,i-start_steps-fno_input_timesteps:i-start_steps-1] = Array(reshaped_input)[:,:,:,1,1]
             end
+
+            if real_input
+                next_input = sim_results[:,:,i-start_steps-fno_input_timesteps:i-start_steps-1,:]
+                if use_gpu
+                    reshaped_input = CuArray(reshape(next_input,(Nx,Nz,fno_input_timesteps,collect_fields,1)))
+                else
+                    reshaped_input = reshape(next_input,(Nx,Nz,fno_input_timesteps,collect_fields,1))
+                end
+            end
         end
     end
 
@@ -542,7 +570,16 @@ function compare(one_by_one = false)
             model_results[:,:,i-start_steps-fno_input_timesteps] = Array(new_reshaped_input)[:,:,1,1,1]
 
             reshaped_input = circshift(reshaped_input,(0,0,-1,0,0))
-            reshaped_input[:,:,end,:,:] = new_reshaped_input[:,:,1,:,:]
+
+            if real_input
+                if use_gpu
+                    reshaped_input[:,:,end,:,1] = CuArray(sim_results[:,:,i-start_steps-fno_input_timesteps,:])
+                else
+                    reshaped_input[:,:,end,:,1] = sim_results[:,:,i-start_steps-fno_input_timesteps,:]
+                end
+            else
+                reshaped_input[:,:,end,:,:] = new_reshaped_input[:,:,1,:,:]
+            end
         end
     end
 
@@ -566,7 +603,11 @@ function compare(one_by_one = false)
 
     for i in 1:size(model_results)[3]
         p = make_subplots(rows=1, cols=2)
-        add_trace!(p, heatmap(z=sim_results[:,:,i]', coloraxis="coloraxis"), col = 1)
+        if real_input
+            add_trace!(p, heatmap(z=sim_results[:,:,i,1]', coloraxis="coloraxis"), col = 1)
+        else
+            add_trace!(p, heatmap(z=sim_results[:,:,i]', coloraxis="coloraxis"), col = 1)
+        end
         add_trace!(p, heatmap(z=model_results[:,:,i]', coloraxis="coloraxis"), col = 2)
         relayout!(p, layout.fields)
         savefig(p, dirpath * "/compare_frames//a$(lpad(string(i), 5, '0')).png"; width=1600, height=800)
