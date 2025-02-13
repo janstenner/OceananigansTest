@@ -36,10 +36,10 @@ Nx = 96
 Nz = 64
 
 Δt = 0.03
-Δt_snap = 0.45
-duration = 24.3
+Δt_snap = 0.39
+duration = 31.2
 
-start_steps = 20
+start_steps = 5
 
 Ra = 1e4
 Pr = 0.71
@@ -351,7 +351,7 @@ function train(training_runs = 8)
 
         simulation.verbose = false
 
-        global results = zeros(Float32,Nx,Nz,collect_fields,totalsteps-20)     # order (x_1, ... , x_d, ch, batch)
+        global results = zeros(Float32,Nx,Nz,collect_fields,totalsteps-start_steps)     # order (x_1, ... , x_d, ch, batch)
 
         for i in 1:totalsteps
             #new boundary conditions

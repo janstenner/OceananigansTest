@@ -66,7 +66,7 @@ batch_size = 8
 n_batches = 30
 
 use_pressure = false
-auto_regressive_training = false
+auto_regressive_training = true
 
 
 
@@ -554,7 +554,7 @@ function compare(one_by_one = false, real_input = false)
         end
     end
 
-    function model_rest_obo()
+    function model_rest_obo(auto_regressive_training = false)
         global ps, st, fno
 
         if use_gpu
@@ -567,7 +567,11 @@ function compare(one_by_one = false, real_input = false)
             
             new_reshaped_input = fno(reshaped_input)
         
-            model_results[:,:,i-start_steps-fno_input_timesteps] = Array(new_reshaped_input)[:,:,1,1,1]
+            if auto_regressive_training
+                model_results[:,:,i-start_steps-fno_input_timesteps] = Array(new_reshaped_input)[:,:,end,1,1]
+            else
+                model_results[:,:,i-start_steps-fno_input_timesteps] = Array(new_reshaped_input)[:,:,1,1,1]
+            end
 
             reshaped_input = circshift(reshaped_input,(0,0,-1,0,0))
 
@@ -591,7 +595,7 @@ function compare(one_by_one = false, real_input = false)
     @time simulate_rest()
 
     if one_by_one
-        @time model_rest_obo()
+        @time model_rest_obo(auto_regressive_training)
     else
         @time model_rest()
     end
