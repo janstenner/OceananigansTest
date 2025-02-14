@@ -66,7 +66,7 @@ batch_size = 8
 n_batches = 30
 
 use_pressure = false
-auto_regressive_training = true
+auto_regressive_training = false
 
 
 
@@ -210,14 +210,14 @@ fan_in = first(Flux.nfan(size(project.layers[2].weight)))
 project.layers[2].bias[:] = custom_uniform(fan_in, size(project.layers[2].bias)...)
 project.layers[2].weight[:,:,:,:,:] = Flux.kaiming_uniform(size(project.layers[2].weight)...; gain=1)
 
-for j in length(mapping.layers)
+for j in 1:length(mapping.layers)
     fan_in = first(Flux.nfan(size(mapping.layers[j].linear.weight)))
     mapping.layers[j].linear.bias[:] = custom_uniform(fan_in, size(mapping.layers[1].linear.bias)...)
 
-    ch_in = size(mapping.layers[1].linear.weight)[4]
-    ch_out = size(mapping.layers[1].linear.weight)[5]
+    ch_in = size(mapping.layers[j].linear.weight)[4]
+    ch_out = size(mapping.layers[j].linear.weight)[5]
     scale = one(eltype(FourierTransform)) / (ch_in * ch_out)
-    mapping.layers[j].conv.weight[:,:,:] = permutedims(scale * Flux.glorot_uniform(eltype(FourierTransform),ch_out,ch_in,prod(modes)), (3,2,1))
+    mapping.layers[j].conv.weight[:,:,:] = permutedims(scale * (Flux.glorot_uniform(eltype(FourierTransform),ch_out,ch_in,prod(modes)) .+ (0.0f0 + 0.5f0im)), (3,2,1))
 end
 
 
@@ -448,6 +448,7 @@ end
 function compare(one_by_one = false, real_input = false)
 
     if auto_regressive_training
+        println("h")
         one_by_one = true
     end
 
