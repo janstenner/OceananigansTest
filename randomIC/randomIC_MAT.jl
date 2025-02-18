@@ -77,7 +77,7 @@ fun = relu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 5
+window_size = 37
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -90,20 +90,20 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 100
+update_freq = 200
 
 
-learning_rate = 1e-3
+learning_rate = 1e-4
 n_epochs = 20
 n_microbatches = 5
-logσ_is_network = false
+logσ_is_network = true
 max_σ = 1000.0f0
 entropy_loss_weight = 0.0
 actor_loss_weight = 100.0
 critic_loss_weight = 0.001
 adaptive_weights = false
 clip_grad = 0.08
-target_kl = 0.1
+target_kl = Inf
 clip1 = false
 start_logσ = -0.6
 clip_range = 0.05f0
@@ -114,10 +114,10 @@ tanh_end = false
 drop_middle_layer = true
 drop_middle_layer_critic = true
 block_num = 1
-dim_model = 20
-head_num = 2
+dim_model = 40
+head_num = 4
 head_dim = 10
-ffn_dim = 50
+ffn_dim = 60
 drop_out = 0.00#1
 
 betas = (0.9, 0.999)
@@ -126,6 +126,8 @@ customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
 square_rewards = true
+joon_pe = true
+positional_encoding = 3 #ZeroEncoding
 
 
 
@@ -415,14 +417,16 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     sensordata = y[:,sensor_positions[1],sensor_positions[2]]
 
     # New Positional Encoding
-    # P_Temp = zeros(sensors[1], sensors[2])
+    if joon_pe
+        P_Temp = zeros(sensors[1], sensors[2])
 
-    # for j in 1:sensors[1]
-    #     i_rad = (2*pi/sensors[1])*j
-    #     P_Temp[j,:] .= sin(i_rad)
-    # end
+        for j in 1:sensors[1]
+            i_rad = (2*pi/sensors[1])*j
+            P_Temp[j,:] .= sin(i_rad)
+        end
 
-    # sensordata[1,:,:] += P_Temp
+        sensordata[1,:,:] += P_Temp
+    end
 
     window_half_size = Int(floor(window_size/2))
 
