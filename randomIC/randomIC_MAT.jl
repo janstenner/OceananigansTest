@@ -73,11 +73,11 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 memory_size = 0
 nna_scale = 51.2
 nna_scale_critic = 25.6
-fun = relu
+fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 37
+window_size = 47
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -102,11 +102,11 @@ entropy_loss_weight = 0.0
 actor_loss_weight = 100.0
 critic_loss_weight = 0.001
 adaptive_weights = false
-clip_grad = 0.08
+clip_grad = 0.3
 target_kl = Inf
 clip1 = false
 start_logσ = -0.6
-clip_range = 0.05f0
+clip_range = 0.2f0
 tanh_end = false
 
 
@@ -114,15 +114,15 @@ tanh_end = false
 drop_middle_layer = true
 drop_middle_layer_critic = true
 block_num = 1
-dim_model = 40
-head_num = 4
-head_dim = 10
-ffn_dim = 60
+dim_model = 64
+head_num = 2
+head_dim = 32
+ffn_dim = 64
 drop_out = 0.00#1
 
 betas = (0.9, 0.999)
 
-customCrossAttention = true
+customCrossAttention = false
 jointPPO = false
 one_by_one_training = false
 square_rewards = true
@@ -534,6 +534,7 @@ function initialize_setup(;use_random_init = false)
                 one_by_one_training = one_by_one_training,
                 clip_range = clip_range,
                 tanh_end = tanh_end,
+                positional_encoding = positional_encoding,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
