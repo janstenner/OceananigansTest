@@ -217,7 +217,10 @@ for j in 1:length(mapping.layers)
     ch_in = size(mapping.layers[j].linear.weight)[4]
     ch_out = size(mapping.layers[j].linear.weight)[5]
     scale = one(eltype(FourierTransform)) / (ch_in * ch_out)
-    mapping.layers[j].conv.weight[:,:,:] = permutedims(scale * (Flux.glorot_uniform(eltype(FourierTransform),ch_out,ch_in,prod(modes)) .+ (0.0f0 + 0.5f0im)), (3,2,1))
+
+    new_weights = Flux.glorot_uniform(eltype(FourierTransform),ch_out,ch_in,prod(modes))
+    min_imag = -1 * minimum(imag(new_weights))
+    mapping.layers[j].conv.weight[:,:,:] = permutedims(scale * (new_weights .+ (0.0f0 + (min_imag)im)), (3,2,1))
 end
 
 
