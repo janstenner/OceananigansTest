@@ -10,6 +10,8 @@ using PlotlyJS
 using FileIO, JLD2
 using Statistics
 using Printf
+using Optimisers
+using Transformers
 #using Blink
 
 sensors = (48,8)
@@ -34,8 +36,7 @@ end
 # env parameters
 
 seed = Int(floor(rand()*1000))
-
-seed = 172
+#seed = 857
 
 te = 300.0
 t0 = 0.0
@@ -73,13 +74,11 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 memory_size = 0
 nna_scale = 51.2
 nna_scale_critic = 25.6
-drop_middle_layer = false
-drop_middle_layer_critic = false
-fun = leakyrelu
+fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 47
+window_size = 7
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -95,21 +94,52 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 200
 
 
-learning_rate = 3e-4
-n_epochs = 7
-n_microbatches = 24
-logσ_is_network = false
-max_σ = 10000.0f0
-entropy_loss_weight = 0.01
+learning_rate = 1e-3
+n_epochs = 20
+n_microbatches = 5
+logσ_is_network = true
+max_σ = 1000.0f0
+entropy_loss_weight = 0.0
+actor_loss_weight = 100.0
+critic_loss_weight = 0.001
+adaptive_weights = false
 clip_grad = 0.3
-target_kl = 0.8
+target_kl = Inf
 clip1 = false
-start_logσ = -1.1
+start_logσ = -0.6
+clip_range = 0.2f0
 tanh_end = false
 
 
 
+drop_middle_layer = true
+drop_middle_layer_critic = true
+block_num = 1
+dim_model = 40
+head_num = 2
+head_dim = 20
+ffn_dim = 50
+drop_out = 0.00#1
+
+betas = (0.9, 0.999)
+
+customCrossAttention = false
+jointPPO = false
+one_by_one_training = false
 square_rewards = true
+joon_pe = true
+positional_encoding = 3 #ZeroEncoding
+
+
+
+
+# eta = agent.policy.decoder_state_tree.embedding.weight.rule.opts[2].eta
+# rate = 0.3
+# println("adjusting learning rate:                             from $(eta) to $(eta*rate)")
+# Optimisers.adjust!(agent.policy.decoder_state_tree, eta*rate)
+# eta2 = agent.policy.encoder_state_tree.embedding.weight.rule.opts[2].eta
+# Optimisers.adjust!(agent.policy.encoder_state_tree, eta2*rate)
+
 
 
 
@@ -356,8 +386,8 @@ function reward_function(env; returnGlobalNu = false)
         tempT = reshape(tempT, window_size, sensors[2])
         tempW = reshape(tempW, window_size, sensors[2])
 
-        tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-        tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        #tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        #tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
 
         q_1_mean = mean(tempT .* tempW)
         Tx = mean(tempT', dims = 2)
@@ -388,14 +418,16 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     sensordata = y[:,sensor_positions[1],sensor_positions[2]]
 
     # New Positional Encoding
-    P_Temp = zeros(sensors[1], sensors[2])
+    if joon_pe
+        P_Temp = zeros(sensors[1], sensors[2])
 
-    for j in 1:sensors[1]
-        i_rad = (2*pi/sensors[1])*j
-        P_Temp[j,:] .= sin(i_rad)
+        for j in 1:sensors[1]
+            i_rad = (2*pi/sensors[1])*j
+            P_Temp[j,:] .= sin(i_rad)
+        end
+
+        sensordata[1,:,:] += P_Temp
     end
-
-    sensordata[1,:,:] += P_Temp
 
     window_half_size = Int(floor(window_size/2))
 
@@ -464,31 +496,89 @@ function initialize_setup(;use_random_init = false)
                 max_value = max_value,
                 check_max_value = check_max_value)
 
-    global agent = create_agent_ppo(n_envs = actuators,
-                action_space = actionspace,
-                state_space = env.state_space,
-                use_gpu = use_gpu, 
-                rng = rng,
-                y = y, p = p,
-                start_steps = start_steps, 
-                start_policy = start_policy,
-                update_freq = update_freq,
-                learning_rate = learning_rate,
-                nna_scale = nna_scale,
-                nna_scale_critic = nna_scale_critic,
-                drop_middle_layer = drop_middle_layer,
-                drop_middle_layer_critic = drop_middle_layer_critic,
-                fun = fun,
-                clip1 = clip1,
-                n_epochs = n_epochs,
-                n_microbatches = n_microbatches,
-                logσ_is_network = logσ_is_network,
-                max_σ = max_σ,
-                entropy_loss_weight = entropy_loss_weight,
-                clip_grad = clip_grad,
-                target_kl = target_kl,
-                start_logσ = start_logσ,
-                tanh_end = tanh_end,)
+
+    init = Flux.glorot_uniform(rng)
+
+    ns = size(env.state_space)[1]
+    na = size(actionspace)[1]
+    
+    n_actors = 12
+
+    head_num_encoder = 5
+    head_dim_encoder = 10
+
+    encoder = MATEncoder(
+        embedding = Dense(ns, dim_model, fun, bias = false),
+        position_encoding = ZeroEncoding(dim_model),
+        nl = LayerNorm(dim_model),
+        dropout = Dropout(drop_out),
+        block = Transformer(Transformers.Layers.TransformerBlock, block_num, head_num_encoder, dim_model, head_dim_encoder, ffn_dim; dropout = drop_out),
+        embedding_v = Dense(ns, dim_model, fun, bias = false),
+        position_encoding_v = ZeroEncoding(dim_model),
+        nl_v = LayerNorm(dim_model),
+        dropout_v = Dropout(drop_out),
+        block_v = Transformer(Transformers.Layers.TransformerBlock, block_num, head_num_encoder, dim_model, head_dim_encoder, ffn_dim; dropout = drop_out),
+        head = Dense(dim_model, 1),
+        jointPPO = jointPPO,
+    )
+
+    decoder = MATDecoder(
+        embedding = Dense(na, dim_model, bias = false),
+        position_encoding = Transformers.Layers.SinCosPositionEmbed(dim_model),
+        nl = LayerNorm(dim_model),
+        dropout = Dropout(drop_out),
+        block = Transformer(CustomTransformerDecoderBlock, block_num, head_num, dim_model, head_dim, ffn_dim; dropout = drop_out),
+        head = Dense(dim_model, na; init = init),
+        logσ = Dense(dim_model, na; init = init),
+        logσ_is_network = true,
+        max_σ = max_σ
+    )
+
+    encoder_optimizer = Optimisers.OptimiserChain(Optimisers.ClipNorm(clip_grad), Optimisers.Adam(learning_rate, betas))
+    decoder_optimizer = Optimisers.OptimiserChain(Optimisers.ClipNorm(clip_grad), Optimisers.Adam(learning_rate, betas))
+
+    encoder_state_tree = Flux.setup(encoder_optimizer, encoder)
+    decoder_state_tree = Flux.setup(decoder_optimizer, decoder)
+            
+    global agent = Agent(
+                    policy = MATPolicy(
+                        encoder = encoder,
+                        decoder = decoder,
+                        encoder_optimizer = encoder_optimizer,
+                        decoder_optimizer = decoder_optimizer,
+                        encoder_state_tree = encoder_state_tree,
+                        decoder_state_tree = decoder_state_tree,
+                        n_actors = n_actors,
+                        γ = y,
+                        λ = p,
+                        clip_range = clip_range,
+                        n_epochs = n_epochs,
+                        n_microbatches = n_microbatches,
+                        actor_loss_weight = actor_loss_weight,
+                        critic_loss_weight = critic_loss_weight,
+                        entropy_loss_weight = entropy_loss_weight,
+                        adaptive_weights = adaptive_weights,
+                        rng = rng,
+                        update_freq = update_freq,
+                        clip1 = clip1,
+                        normalize_advantage = true,
+                        start_steps = start_steps,
+                        start_policy = start_policy,
+                        target_kl = target_kl,
+                        jointPPO = jointPPO,
+                        one_by_one_training = one_by_one_training,
+                    ),
+                    trajectory = 
+                    CircularArrayTrajectory(;
+                            capacity = update_freq,
+                            state = Float32 => (size(env.state_space)[1], n_actors),
+                            action = Float32 => (size(actionspace)[1], n_actors),
+                            action_log_prob = Float32 => (n_actors),
+                            reward = Float32 => (n_actors),
+                            terminal = Bool => (n_actors,),
+                            values = Float32 => (1, n_actors),
+                    ),
+                )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
@@ -511,7 +601,7 @@ function generate_random_init()
     )
 
     global values
-    
+
     uu = values["u/data"][4:Nx+3,:,4:Nz+3]
     ww = values["w/data"][4:Nx+3,:,4:Nz+4]
     bb = values["b/data"][4:Nx+3,:,4:Nz+3]
@@ -545,12 +635,13 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
-    rm(dirpath * "/training_frames/", recursive=true, force=true)
-    mkdir(dirpath * "/training_frames/")
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 100)
+    
     frame = 1
 
     if visuals
+        rm(dirpath * "/training_frames/", recursive=true, force=true)
+        mkdir(dirpath * "/training_frames/")
         colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
         ymax = 30
         layout = Layout(
@@ -573,6 +664,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
             println("")
             
             stop_condition = StopAfterEpisodeWithMinSteps(num_steps)
+            #stop_condition = StopAfterStep(num_steps)
 
 
             # run start
@@ -599,6 +691,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                         p = plot(heatmap(z=env.y[1,:,:]', coloraxis="coloraxis"), layout)
 
                         savefig(p, dirpath * "/training_frames//a$(lpad(string(frame), 5, '0')).png"; width=1000, height=800)
+
                     end
 
                     frame += 1
@@ -641,12 +734,12 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global hook = FileIO.load(dirpath * "/saves/hookPPO.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agentPPO.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookMAT.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentMAT.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env.jld2","env")
     else
-        global hook = FileIO.load(dirpath * "/saves/hookPPO$number.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agentPPO$number.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookMAT$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentMAT$number.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env$number.jld2","env")
     end
 end
@@ -655,12 +748,12 @@ function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
     if isnothing(number)
-        FileIO.save(dirpath * "/saves/hookPPO.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agentPPO.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookMAT.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentMAT.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env.jld2","env",env)
     else
-        FileIO.save(dirpath * "/saves/hookPPO$number.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agentPPO$number.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookMAT$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentMAT$number.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env$number.jld2","env",env)
     end
 end
@@ -711,20 +804,10 @@ function render_run(;use_zeros = false)
         env(action)
 
         result = env.y[1,:,:]
-        result_W = env.y[2,:,:]
-        result_U = env.y[3,:,:]
 
-        p = make_subplots(rows=1, cols=3)
+        p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
 
-        add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
-        add_trace!(p, heatmap(z=result_W'), col = 2)
-        add_trace!(p, heatmap(z=result_U'), col = 3)
-
-        # p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
-
-        relayout!(p, layout.fields)
-
-        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=2400, height=800)
+        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1000, height=800)
         #body!(w,p)
 
         temp_reward = reward_function(env; returnGlobalNu = true)
@@ -759,3 +842,8 @@ end
 # t2 = scatter(y=rewards2)
 # t3 = scatter(y=rewards3)
 # plot([t1, t2, t3])
+
+
+
+#results = FileIO.load("randomICresults.jld2","results")
+#FileIO.save("randomICresults.jld2","results",results)
