@@ -79,7 +79,7 @@ fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 47
+window_size = 35
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -545,7 +545,7 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 12)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
     frame = 1
@@ -631,6 +631,11 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
     end
 
     #save()
+
+
+    global window_size_results = FileIO.load("RBC_analyse/window_size_results.jld2","window_size_results")
+    window_size_results[window_size] = hook.rewards
+    FileIO.save("RBC_analyse/window_size_results.jld2","window_size_results",window_size_results)
 end
 
 
