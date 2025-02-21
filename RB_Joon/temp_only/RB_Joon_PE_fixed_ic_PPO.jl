@@ -104,7 +104,7 @@ entropy_loss_weight = 0.01
 clip_grad = 0.3
 target_kl = 0.8
 clip1 = false
-start_logσ = - 0.4
+start_logσ = -0.4
 tanh_end = false
 clip_range = 0.05f0
 
@@ -353,25 +353,25 @@ function reward_function(env; returnGlobalNu = false)
     hor_inv_probes = Int(sensors[1] / actuators)
 
     for i in 1:actuators
-        tempstate = env.state[:,i]
+        # tempstate = env.state[:,i]
 
-        tempT = tempstate[1:3:length(tempstate)]
-        tempW = tempstate[2:3:length(tempstate)]
+        # tempT = tempstate[1:3:length(tempstate)]
+        # tempW = tempstate[2:3:length(tempstate)]
 
-        tempT = reshape(tempT, window_size, sensors[2])
-        tempW = reshape(tempW, window_size, sensors[2])
+        # tempT = reshape(tempT, window_size, sensors[2])
+        # tempW = reshape(tempW, window_size, sensors[2])
 
-        tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-        tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
 
-        q_1_mean = mean(tempT .* tempW)
-        Tx = mean(tempT', dims = 2)
-        q_2 = kappa * mean(array_gradient(Tx))
+        # q_1_mean = mean(tempT .* tempW)
+        # Tx = mean(tempT', dims = 2)
+        # q_2 = kappa * mean(array_gradient(Tx))
 
-        localNu = (q_1_mean - q_2) / den
+        # localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = 2.6726 - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -390,7 +390,7 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     end
 
     # convolution is delta
-    sensordata = y[:,sensor_positions[1],sensor_positions[2]]
+    sensordata = y[1,sensor_positions[1],sensor_positions[2]]
 
     # New Positional Encoding
     P_Temp = zeros(sensors[1], sensors[2])
@@ -400,7 +400,7 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
         P_Temp[j,:] .= sin(i_rad)
     end
 
-    sensordata[1,:,:] += P_Temp
+    sensordata[:,:] += P_Temp
 
     window_half_size = Int(floor(window_size/2))
 
@@ -409,7 +409,7 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     for i in actuators_to_sensors
         temp_indexes = [(i + j + sensors[1] - 1) % sensors[1] + 1 for j in 0-window_half_size:0+window_half_size]
 
-        tempresult = sensordata[:,temp_indexes,:]
+        tempresult = sensordata[temp_indexes,:]
 
 
         push!(result, tempresult[:])

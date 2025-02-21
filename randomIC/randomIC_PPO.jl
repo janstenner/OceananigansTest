@@ -33,9 +33,9 @@ end
 
 # env parameters
 
-seed = Int(floor(rand()*1000))
+seed = Int(floor(rand()*100000))
 
-seed = 172
+# seed = 172
 
 te = 300.0
 t0 = 0.0
@@ -106,11 +106,13 @@ target_kl = 0.8
 clip1 = false
 start_logσ = -1.1
 tanh_end = false
+clip_range = 0.05f0
 
+betas = (0.9, 0.999)#(0.99,0.99)
 
 
 square_rewards = true
-
+randomIC = true
 
 
 chebychev_z = false
@@ -243,11 +245,14 @@ uu = values["u/data"][4:Nx+3,:,4:Nz+3]
 ww = values["w/data"][4:Nx+3,:,4:Nz+4]
 bb = values["b/data"][4:Nx+3,:,4:Nz+3]
 
-circshift_amount = rand(1:Nx)
 
-uu = circshift(uu, (circshift_amount,0,0))
-ww = circshift(ww, (circshift_amount,0,0))
-bb = circshift(bb, (circshift_amount,0,0))
+if randomIC
+    circshift_amount = rand(1:Nx)
+
+    uu = circshift(uu, (circshift_amount,0,0))
+    ww = circshift(ww, (circshift_amount,0,0))
+    bb = circshift(bb, (circshift_amount,0,0))
+end
 
 set!(model, u = uu, w = ww, b = bb)
 
@@ -488,7 +493,9 @@ function initialize_setup(;use_random_init = false)
                 clip_grad = clip_grad,
                 target_kl = target_kl,
                 start_logσ = start_logσ,
-                tanh_end = tanh_end,)
+                tanh_end = tanh_end,
+                betas = betas,
+                clip_range = clip_range,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
@@ -516,11 +523,13 @@ function generate_random_init()
     ww = values["w/data"][4:Nx+3,:,4:Nz+4]
     bb = values["b/data"][4:Nx+3,:,4:Nz+3]
 
-    circshift_amount = rand(1:Nx)
+    if randomIC
+        circshift_amount = rand(1:Nx)
 
-    uu = circshift(uu, (circshift_amount,0,0))
-    ww = circshift(ww, (circshift_amount,0,0))
-    bb = circshift(bb, (circshift_amount,0,0))
+        uu = circshift(uu, (circshift_amount,0,0))
+        ww = circshift(ww, (circshift_amount,0,0))
+        bb = circshift(bb, (circshift_amount,0,0))
+    end
 
     set!(model, u = uu, w = ww, b = bb)
 
