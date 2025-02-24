@@ -771,7 +771,7 @@ end
 # plot([t1, t2, t3])
 
 
-function collect_window_size_results(start = 47, runs = 5)
+function collect_window_size_results(;start = 47, runs = 3)
     global window_size
 
 
