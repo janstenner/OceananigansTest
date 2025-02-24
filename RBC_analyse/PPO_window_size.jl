@@ -33,9 +33,9 @@ end
 
 # env parameters
 
-seed = Int(floor(rand()*1000))
+seed = Int(floor(rand()*100000))
 
-seed = 172
+# seed = 172
 
 te = 300.0
 t0 = 0.0
@@ -71,15 +71,15 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 
 # agent tuning parameters
 memory_size = 0
-nna_scale = 51.2
-nna_scale_critic = 25.6
+nna_scale = 6.4
+nna_scale_critic = 3.2
 drop_middle_layer = false
 drop_middle_layer_critic = false
-fun = leakyrelu
+fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 35
+window_size = 47
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -104,13 +104,15 @@ entropy_loss_weight = 0.01
 clip_grad = 0.3
 target_kl = 0.8
 clip1 = false
-start_logσ = -1.1
+start_logσ = - 0.4
 tanh_end = false
+clip_range = 0.05f0
 
+betas = (0.9, 0.999)#(0.99,0.99)
 
 
 square_rewards = true
-
+randomIC = false
 
 
 chebychev_z = false
@@ -243,11 +245,14 @@ uu = values["u/data"][4:Nx+3,:,4:Nz+3]
 ww = values["w/data"][4:Nx+3,:,4:Nz+4]
 bb = values["b/data"][4:Nx+3,:,4:Nz+3]
 
-circshift_amount = rand(1:Nx)
 
-uu = circshift(uu, (circshift_amount,0,0))
-ww = circshift(ww, (circshift_amount,0,0))
-bb = circshift(bb, (circshift_amount,0,0))
+if randomIC
+    circshift_amount = rand(1:Nx)
+
+    uu = circshift(uu, (circshift_amount,0,0))
+    ww = circshift(ww, (circshift_amount,0,0))
+    bb = circshift(bb, (circshift_amount,0,0))
+end
 
 set!(model, u = uu, w = ww, b = bb)
 
@@ -348,25 +353,25 @@ function reward_function(env; returnGlobalNu = false)
     hor_inv_probes = Int(sensors[1] / actuators)
 
     for i in 1:actuators
-        tempstate = env.state[:,i]
+        # tempstate = env.state[:,i]
 
-        tempT = tempstate[1:3:length(tempstate)]
-        tempW = tempstate[2:3:length(tempstate)]
+        # tempT = tempstate[1:3:length(tempstate)]
+        # tempW = tempstate[2:3:length(tempstate)]
 
-        tempT = reshape(tempT, window_size, sensors[2])
-        tempW = reshape(tempW, window_size, sensors[2])
+        # tempT = reshape(tempT, window_size, sensors[2])
+        # tempW = reshape(tempW, window_size, sensors[2])
 
-        tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-        tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
 
-        q_1_mean = mean(tempT .* tempW)
-        Tx = mean(tempT', dims = 2)
-        q_2 = kappa * mean(array_gradient(Tx))
+        # q_1_mean = mean(tempT .* tempW)
+        # Tx = mean(tempT', dims = 2)
+        # q_2 = kappa * mean(array_gradient(Tx))
 
-        localNu = (q_1_mean - q_2) / den
+        # localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = 2.6726 - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -385,17 +390,18 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     end
 
     # convolution is delta
+    # global sensordata
     sensordata = y[:,sensor_positions[1],sensor_positions[2]]
 
-    # New Positional Encoding
-    P_Temp = zeros(sensors[1], sensors[2])
+    # New (!!!) Positional Encoding
+    P_Temp = zeros(3, sensors[1])
 
     for j in 1:sensors[1]
         i_rad = (2*pi/sensors[1])*j
-        P_Temp[j,:] .= sin(i_rad)
+        P_Temp[:,j] .= sin(i_rad)
     end
 
-    sensordata[1,:,:] += P_Temp
+    sensordata = [sensordata;;; P_Temp]
 
     window_half_size = Int(floor(window_size/2))
 
@@ -451,7 +457,7 @@ end
 
 
 # PDEenv can also take a custom y0 as a parameter. Example: PDEenv(y0=y0_sawtooth, ...)
-function initialize_setup(;use_random_init = false)
+function initialize_setup()
 
     global env = GeneralEnv(do_step = do_step, 
                 reward_function = reward_function,
@@ -488,7 +494,9 @@ function initialize_setup(;use_random_init = false)
                 clip_grad = clip_grad,
                 target_kl = target_kl,
                 start_logσ = start_logσ,
-                tanh_end = tanh_end,)
+                tanh_end = tanh_end,
+                betas = betas,
+                clip_range = clip_range,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
@@ -516,11 +524,13 @@ function generate_random_init()
     ww = values["w/data"][4:Nx+3,:,4:Nz+4]
     bb = values["b/data"][4:Nx+3,:,4:Nz+3]
 
-    circshift_amount = rand(1:Nx)
+    if randomIC
+        circshift_amount = rand(1:Nx)
 
-    uu = circshift(uu, (circshift_amount,0,0))
-    ww = circshift(ww, (circshift_amount,0,0))
-    bb = circshift(bb, (circshift_amount,0,0))
+        uu = circshift(uu, (circshift_amount,0,0))
+        ww = circshift(ww, (circshift_amount,0,0))
+        bb = circshift(bb, (circshift_amount,0,0))
+    end
 
     set!(model, u = uu, w = ww, b = bb)
 
@@ -631,11 +641,6 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
     end
 
     #save()
-
-
-    global window_size_results = FileIO.load("RBC_analyse/window_size_results.jld2","window_size_results")
-    window_size_results[window_size] = hook.rewards
-    FileIO.save("RBC_analyse/window_size_results.jld2","window_size_results",window_size_results)
 end
 
 
@@ -764,3 +769,22 @@ end
 # t2 = scatter(y=rewards2)
 # t3 = scatter(y=rewards3)
 # plot([t1, t2, t3])
+
+
+function collect_window_size_results(start = 47, runs = 5)
+    global window_size
+
+
+    for temp_size in start:-2:start-((runs-1)*2)
+        window_size = temp_size
+
+        initialize_setup()
+
+        train()
+
+        global window_size_results = FileIO.load("RBC_analyse/window_size_results.jld2","window_size_results")
+        window_size_results[temp_size] = hook.rewards
+        FileIO.save("RBC_analyse/window_size_results.jld2","window_size_results",window_size_results)
+    end
+
+end
