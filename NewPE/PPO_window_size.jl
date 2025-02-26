@@ -782,6 +782,8 @@ function collect_window_size_results(;start = 47, runs = 3)
 
         train()
 
+        save(temp_size)
+
         global window_size_results = FileIO.load("RBC_analyse/window_size_results.jld2","window_size_results")
         window_size_results[temp_size] = hook.rewards
         FileIO.save("RBC_analyse/window_size_results.jld2","window_size_results",window_size_results)
