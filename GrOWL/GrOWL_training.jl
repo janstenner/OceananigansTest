@@ -243,5 +243,164 @@ function growl_update!(p::PPOPolicy, t::Any)
 
 
     # GroWL routine
-    
+    apply_growl(agent.policy.approximator.actor.μ.layers[1].weight)
+end
+
+
+
+
+
+
+function apply_growl(model_weights)
+
+    pl_srate = 0.9
+
+    reshaped_weight = transpose(model_weights)
+
+    # Compute the L2 norm for each row.
+    n_rows = size(reshaped_weight, 1)
+    n2_rows_W = [norm(reshaped_weight[i, :], 2) for i in 1:n_rows]
+
+    # --- Create GrOWL parameters ---
+    # Sort the row norms (returns indices that sort in increasing order).
+    s_inds = sortperm(n2_rows_W)
+    # Generate theta parameters (user-supplied function).
+    theta_is = ones(n_rows) * 0.2
+    theta_is[1] = 1.0
+
+    # Apply the proximal operator.
+    new_n2_rows_W = proxOWL(copy(n2_rows_W), copy(theta_is))
+
+    # --- Rescale the weight rows ---
+    new_W = similar(reshaped_weight)
+    eps_val = eps(Float32)
+    for i in 1:n_rows
+        if n2_rows_W[i] < eps_val
+            new_W[i, :] .= zeros(eltype(reshaped_weight), size(reshaped_weight, 2))
+        else
+            new_W[i, :] .= reshaped_weight[i, :] .* (new_n2_rows_W[i] / n2_rows_W[i])
+        end
+    end
+
+    # --- Check for excessive pruning ---
+    # Find indices of rows that are entirely zero.
+    zero_row_idcs = [i for i in 1:n_rows if all(new_W[i, :] .== 0)]
+    max_slct = Int(floor(pl_srate * n_rows))
+    if length(zero_row_idcs) > max_slct
+        numel = length(zero_row_idcs)
+        shuffled_idcs = shuffle(1:numel)
+        use_slct = numel - max_slct
+        selected_idcs = shuffled_idcs[1:use_slct]
+        selected_elmts = zero_row_idcs[selected_idcs]
+        for i in selected_elmts
+            new_W[i, :] .= reshaped_weight[i, :]
+        end
+    end
+
+    new_W = transpose(new_W)
+
+    # Update the weight in the model (assumes in-place update is acceptable).
+    model_weights .= new_W
+end
+
+
+
+function proxOWL(z::Vector{Float64}, mu::Vector{Float64})
+    # Restore the signs of z.
+    sgn = sign.(z)
+    # Work with absolute values.
+    z_abs = abs.(z)
+    # Sort z_abs in non-increasing (descending) order.
+    indx = sortperm(z_abs, rev=true)
+    z_sorted = z_abs[indx]
+    n = length(z_sorted)
+    x = zeros(n)
+    diff = z_sorted .- mu
+    # Reverse diff to mimic Python’s diff[::-1]
+    diff_rev = reverse(diff)
+    # Find the first index in the reversed diff that is > 0.
+    indc = findfirst(x -> x > 0, diff_rev)
+    flag = indc === nothing ? 0.0 : diff_rev[indc]
+    if flag > 0
+        # In Python: k = n - indc, but note the 1-index adjustment in Julia.
+        k = n - indc + 1
+        v1 = copy(z_sorted[1:k])
+        v2 = copy(mu[1:k])
+        v = proxOWL_segments(v1, v2)
+        # Prepare an output array in original order.
+        x_orig = zeros(n)
+        for j in 1:k
+            # indx[j] holds the original index for the j-th largest element.
+            x_orig[indx[j]] = v[j]
+        end
+        x = x_orig
+    end
+    # Restore original signs.
+    x = sgn .* x
+    return x
+end
+
+
+
+function proxOWL_segments(A::Vector{Float64}, B::Vector{Float64})
+    modified = true
+    k = 0
+    max_its = 1000
+    # Loop until no modifications occur or we exceed the maximum iterations.
+    while modified && k <= max_its
+        modified = false
+        segments = Tuple{Int,Int}[]
+        new_start = true
+        start_idx = nothing
+        end_idx = nothing
+
+        for i in 1:length(A)-1
+            if (A[i] - B[i] > 0) && (A[i+1] - B[i+1] > 0)
+                if (A[i] - B[i] < A[i+1] - B[i+1])
+                    modified = true
+                    if new_start
+                        start_idx = i
+                        new_start = false
+                    end
+                    continue
+                elseif (A[i] - B[i] >= A[i+1] - B[i+1])
+                    if start_idx !== nothing
+                        end_idx = i
+                        push!(segments, (start_idx, end_idx))
+                    end
+                    new_start = true
+                    start_idx = nothing
+                    end_idx = nothing
+                end
+            end
+        end
+
+        # If a segment was started but not ended, finish it.
+        if (start_idx !== nothing) && (end_idx === nothing)
+            end_idx = length(A)
+            push!(segments, (start_idx, end_idx))
+        end
+
+        # If no segments were found, exit the loop.
+        if isempty(segments)
+            break
+        end
+
+        # For each segment, replace A and B over that range with their means.
+        for (s, e) in segments
+            avg_A = mean(A[s:e])
+            avg_B = mean(B[s:e])
+            for j in s:e
+                A[j] = avg_A
+                B[j] = avg_B
+            end
+            modified = true
+        end
+        k += 1
+    end
+
+    # Compute X = A - B and set any negative values to zero.
+    X = A .- B
+    X = map(x -> x < 0 ? 0.0 : x, X)
+    return X
 end
