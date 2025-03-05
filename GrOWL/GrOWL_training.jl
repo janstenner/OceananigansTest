@@ -228,7 +228,7 @@ function growl_update!(p::PPOPolicy, t::Any)
             end
             
             if !stop_update
-                Flux.update!(AC.actor_state_tree, AC.actor, g_actor)
+                Flux.update!(AC.actor_state_tree, AC.actor, g_actor[1])
                 #Flux.update!(AC.critic_state_tree, AC.critic, g_critic)
             else
                 break
@@ -243,7 +243,14 @@ function growl_update!(p::PPOPolicy, t::Any)
 
 
     # GroWL routine
+    println("starting GrOWL training...")
+    weights_before = deepcopy(agent.policy.approximator.actor.μ.layers[1].weight)
     apply_growl(agent.policy.approximator.actor.μ.layers[1].weight)
+    difference = sum(abs.(weights_before - agent.policy.approximator.actor.μ.layers[1].weight))
+    println(difference)
+    transposed_weights = transpose(agent.policy.approximator.actor.μ.layers[1].weight[i, :])
+    zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
+    println(length(zero_row_idcs))
 end
 
 
@@ -305,7 +312,7 @@ end
 
 
 
-function proxOWL(z::Vector{Float64}, mu::Vector{Float64})
+function proxOWL(z::Vector, mu::Vector)
     # Restore the signs of z.
     sgn = sign.(z)
     # Work with absolute values.
@@ -342,7 +349,7 @@ end
 
 
 
-function proxOWL_segments(A::Vector{Float64}, B::Vector{Float64})
+function proxOWL_segments(A::Vector, B::Vector)
     modified = true
     k = 0
     max_its = 1000
