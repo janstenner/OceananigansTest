@@ -5,8 +5,10 @@ load(1001)
 
 hook.rewards = hook.rewards[end-10:end]
 
+growl_power = 0.09
 
-function growl_train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+
+function growl_train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 3)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
     frame = 0
@@ -57,12 +59,12 @@ function growl_train(use_random_init = true; visuals = false, num_steps = 1600, 
                     hook(POST_ACT_STAGE, agent, env)
 
                     # hack to prevent normal training
-                    # agent.policy.update_step = 1
+                    agent.policy.update_step = 1
 
                     # training call
                     if frame%50 == 0
-                        #update_actor_only!(agent.policy, agent.trajectory)
-                        if frame%200 == 0
+                        update_actor_only!(agent.policy, agent.trajectory)
+                        if frame%800 == 0
                             # GroWL routine
                             println("starting GrOWL training...")
                             weights_before = deepcopy(agent.policy.approximator.actor.μ.layers[1].weight)
@@ -277,7 +279,7 @@ function apply_growl(model_weights)
     theta_is = ones(n_rows) * 0.2
     theta_is[1] = 1.0
     # make the parameters smaller in general
-    theta_is .*= 0.06
+    theta_is .*= growl_power
 
     # Apply the proximal operator.
     new_n2_rows_W = proxOWL(copy(n2_rows_W), copy(theta_is))
