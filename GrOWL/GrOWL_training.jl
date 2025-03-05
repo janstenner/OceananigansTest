@@ -8,7 +8,7 @@ hook.rewards = hook.rewards[end-10:end]
 growl_power = 0.09
 
 
-function growl_train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 3)
+function growl_train(actor_only = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 3)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
     frame = 0
@@ -23,11 +23,7 @@ function growl_train(use_random_init = true; visuals = false, num_steps = 1600, 
     end
 
 
-    if use_random_init
-        hook.generate_random_init = generate_random_init
-    else
-        hook.generate_random_init = false
-    end
+
     
 
     for i = 1:outer_loops
@@ -59,11 +55,15 @@ function growl_train(use_random_init = true; visuals = false, num_steps = 1600, 
                     hook(POST_ACT_STAGE, agent, env)
 
                     # hack to prevent normal training
-                    agent.policy.update_step = 1
+                    if actor_only
+                        agent.policy.update_step = 1
+                    end
 
                     # training call
                     if frame%50 == 0
-                        update_actor_only!(agent.policy, agent.trajectory)
+                        if actor_only
+                            update_actor_only!(agent.policy, agent.trajectory)
+                        end
                         if frame%800 == 0
                             # GroWL routine
                             println("starting GrOWL training...")
