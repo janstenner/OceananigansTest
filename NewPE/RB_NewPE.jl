@@ -502,7 +502,7 @@ function initialize_setup(;use_random_init = false)
                 collect_NNA = false,
                 generate_random_init = generate_random_init,
                 collect_history = false,
-                collect_rewards_all_timesteps = true,
+                collect_rewards_all_timesteps = false,
                 early_success_possible = false)
 end
 

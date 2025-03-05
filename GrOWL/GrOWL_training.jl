@@ -1,13 +1,15 @@
 using Zygote
 
 
+load(1001)
 
+hook.rewards = hook.rewards[end-10:end]
 
 
 function growl_train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
-    frame = 1
+    frame = 0
 
     if visuals
         colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
@@ -55,11 +57,22 @@ function growl_train(use_random_init = true; visuals = false, num_steps = 1600, 
                     hook(POST_ACT_STAGE, agent, env)
 
                     # hack to prevent normal training
-                    agent.policy.update_step = 1
+                    # agent.policy.update_step = 1
 
-                    # growl training call
-                    if frame%200 == 0
-                        growl_update!(agent.policy, agent.trajectory)
+                    # training call
+                    if frame%50 == 0
+                        #update_actor_only!(agent.policy, agent.trajectory)
+                        if frame%200 == 0
+                            # GroWL routine
+                            println("starting GrOWL training...")
+                            weights_before = deepcopy(agent.policy.approximator.actor.μ.layers[1].weight)
+                            apply_growl(agent.policy.approximator.actor.μ.layers[1].weight)
+                            difference = sum(abs.(weights_before - agent.policy.approximator.actor.μ.layers[1].weight))
+                            println(difference)
+                            transposed_weights = transpose(agent.policy.approximator.actor.μ.layers[1].weight)
+                            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
+                            println(length(zero_row_idcs))
+                        end
                     end
 
                     if visuals
@@ -102,7 +115,7 @@ end
 
 
 
-function growl_update!(p::PPOPolicy, t::Any)
+function update_actor_only!(p::PPOPolicy, t::Any)
     rng = p.rng
     AC = p.approximator
     γ = p.γ
@@ -240,17 +253,6 @@ function growl_update!(p::PPOPolicy, t::Any)
             break
         end
     end
-
-
-    # GroWL routine
-    println("starting GrOWL training...")
-    weights_before = deepcopy(agent.policy.approximator.actor.μ.layers[1].weight)
-    apply_growl(agent.policy.approximator.actor.μ.layers[1].weight)
-    difference = sum(abs.(weights_before - agent.policy.approximator.actor.μ.layers[1].weight))
-    println(difference)
-    transposed_weights = transpose(agent.policy.approximator.actor.μ.layers[1].weight[i, :])
-    zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
-    println(length(zero_row_idcs))
 end
 
 
@@ -260,7 +262,7 @@ end
 
 function apply_growl(model_weights)
 
-    pl_srate = 0.9
+    pl_srate = 0.1
 
     reshaped_weight = transpose(model_weights)
 
@@ -274,6 +276,8 @@ function apply_growl(model_weights)
     # Generate theta parameters (user-supplied function).
     theta_is = ones(n_rows) * 0.2
     theta_is[1] = 1.0
+    # make the parameters smaller in general
+    theta_is .*= 0.06
 
     # Apply the proximal operator.
     new_n2_rows_W = proxOWL(copy(n2_rows_W), copy(theta_is))
@@ -362,23 +366,21 @@ function proxOWL_segments(A::Vector, B::Vector)
         end_idx = nothing
 
         for i in 1:length(A)-1
-            if (A[i] - B[i] > 0) && (A[i+1] - B[i+1] > 0)
-                if (A[i] - B[i] < A[i+1] - B[i+1])
-                    modified = true
-                    if new_start
-                        start_idx = i
-                        new_start = false
-                    end
-                    continue
-                elseif (A[i] - B[i] >= A[i+1] - B[i+1])
-                    if start_idx !== nothing
-                        end_idx = i
-                        push!(segments, (start_idx, end_idx))
-                    end
-                    new_start = true
-                    start_idx = nothing
-                    end_idx = nothing
+            if (A[i] - B[i] < A[i+1] - B[i+1])
+                modified = true
+                if new_start
+                    start_idx = i
+                    new_start = false
                 end
+                continue
+            elseif (A[i] - B[i] >= A[i+1] - B[i+1])
+                if start_idx !== nothing
+                    end_idx = i
+                    push!(segments, (start_idx, end_idx))
+                end
+                new_start = true
+                start_idx = nothing
+                end_idx = nothing
             end
         end
 
@@ -411,3 +413,6 @@ function proxOWL_segments(A::Vector, B::Vector)
     X = map(x -> x < 0 ? 0.0 : x, X)
     return X
 end
+
+
+growl_train()
