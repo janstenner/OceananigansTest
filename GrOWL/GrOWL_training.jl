@@ -1,15 +1,35 @@
 using Zygote
+using Optimisers
 
 
-load(1001)
+train_existing = false
 
-hook.rewards = hook.rewards[end-10:end]
 
-growl_power = 0.04
-growl_freq = 2000
+if train_existing
+    load(1001)
+    hook.rewards = hook.rewards[end-10:end]
 
-actor_only = false
-outer_loops = 22
+    growl_power = 0.01
+    growl_freq = 2000
+    growl_srate = 0.1
+
+    actor_only = true
+    outer_loops = 6
+
+    new_learning_rate = 1e-3
+    agent.policy.approximator.optimizer_actor = Optimisers.OptimiserChain(Optimisers.ClipNorm(clip_grad), Optimisers.Adam(new_learning_rate, betas))
+    agent.policy.approximator.actor_state_tree = Flux.setup(agent.policy.approximator.optimizer_actor, agent.policy.approximator.actor)
+
+else
+    growl_power = 0.01
+    growl_freq = 2000
+    growl_srate = 0.9
+
+    actor_only = false
+    outer_loops = 22
+end
+
+
 
 
 function growl_train(actor_only = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 6)
@@ -270,7 +290,7 @@ end
 
 function apply_growl(model_weights)
 
-    pl_srate = 0.1
+    pl_srate = growl_srate
 
     reshaped_weight = transpose(model_weights)
 
@@ -423,4 +443,4 @@ function proxOWL_segments(A::Vector, B::Vector)
 end
 
 
-growl_train(actor_only = actor_only; outer_loops = outer_loops)
+growl_train(actor_only; outer_loops = outer_loops)
