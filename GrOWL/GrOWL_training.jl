@@ -5,7 +5,11 @@ load(1001)
 
 hook.rewards = hook.rewards[end-10:end]
 
-growl_power = 0.01
+growl_power = 0.04
+growl_freq = 2000
+
+actor_only = false
+outer_loops = 22
 
 
 function growl_train(actor_only = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 6)
@@ -64,18 +68,19 @@ function growl_train(actor_only = true; visuals = false, num_steps = 1600, inner
                         if actor_only
                             update_actor_only!(agent.policy, agent.trajectory)
                         end
-                        if frame%800 == 0
-                            # GroWL routine
-                            println("starting GrOWL training...")
-                            weights_before = deepcopy(agent.policy.approximator.actor.μ.layers[1].weight)
-                            apply_growl(agent.policy.approximator.actor.μ.layers[1].weight)
-                            difference = sum(abs.(weights_before - agent.policy.approximator.actor.μ.layers[1].weight))
-                            println(difference)
-                            transposed_weights = transpose(agent.policy.approximator.actor.μ.layers[1].weight)
-                            n_rows = size(transposed_weights, 1)
-                            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
-                            println(length(zero_row_idcs))
-                        end
+                    end
+
+                    if frame%growl_freq == 0
+                        # GroWL routine
+                        println("starting GrOWL training...")
+                        weights_before = deepcopy(agent.policy.approximator.actor.μ.layers[1].weight)
+                        apply_growl(agent.policy.approximator.actor.μ.layers[1].weight)
+                        difference = sum(abs.(weights_before - agent.policy.approximator.actor.μ.layers[1].weight))
+                        println(difference)
+                        transposed_weights = transpose(agent.policy.approximator.actor.μ.layers[1].weight)
+                        n_rows = size(transposed_weights, 1)
+                        zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
+                        println(length(zero_row_idcs))
                     end
 
                     if visuals
@@ -418,4 +423,4 @@ function proxOWL_segments(A::Vector, B::Vector)
 end
 
 
-growl_train()
+growl_train(actor_only = actor_only; outer_loops = outer_loops)
