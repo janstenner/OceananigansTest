@@ -5,10 +5,10 @@ load(1001)
 
 hook.rewards = hook.rewards[end-10:end]
 
-growl_power = 0.09
+growl_power = 0.01
 
 
-function growl_train(actor_only = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 3)
+function growl_train(actor_only = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 6)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
     frame = 0
@@ -72,6 +72,7 @@ function growl_train(actor_only = true; visuals = false, num_steps = 1600, inner
                             difference = sum(abs.(weights_before - agent.policy.approximator.actor.μ.layers[1].weight))
                             println(difference)
                             transposed_weights = transpose(agent.policy.approximator.actor.μ.layers[1].weight)
+                            n_rows = size(transposed_weights, 1)
                             zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
                             println(length(zero_row_idcs))
                         end
@@ -277,7 +278,7 @@ function apply_growl(model_weights)
     s_inds = sortperm(n2_rows_W)
     # Generate theta parameters (user-supplied function).
     theta_is = ones(n_rows) * 0.2
-    theta_is[1] = 1.0
+    theta_is[1:Int(floor(0.6 * n_rows))] .= 1.0
     # make the parameters smaller in general
     theta_is .*= growl_power
 
