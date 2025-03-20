@@ -5,15 +5,35 @@ using Flux
 
 
 Base.@kwdef struct u_mpc
-    c::Matrix{Float32} = rand(7,7)
-    base_functions_space = [x -> 1, x -> sin(2π/Lx*x), x -> cos(2π/Lx*x), x -> sin(4π/Lx*x), x -> cos(4π/Lx*x), x -> sin(6π/Lx*x), x -> cos(6π/Lx*x)]
-    base_functions_time = [t -> 1, t -> sin(2π/(te/2)*t), t -> cos(2π/(te/2)*t), t -> sin(4π/(te/2)*t), t -> cos(4π/(te/2)*t), t -> sin(6π/(te/2)*t), t -> cos(6π/(te/2)*t)]
+    n_base_functions_x = 13
+    n_base_functions_t = 13
+    c::Matrix{Float32} = randn(n_base_functions_x,n_base_functions_t) .* 0.2
+    base_functions_space = [[x -> 1]..., [x -> sin(x*i*2π/Lx) for i in 1:Int((n_base_functions_x-1)/2)]..., [x -> cos(x*i*2π/Lx) for i in 1:Int((n_base_functions_x-1)/2)]...]
+    base_functions_time = [[t -> 1]..., [t -> sin(t*i*2π/(te/2)) for i in 1:Int((n_base_functions_t-1)/2)]..., [t -> cos(t*i*2π/(te/2)) for i in 1:Int((n_base_functions_t-1)/2)]...]
 end
 
 Flux.@functor u_mpc
 
 function (st::u_mpc)(x,t)
-    sum(st.c[i,j] * st.base_functions_space[i](x) * st.base_functions_time[j](t) for i in 1:7, j in 1:7)
+    sum(st.c[i,j] * st.base_functions_space[i](x) * st.base_functions_time[j](t) for i in 1:st.n_base_functions_x, j in 1:st.n_base_functions_t)
+end
+
+function (st::u_mpc)(x::AbstractVector, t::AbstractVector)
+    # Evaluate each basis function on all x and t values.
+    S = [f.(x) for f in st.base_functions_space]  # Each S[i] is a vector with length(x)
+    T = [g.(t) for g in st.base_functions_time]     # Each T[j] is a vector with length(t)
+    
+    # Initialize the result array.
+    result = zeros(Float32, length(x), length(t))
+    
+    @inbounds for i in 1:st.n_base_functions_x
+        for j in 1:st.n_base_functions_t
+            # Compute the outer product: S[i] is treated as a column vector and T[j]' as a row vector.
+            # This produces a matrix where each element is S[i][p] * T[j][q].
+            result += st.c[i, j] * (S[i] * T[j]')
+        end
+    end
+    return result
 end
 
 load()
@@ -23,8 +43,8 @@ total_steps = 4_000
 
 u = u_mpc()
 
-new_learning_rate = 1e-4
-optimizer_u = Optimisers.OptimiserChain(Optimisers.ClipNorm(clip_grad), Optimisers.Adam(new_learning_rate, betas))
+new_learning_rate = 1e-1
+optimizer_u = Optimisers.Adam(new_learning_rate, betas)
 u_state_tree = Flux.setup(optimizer_u, u)
 
 
@@ -70,13 +90,9 @@ function u_mpc_train(total_steps = 100)
     for i in 1:total_steps
         
         g_u = Flux.gradient(u) do u_p
-            mse = 0.0
-            for n in eachindex(xx)
-                for m in eachindex(tt)
-                    diff = u_p(xx[n],tt[m]) - collected_actions[n,m]
-                    mse += diff.^2
-                end
-            end
+
+            diff = u_p(xx,tt) - collected_actions
+            mse = mean(diff.^2)
 
             Zygote.@ignore push!(losses, mse)
 
@@ -84,9 +100,10 @@ function u_mpc_train(total_steps = 100)
         end
 
         Flux.update!(u_state_tree, u, g_u[1])
-    end
 
-    i%10 == 0 && println(i*100/total_steps, "% done")
+        i%10 == 0 && println(i*100/total_steps, "% done")
+        println(losses[end])
+    end
 
     plot(losses)
 end
@@ -98,17 +115,17 @@ function compare_u()
     global collected_actions
     global collected_u = zeros(size(collected_actions))
 
-    for n in eachindex(xx)
-        for m in eachindex(tt)
-            collected_u[n,m] = u_p(xx[n],tt[m])
-        end
-    end
+    global xx = collect(Lx/actuators:Lx/actuators:Lx)
+    global tt = collect(te/200:te/200:te/2)
 
-    p = make_subplots(rows=1, cols=2)
+    
+    collected_u[:,:] = u(xx,tt)
 
-    add_trace!(p, surface(z=collected_actions), col = 1)
-    add_trace!(p, surface(z=collected_u), col = 2)
 
+
+    p = plot(surface(z=collected_actions))
+    display(p)
+    p = plot(surface(z=collected_u))
     display(p)
 end
 
@@ -116,6 +133,10 @@ end
 function render_run_u()
     global rewards = Float64[]
     global collected_actions_2 = zeros(200,actuators)
+
+    global xx = collect(Lx/actuators:Lx/actuators:Lx)
+    global tt = collect(te/200:te/200:te/2)
+    
     reward_sum = 0.0
 
     rm("frames/", recursive=true, force=true)
@@ -134,7 +155,7 @@ function render_run_u()
 
     for i in 1:200
 
-        action = u(env.state)
+        action = u(xx, [tt[i > 96 ? 96 : i]])'
 
         collected_actions_2[i,:] = action[:]
         env(action)

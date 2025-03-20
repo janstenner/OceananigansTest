@@ -56,7 +56,7 @@ function growl_train(total_steps = 1_000; growl=true)
 
             g_apprentice = Flux.gradient(apprentice) do appr
                 diff = appr(batch) - agent.policy.approximator.actor(batch)[1]
-                mse = sum(diff.^2)
+                mse = mean(diff.^2)
                 return mse
             end
 
