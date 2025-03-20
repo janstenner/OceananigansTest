@@ -692,6 +692,7 @@ function render_run(;use_zeros = false)
 
     agent.policy.update_step = 0
     global rewards = Float64[]
+    global collected_actions = zeros(200,actuators)
     reward_sum = 0.0
 
     #w = Window()
@@ -718,6 +719,7 @@ function render_run(;use_zeros = false)
             action = agent(env)
         end
 
+        collected_actions[i,:] = action[:]
         env(action)
 
         result = env.y[1,:,:]

@@ -13,9 +13,11 @@ end
 
 
 Lx = 2*pi
+Ly = 2*pi
 Lz = 2
 
 Nx = 96
+Ny = 96
 Nz = 64
 
 
@@ -39,7 +41,7 @@ Re = sqrt(Ra/Pr)
 kick = 0.2
 
 
-grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
+grid = RectilinearGrid(size = (Nx, Ny, Nz), x = (0, Lx), y = (0, Ly), z = (0, Lz), topology = (Periodic, Periodic, Bounded))
 
 # GPU version would be:
 # grid = RectilinearGrid(GPU(), size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Periodic, Flat, Bounded))
@@ -48,10 +50,12 @@ grid = RectilinearGrid(size = (Nx, Nz), x = (0, Lx), z = (0, Lz), topology = (Pe
 
 u_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
                                 bottom = ValueBoundaryCondition(0))
+v_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
+                                bottom = ValueBoundaryCondition(0))
 w_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(0),
                                 bottom = ValueBoundaryCondition(0))
 b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(1),
-                                bottom = ValueBoundaryCondition(b1+Δb))
+                                bottom = ValueBoundaryCondition(1+Δb))
 
 model = NonhydrostaticModel(; grid,
               advection = UpwindBiasedFifthOrder(),
@@ -59,17 +63,18 @@ model = NonhydrostaticModel(; grid,
               tracers = (:b),
               buoyancy = Buoyancy(model=BuoyancyTracer()),
               closure = (ScalarDiffusivity(ν = ν, κ = κ)),
-              boundary_conditions = (u = u_bcs, b = b_bcs,),
+              boundary_conditions = (u = u_bcs, v = v_bcs, b = b_bcs,),
               coriolis = nothing
 )
 
 # Set initial conditions
-uᵢ(x, z) = kick * randn()
-wᵢ(x, z) = kick * randn()
-bᵢ(x, z) =  1 + (2 - z) * Δb/2 + kick * randn()
+uᵢ(x, y, z) = kick * randn()
+vᵢ(x, y, z) = kick * randn()
+wᵢ(x, y, z) = kick * randn()
+bᵢ(x, y, z) =  1 + (2 - z) * Δb/2 + kick * randn()
 
 # Send the initial conditions to the model to initialize the variables
-set!(model, u = uᵢ, w = wᵢ, b = bᵢ)
+set!(model, u = uᵢ, v = vᵢ, w = wᵢ, b = bᵢ)
 
 # Now, we create a 'simulation' to run the model for a specified length of time
 simulation = Simulation(model, Δt = Δt, stop_time = Δt_snap)
@@ -81,8 +86,8 @@ simulation.verbose = true
 
 # Now, run the simulation
 totalsteps = Int(duration/Δt_snap)
-results = zeros(totalsteps+1,Nx,Nz)
-results[1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
+results = zeros(totalsteps+1,Nx,Ny,Nz)
+results[1,:,:,:] = model.tracers.b[1:Nx,1:Ny,1:Nz]
 
 for i in 1:totalsteps
 
@@ -93,7 +98,7 @@ for i in 1:totalsteps
     global cur_time += Δt_snap
 
     # collect T
-    results[i+1,:,:] = model.tracers.b[1:Nx,1,1:Nz]
+    results[i+1,:,:,:] = model.tracers.b[1:Nx,1:Ny,1:Nz]
 
     println(cur_time)
 end

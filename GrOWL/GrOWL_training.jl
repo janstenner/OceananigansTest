@@ -21,8 +21,8 @@ if train_existing
     agent.policy.approximator.actor_state_tree = Flux.setup(agent.policy.approximator.optimizer_actor, agent.policy.approximator.actor)
 
 else
-    growl_power = 0.01
-    growl_freq = 2000
+    growl_power = 0.02
+    growl_freq = 4000
     growl_srate = 0.9
 
     actor_only = false
@@ -35,7 +35,12 @@ end
 function growl_train(actor_only = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 6)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
-    frame = 0
+
+    if train_existing
+        frame = 0
+    else
+        frame = 1
+    end
 
     if visuals
         colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
@@ -304,6 +309,7 @@ function apply_growl(model_weights)
     # Generate theta parameters (user-supplied function).
     theta_is = ones(n_rows) * 0.2
     theta_is[1:Int(floor(0.6 * n_rows))] .= 1.0
+    theta_is = ones(n_rows)
     # make the parameters smaller in general
     theta_is .*= growl_power
 
