@@ -276,7 +276,7 @@ function render_run_apprentice()
         result_W = env.y[2,:,:]
         result_U = env.y[3,:,:]
 
-        p = make_subplots(rows=1, cols=3)
+        p = make_subplots(rows=1, cols=1)
 
         add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
         #add_trace!(p, heatmap(z=result_W'), col = 2)
