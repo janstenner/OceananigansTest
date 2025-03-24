@@ -175,7 +175,7 @@ function evaluate_u(mpc_time_steps = 5)
     return Nusselt_agg
 end
 
-function mpc_run(; agent_steps = 100, mpc_time_steps = 5, mpc_improvements = 10)
+function mpc_run(; agent_steps = 100, mpc_time_steps = 5, mpc_improvement_loops = 10, mpc_change_power = 0.01)
 
     global rewards = Float64[]
     global collected_actions_2 = zeros(200,actuators)
@@ -214,11 +214,11 @@ function mpc_run(; agent_steps = 100, mpc_time_steps = 5, mpc_improvements = 10)
             old_Nusselt = evaluate_u(mpc_time_steps)
 
             # Now that we have our base Nusselt Number, try to improve
-            for p in 1:mpc_improvements
+            for p in 1:mpc_improvement_loops
                 
                 old_c = copy(u.c)
 
-                u.c[:,:] .+= 0.01 * randn(size(u.c))
+                u.c[:,:] .+= mpc_change_power * randn(size(u.c))
                 
                 new_Nusselt = evaluate_u(mpc_time_steps)
 
