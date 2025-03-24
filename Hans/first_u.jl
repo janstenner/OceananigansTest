@@ -164,7 +164,7 @@ function evaluate_u()
     Nusselt_agg = 0.0
 
     for j in 1:5
-        action = u(xx, [tt[j]])
+        action = u(xx, [tt[j]])'
         actions = action[:]
         run!(temp_simulation)
         temp_simulation.stop_time += dt
@@ -208,14 +208,35 @@ function mpc_run()
         if i < 100
             action = agent(env)
         else
-            base_Nusselt = evaluate_u()
+            global steps_without_improvement = 0
 
-            # Now that we have our base Nusselt Number, try to improvement
-            for p in 1:0
-                #TODO
+            old_Nusselt = evaluate_u()
+
+            # Now that we have our base Nusselt Number, try to improve
+            for p in 1:10
+                
+                old_c = copy(u.c)
+
+                u.c[:,:] .+= 0.01 * randn(size(u.c))
+                
+                new_Nusselt = evaluate_u()
+
+                if new_Nusselt > old_Nusselt
+                    u.c[:,:] = old_c[:,:]
+                    steps_without_improvement += 1
+                    println("steps without improvement: $(steps_without_improvement)")
+                else
+                    steps_without_improvement = 0
+                    old_Nusselt = new_Nusselt
+                end
+
+                println("Inner loop progress: $(p*10)%")
             end
+
+            action = u(xx, [tt[1]])'
         end
 
+        
 
         collected_actions_2[i,:] = action[:]
         env(action)
