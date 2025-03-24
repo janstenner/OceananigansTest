@@ -155,7 +155,7 @@ function get_Nusselt(temp_simulation)
     return globalNu
 end
 
-function evaluate_u()
+function evaluate_u(mpc_time_steps = 5)
     global simulation
     global u
     global actions
@@ -163,7 +163,7 @@ function evaluate_u()
     temp_simulation = deepcopy(simulation)
     Nusselt_agg = 0.0
 
-    for j in 1:5
+    for j in 1:mpc_time_steps
         action = u(xx, [tt[j]])'
         actions = action[:]
         run!(temp_simulation)
@@ -175,7 +175,8 @@ function evaluate_u()
     return Nusselt_agg
 end
 
-function mpc_run()
+function mpc_run(; agent_steps = 100, mpc_time_steps = 5, mpc_improvements = 10)
+
     global rewards = Float64[]
     global collected_actions_2 = zeros(200,actuators)
 
@@ -205,21 +206,21 @@ function mpc_run()
 
     for i in 1:200
 
-        if i < 100
+        if i < agent_steps
             action = agent(env)
         else
             global steps_without_improvement = 0
 
-            old_Nusselt = evaluate_u()
+            old_Nusselt = evaluate_u(mpc_time_steps)
 
             # Now that we have our base Nusselt Number, try to improve
-            for p in 1:10
+            for p in 1:mpc_improvements
                 
                 old_c = copy(u.c)
 
                 u.c[:,:] .+= 0.01 * randn(size(u.c))
                 
-                new_Nusselt = evaluate_u()
+                new_Nusselt = evaluate_u(mpc_time_steps)
 
                 if new_Nusselt > old_Nusselt
                     u.c[:,:] = old_c[:,:]
