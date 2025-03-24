@@ -231,7 +231,7 @@ function mpc_run(; agent_steps = 100, mpc_time_steps = 5, mpc_improvement_loops 
                     old_Nusselt = new_Nusselt
                 end
 
-                println("Inner loop progress: $(p*10)%")
+                println("Inner loop progress: $(p*100/mpc_improvement_loops)%")
             end
 
             action = u(xx, [tt[1]])'
