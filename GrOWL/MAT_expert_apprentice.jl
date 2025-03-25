@@ -144,11 +144,11 @@ function growl_train(total_steps = 1_000; growl=true)
         if i%growl_freq == 0 && growl
             # GroWL routine
             println("starting GrOWL training...")
-            weights_before = deepcopy(apprentice.layers[1].weight)
-            apply_growl(apprentice.layers[1].weight)
-            difference = sum(abs.(weights_before - apprentice.layers[1].weight))
+            weights_before = deepcopy(apprentice.encoder.embedding.weight)
+            apply_growl(apprentice.encoder.embedding.weight)
+            difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
             println(difference)
-            transposed_weights = transpose(apprentice.layers[1].weight)
+            transposed_weights = transpose(apprentice.encoder.embedding.weight)
             n_rows = size(transposed_weights, 1)
             zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
             println(length(zero_row_idcs))
@@ -345,7 +345,7 @@ function render_run_apprentice()
 
     for i in 1:200
 
-        action = apprentice(env.state)
+        action = prob(apprentice, env.state, nothing).μ[:,:,1]
 
         collected_actions[i,:] = action[:]
         env(action)
