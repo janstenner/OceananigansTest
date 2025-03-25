@@ -14,33 +14,91 @@ growl_srate = 0.9
 
 total_steps = 4_000
 
-apprentice = Chain(Dense(size(env.state)[1], 64, gelu), Dense(64, 64, gelu), Dense(64, 1))
+block_num = 1
+dim_model = 64
+head_num = 2
+head_dim = 32
+ffn_dim = 64
+drop_out = 0.001
 
-new_learning_rate = 1e-4
-optimizer_apprentice = Optimisers.OptimiserChain(Optimisers.ClipNorm(clip_grad), Optimisers.Adam(new_learning_rate, betas))
-apprentice_state_tree = Flux.setup(optimizer_apprentice, apprentice)
+betas = (0.9, 0.999)
+
+customCrossAttention = true
+jointPPO = false
+one_by_one_training = false
+positional_encoding = 3 #ZeroEncoding
+
+apprentice_agent = create_agent_mat(n_actors = actuators,
+                    action_space = actionspace,
+                    state_space = env.state_space,
+                    use_gpu = false, 
+                    rng = rng,
+                    y = y, p = p,
+                    start_steps = start_steps, 
+                    start_policy = start_policy,
+                    update_freq = update_freq,
+                    learning_rate = 1e-4,
+                    nna_scale = 1.0,
+                    nna_scale_critic = 1.0,
+                    drop_middle_layer = true,
+                    drop_middle_layer_critic = true,
+                    fun = gelu,
+                    clip1 = false,
+                    n_epochs = n_epochs,
+                    n_microbatches = n_microbatches,
+                    logσ_is_network = false,
+                    max_σ = max_σ,
+                    entropy_loss_weight = entropy_loss_weight,
+                    adaptive_weights = false,
+                    clip_grad = clip_grad,
+                    target_kl = target_kl,
+                    start_logσ = -10.0f0,
+                    dim_model = dim_model,
+                    block_num = block_num,
+                    head_num = head_num,
+                    head_dim = head_dim,
+                    ffn_dim = ffn_dim,
+                    drop_out = drop_out,
+                    betas = betas,
+                    jointPPO = jointPPO,
+                    customCrossAttention = customCrossAttention,
+                    one_by_one_training = one_by_one_training,
+                    clip_range = clip_range,
+                    tanh_end = tanh_end,
+                    positional_encoding = positional_encoding,
+                    )
 
 
+apprentice = apprentice_agent.policy
 
+encoder = apprentice.encoder
+decoder = apprentice.decoder
+
+
+function generate_states()
+    global states
+
+    states = zeros(Float32, size(env.state)[1], size(env.state)[2], 100)
+
+    reset!(env)
+    for i in 1:100
+
+        action = agent(env)
+
+        states[:, :, i] .= env.state
+
+        env(action)
+
+        println(i, "% of simulation done")
+    end
+end
 
 function growl_train(total_steps = 1_000; growl=true)
 
     global states
 
     if !(@isdefined states)
-        states = zeros(Float32, size(env.state)[1], size(env.state)[2], 100)
-
-        reset!(env)
-        for i in 1:100
-
-            action = agent(env)
-
-            states[:, :, i] .= env.state
-
-            env(action)
-
-            println(i, "% of simulation done")
-        end
+        generate_states()
     end
 
 
@@ -54,13 +112,33 @@ function growl_train(total_steps = 1_000; growl=true)
         for j in 1:Int(100/batch_size)
             batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
 
-            g_apprentice = Flux.gradient(apprentice) do appr
-                diff = appr(batch) - agent.policy.approximator.actor(batch)[1]
+            na = size(apprentice.decoder.embedding.weight)[2]
+
+            global g_encoder
+            global g_decoder
+
+            g_encoder, g_decoder = Flux.gradient(apprentice.encoder, apprentice.decoder) do p_encoder, p_decoder
+
+                obsrep, val = p_encoder(batch)
+
+                μ, logσ = p_decoder(zeros(Float32,na,1,batch_size), obsrep[:,1:1,:])
+
+                for n in 2:apprentice.n_actors
+                    newμ, newlogσ = decoder(cat(zeros(Float32,na,1,batch_size), μ, dims=2), obsrep[:,1:n,:])
+
+                    μ = cat(μ, newμ[:,end:end,:], dims=2)
+                end
+
+                diff = μ - agent.policy.approximator.actor(batch)[1]
                 mse = mean(diff.^2)
+
+                Zygote.@ignore println(mse)
+
                 return mse
             end
 
-            Flux.update!(apprentice_state_tree, apprentice, g_apprentice[1])
+            Flux.update!(apprentice.encoder_state_tree, apprentice.encoder, g_encoder)
+            Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
         end
 
         if i%growl_freq == 0 && growl
@@ -78,7 +156,7 @@ function growl_train(total_steps = 1_000; growl=true)
 
 
         #check current performance of the apprentice
-        diff = apprentice(states) - agent.policy.approximator.actor(states)[1]
+        diff = prob(apprentice, states, nothing).μ - agent.policy.approximator.actor(states)[1]
         mse = sum(diff.^2)
         push!(losses, mse)
     end
@@ -315,6 +393,6 @@ function render_run_apprentice()
 end
 
 
-growl_train(total_steps)
+#growl_train(total_steps)
 
 #render_run_apprentice()
