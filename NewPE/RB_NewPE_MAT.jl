@@ -97,7 +97,7 @@ update_freq = 200
 
 learning_rate = 1e-4
 n_epochs = 7
-n_microbatches = 24
+n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
