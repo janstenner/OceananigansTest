@@ -3,23 +3,24 @@ using Optimisers
 using Flux
 
 
-load()
+# load()
+load(701) # for window size 7
 agent.policy.approximator.actor.logσ[1] = -14.0f0
 
 batch_size = 20
 
-growl_power = 0.005
-growl_freq = 70
+growl_power = 0.1
+growl_freq = 5000000
 growl_srate = 0.9
 
 total_steps = 4_000
 
 block_num = 1
-dim_model = 64
+dim_model = 22
 head_num = 2
-head_dim = 32
-ffn_dim = 64
-drop_out = 0.001
+head_dim = 11
+ffn_dim = 22
+drop_out = 0.00#1
 
 betas = (0.9, 0.999)
 
@@ -74,6 +75,64 @@ apprentice = apprentice_agent.policy
 encoder = apprentice.encoder
 decoder = apprentice.decoder
 
+mask = ones(Float32, size(env.state[:,1]))
+
+
+
+
+function update_mask(threshold = 0.1)
+    global mask
+
+    first_layer_matrix = apprentice.encoder.embedding.weight
+
+    back_projection = zeros(size(env.state[:,1]))
+
+    for i in 1:size(first_layer_matrix)[1]
+        for j in 1:size(first_layer_matrix)[2]
+            back_projection[j] += abs(first_layer_matrix[i,j])
+        end
+    end
+
+    indexes_to_be_zero = findall(x -> x < threshold, back_projection)
+
+    mask[indexes_to_be_zero] .= 0.0f0
+end
+
+
+function plot_masked_input()
+    global mask
+
+    first_layer_matrix = apprentice.encoder.embedding.weight
+
+    back_projection = zeros(size(env.state[:,1]))
+
+    for i in 1:size(first_layer_matrix)[1]
+        for j in 1:size(first_layer_matrix)[2]
+            back_projection[j] += abs(first_layer_matrix[i,j])
+        end
+    end
+
+    temp_y = reshape(back_projection .* mask, 3,window_size,sensors[2]+1)
+
+    p = make_subplots(rows=1, cols=3)
+
+    add_trace!(p, heatmap(z=temp_y[1,:,:]', coloraxis="coloraxis"), col = 1)
+    add_trace!(p, heatmap(z=temp_y[2,:,:]', coloraxis="coloraxis"), col = 2)
+    add_trace!(p, heatmap(z=temp_y[3,:,:]', coloraxis="coloraxis"), col = 3)
+
+    colorscale = [[0, "rgb(0, 0, 0)"], [0.1, "rgb(140, 90, 230)"], [1, "rgb(190, 120, 255)"], ]
+
+    layout = Layout(
+            plot_bgcolor="#f1f3f7",
+            coloraxis = attr(cmin = 0, cmax = maximum(temp_y), colorscale = colorscale),
+        )
+
+
+    relayout!(p, layout.fields)
+
+    display(p)
+end
+
 
 function generate_states()
     global states
@@ -111,6 +170,7 @@ function growl_train(total_steps = 1_000; growl=true)
         rand_inds = shuffle!(rng, Vector(1:100))
         for j in 1:Int(100/batch_size)
             batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            batch_masked = batch .* mask
 
             na = size(apprentice.decoder.embedding.weight)[2]
 
@@ -119,17 +179,23 @@ function growl_train(total_steps = 1_000; growl=true)
 
             g_encoder, g_decoder = Flux.gradient(apprentice.encoder, apprentice.decoder) do p_encoder, p_decoder
 
-                obsrep, val = p_encoder(batch)
+                obsrep, val = p_encoder(batch_masked)
 
-                μ, logσ = p_decoder(zeros(Float32,na,1,batch_size), obsrep[:,1:1,:])
+                # μ, logσ = p_decoder(zeros(Float32,na,1,batch_size), obsrep[:,1:1,:])
 
-                for n in 2:apprentice.n_actors
-                    newμ, newlogσ = decoder(cat(zeros(Float32,na,1,batch_size), μ, dims=2), obsrep[:,1:n,:])
+                # for n in 2:apprentice.n_actors
+                #     newμ, newlogσ = p_decoder(cat(zeros(Float32,na,1,batch_size), μ, dims=2), obsrep[:,1:n,:])
 
-                    μ = cat(μ, newμ[:,end:end,:], dims=2)
-                end
+                #     μ = cat(μ, newμ[:,end:end,:], dims=2)
+                # end
 
-                diff = μ - agent.policy.approximator.actor(batch)[1]
+                # new variant
+                μ_expert = agent.policy.approximator.actor(batch)[1]
+
+                temp_act = cat(zeros(Float32,na,1,batch_size),μ_expert[:,1:end-1,:],dims=2)
+                μ, logσ = p_decoder(temp_act, obsrep)
+
+                diff = μ - μ_expert
                 mse = mean(diff.^2)
 
                 Zygote.@ignore println(mse)
@@ -345,7 +411,7 @@ function render_run_apprentice()
 
     for i in 1:200
 
-        action = prob(apprentice, env.state, nothing).μ[:,:,1]
+        action = prob(apprentice, env.state .* mask, nothing).μ[:,:,1]
 
         collected_actions[i,:] = action[:]
         env(action)

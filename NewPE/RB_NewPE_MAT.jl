@@ -73,8 +73,8 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 memory_size = 0
 nna_scale = 6.4
 nna_scale_critic = 3.2
-drop_middle_layer = false
-drop_middle_layer_critic = false
+drop_middle_layer = true
+drop_middle_layer_critic = true
 fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
@@ -95,12 +95,14 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 200
 
 
-learning_rate = 3e-4
+learning_rate = 1e-4
 n_epochs = 7
 n_microbatches = 24
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
+actor_loss_weight = 100.0
+critic_loss_weight = 0.001
 clip_grad = 0.3
 target_kl = 0.8
 clip1 = false
@@ -108,9 +110,21 @@ start_logσ = - 0.4
 tanh_end = false
 clip_range = 0.05f0
 
-betas = (0.9, 0.999)#(0.99,0.99)
 
+block_num = 1
+dim_model = 22
+head_num = 2
+head_dim = 11
+ffn_dim = 22
+drop_out = 0.00#1
 
+betas = (0.9, 0.999)
+
+customCrossAttention = true
+adaptive_weights = false
+jointPPO = false
+one_by_one_training = false
+positional_encoding = 3 #ZeroEncoding
 square_rewards = true
 randomIC = false
 
@@ -470,7 +484,7 @@ function initialize_setup(;use_random_init = false)
                 max_value = max_value,
                 check_max_value = check_max_value)
 
-    global agent = create_agent_ppo(n_envs = actuators,
+    global agent = create_agent_mat(n_actors = actuators,
                 action_space = actionspace,
                 state_space = env.state_space,
                 use_gpu = use_gpu, 
@@ -484,19 +498,33 @@ function initialize_setup(;use_random_init = false)
                 nna_scale_critic = nna_scale_critic,
                 drop_middle_layer = drop_middle_layer,
                 drop_middle_layer_critic = drop_middle_layer_critic,
-                fun = fun,
+                fun = gelu,
                 clip1 = clip1,
                 n_epochs = n_epochs,
                 n_microbatches = n_microbatches,
                 logσ_is_network = logσ_is_network,
                 max_σ = max_σ,
                 entropy_loss_weight = entropy_loss_weight,
+                actor_loss_weight = actor_loss_weight,
+                critic_loss_weight = critic_loss_weight,
+                adaptive_weights = adaptive_weights,
                 clip_grad = clip_grad,
                 target_kl = target_kl,
                 start_logσ = start_logσ,
-                tanh_end = tanh_end,
+                dim_model = dim_model,
+                block_num = block_num,
+                head_num = head_num,
+                head_dim = head_dim,
+                ffn_dim = ffn_dim,
+                drop_out = drop_out,
                 betas = betas,
-                clip_range = clip_range,)
+                jointPPO = jointPPO,
+                customCrossAttention = customCrossAttention,
+                one_by_one_training = one_by_one_training,
+                clip_range = clip_range,
+                tanh_end = tanh_end,
+                positional_encoding = positional_encoding,
+                )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,

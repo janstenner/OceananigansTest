@@ -2,7 +2,11 @@
 
 #first_layer_matrix = agent.policy.approximator.actor.μ.layers[1].weight
 
-first_layer_matrix = apprentice.layers[1].weight
+# Dense Chain Apprentice
+#first_layer_matrix = apprentice.layers[1].weight
+
+# MAT Apprentice
+first_layer_matrix = apprentice.encoder.embedding.weight
 
 
 
