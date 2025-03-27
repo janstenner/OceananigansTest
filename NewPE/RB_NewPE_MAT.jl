@@ -79,7 +79,7 @@ fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 7 #47
+window_size = 15 #47
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -96,7 +96,7 @@ update_freq = 200
 
 
 learning_rate = 1e-4
-n_epochs = 7
+n_epochs = 17
 n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
