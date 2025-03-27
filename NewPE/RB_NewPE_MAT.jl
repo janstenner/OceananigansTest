@@ -679,12 +679,12 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global hook = FileIO.load(dirpath * "/saves/hookPPO.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agentPPO.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookMAT.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentMAT.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env.jld2","env")
     else
-        global hook = FileIO.load(dirpath * "/saves/hookPPO$number.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agentPPO$number.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookMAT$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentMAT$number.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env$number.jld2","env")
     end
 end
@@ -693,12 +693,12 @@ function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
     if isnothing(number)
-        FileIO.save(dirpath * "/saves/hookPPO.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agentPPO.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookMAT.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentMAT.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env.jld2","env",env)
     else
-        FileIO.save(dirpath * "/saves/hookPPO$number.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agentPPO$number.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookMAT$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentMAT$number.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env$number.jld2","env",env)
     end
 end
