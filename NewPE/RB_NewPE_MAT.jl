@@ -718,6 +718,9 @@ function render_run(;use_zeros = false)
     temp_update_after = agent.policy.update_freq
     agent.policy.update_freq = 100000
 
+    temp_logσ = agent.policy.decoder.logσ[1]
+    agent.policy.decoder.logσ[1] = -14.0f0
+
     agent.policy.update_step = 0
     global rewards = Float64[]
     global collected_actions = zeros(200,actuators)
@@ -785,6 +788,7 @@ function render_run(;use_zeros = false)
 
     agent.policy.start_steps = temp_start_steps
     agent.policy.update_freq = temp_update_after
+    agent.policy.decoder.logσ[1] = temp_logσ
 
     if true
         isdir("video_output") || mkdir("video_output")
