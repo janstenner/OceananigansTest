@@ -20,7 +20,7 @@ dt = 1.5
 
 
 
-scriptname = "RB_AC_$(dt)_$(sensors[2])"
+scriptname = "RB_MAT"
 
 #dir variable
 dirpath = string(@__DIR__)
