@@ -555,7 +555,7 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1, save_number = nothing)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
     frame = 1
@@ -633,6 +633,10 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
 
             # hook.rewards = clamp.(hook.rewards, -3000, 0)
         end
+
+        if save_number != nothing
+            save(save_number)
+        end
     end
 
     if visuals && false
@@ -640,7 +644,6 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
         run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le $(dirpath * "/training.mp4")`)
     end
 
-    #save()
 end
 
 

@@ -1,16 +1,25 @@
 using LinearAlgebra
 using Oceananigans
 using Statistics
+using PlotlyJS
 using JSON
 
 
+#dir variable
+dirpath = string(@__DIR__)
+open(dirpath * "/.gitignore", "w") do io
+    println(io, "training_frames/*")
+end
 
 
-runs = 3
+
+runs = 1
 collect_pressure = false
 
-frames_to_collect = 130
-start_frame = 75
+frames_to_collect = 1
+start_frame = 16000
+
+visuals = true
 
 num_actuators = 12
 
@@ -26,7 +35,7 @@ duration = 24.3
 
 start_steps = 20
 
-Ra = 1e4
+Ra = 1e5
 Pr = 0.71
 
 Re = sqrt(Ra/Pr)
@@ -144,7 +153,62 @@ totalsteps = Int(duration/Δt_snap)
 
 
 
+
+function array_gradient(a)
+    result = zeros(length(a))
+
+    for i in 1:length(a)
+        if i == 1
+            result[i] = a[i+1] - a[i]
+        elseif i == length(a)
+            result[i] = a[i] - a[i-1]
+        else
+            result[i] = (a[i+1] - a[i-1]) / 2
+        end
+    end
+
+    result
+end
+
+
+
+function get_Nu(model)
+
+    H = Lz
+
+    delta_T = Δb
+
+    kappa = model.closure.κ[1]
+
+    den = kappa * delta_T / H
+
+    q_1_mean = mean(model.tracers.b[1:Nx,1,1:Nz] .* model.velocities.w[1:Nx,1,1:Nz])
+    Tx = mean(model.tracers.b[1:Nx,1,1:Nz]', dims = 2)
+    q_2 = kappa * mean(array_gradient(Tx))
+
+    globalNu = (q_1_mean - q_2) / den
+
+
+    return globalNu
+
+end
+
+
+
+
+
+Nus = Float32[]
+
+colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
+layout = Layout(
+                plot_bgcolor="#f1f3f7",
+                coloraxis = attr(cmin = 1, cmid = 2.5, cmax = 3, colorscale = colorscale),
+            )
+
+
 function generate_data()
+    rm(dirpath * "/training_frames/", recursive=true, force=true)
+    mkdir(dirpath * "/training_frames/")
 
     global runs
     global collect_pressure
@@ -193,6 +257,15 @@ function generate_data()
             run!(simulation)
             cur_time += Δt_snap
 
+            if visuals && i % 100 == 0
+                p = plot(heatmap(z=model.tracers.b[1:Nx,1,1:Nz]', coloraxis="coloraxis"), layout)
+
+                savefig(p, dirpath * "/training_frames//a$(lpad(string(i), 5, '0')).png"; width=1000, height=800)
+            end
+
+            
+
+
             if i>start_frame
                 j = i - start_frame
 
@@ -206,13 +279,18 @@ function generate_data()
                 end
             end
 
+            temp_Nu = get_Nu(model)
+            push!(Nus, temp_Nu)
+
+            println(" ")
             println(cur_time)
+            println(temp_Nu)
         end
     end
 
 
 
-    open("rbc_data.json", "w") do f
+    open("RBC_Re1e5_Checkpoint.json", "w") do f
         JSON.print(f, sim_results)
         println(f)
     end
