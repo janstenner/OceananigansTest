@@ -79,7 +79,7 @@ fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 15 #47
+window_size = 45 #15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 

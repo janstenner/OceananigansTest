@@ -4,13 +4,13 @@ using Flux
 
 
 # load()
-load(701) # for window size 7
-agent.policy.approximator.actor.logσ[1] = -14.0f0
+# load(701) # for window size 7
+# agent.policy.approximator.actor.logσ[1] = -14.0f0
 
 batch_size = 20
 
 growl_power = 0.1
-growl_freq = 5000000
+growl_freq = 500
 growl_srate = 0.9
 
 total_steps = 4_000
@@ -83,6 +83,8 @@ mask = ones(Float32, size(env.state[:,1]))
 function update_mask(threshold = 0.1)
     global mask
 
+    mask = ones(Float32, size(env.state[:,1]))
+
     first_layer_matrix = apprentice.encoder.embedding.weight
 
     back_projection = zeros(size(env.state[:,1]))
@@ -142,7 +144,8 @@ function generate_states()
     reset!(env)
     for i in 1:100
 
-        action = agent(env)
+        #action = agent(env)
+        action = prob(agent.policy, env.state, nothing).μ
 
         states[:, :, i] .= env.state
 
@@ -152,7 +155,7 @@ function generate_states()
     end
 end
 
-function growl_train(total_steps = 1_000; growl=true)
+function growl_train(total_steps = total_steps; growl=true)
 
     global states
 
@@ -169,7 +172,8 @@ function growl_train(total_steps = 1_000; growl=true)
         # training call
         rand_inds = shuffle!(rng, Vector(1:100))
         for j in 1:Int(100/batch_size)
-            batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            #println("j is $(j) of $(Int(100/batch_size))")
+            global batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
             batch_masked = batch .* mask
 
             na = size(apprentice.decoder.embedding.weight)[2]
@@ -189,6 +193,9 @@ function growl_train(total_steps = 1_000; growl=true)
                 #     μ = cat(μ, newμ[:,end:end,:], dims=2)
                 # end
 
+                # diff = μ - agent.policy.approximator.actor(batch)[1]
+
+
                 # new variant
                 μ_expert = agent.policy.approximator.actor(batch)[1]
 
@@ -198,9 +205,9 @@ function growl_train(total_steps = 1_000; growl=true)
                 diff = μ - μ_expert
                 mse = mean(diff.^2)
 
-                Zygote.@ignore println(mse)
+                # Zygote.@ignore println(mse)
 
-                return mse
+                mse
             end
 
             Flux.update!(apprentice.encoder_state_tree, apprentice.encoder, g_encoder)
