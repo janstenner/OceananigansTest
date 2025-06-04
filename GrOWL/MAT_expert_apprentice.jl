@@ -9,12 +9,12 @@ using Flux
 
 batch_size = 20
 
-growl_power = 0.0003
+growl_power = 0.0006
 growl_freq = 1
-growl_srate = 0.9
+growl_srate = 0.7
 
 group_rows_by_overlap = true
-group_channels = true
+group_channels = false
 
 training_steps = 5_000
 extra_steps = 0
@@ -42,7 +42,7 @@ apprentice_agent = create_agent_mat(n_actors = actuators,
                     start_steps = start_steps, 
                     start_policy = start_policy,
                     update_freq = update_freq,
-                    learning_rate = 1e-5,
+                    learning_rate = 1e-4,
                     nna_scale = 1.0,
                     nna_scale_critic = 1.0,
                     drop_middle_layer = true,
@@ -143,6 +143,24 @@ function plot_masked_input()
 
     relayout!(p, layout.fields)
 
+    display(p)
+
+    # now plot the overlayed windows of all agents and the sensor counts by channels
+
+    sensor_window = reshape(mask, 3, window_size, sensors[2]+1)
+    total_sensors = zeros(3, sensors[1], sensors[2]+1)
+    window_half_size = Int(floor(window_size/2))
+
+    for i in actuators_to_sensors
+        temp_indexes = [(i + j + sensors[1] - 1) % sensors[1] + 1 for j in 0-window_half_size:0+window_half_size]
+
+        total_sensors[:, temp_indexes, :] .+= sensor_window
+    end
+
+    total_sensors = clamp.(total_sensors, 0.0f0, 1.0f0)
+    total_sensors_combined = total_sensors[1,:,:] + total_sensors[2,:,:] + total_sensors[3,:,:]
+
+    p = plot(heatmap(z=total_sensors_combined'))
     display(p)
 end
 
