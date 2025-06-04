@@ -9,10 +9,11 @@ using Flux
 
 batch_size = 20
 
-growl_power = 0.0001
+growl_power = 0.0003
 growl_freq = 1
 growl_srate = 0.9
 
+group_rows_by_overlap = true
 group_channels = true
 
 training_steps = 5_000
@@ -41,7 +42,7 @@ apprentice_agent = create_agent_mat(n_actors = actuators,
                     start_steps = start_steps, 
                     start_policy = start_policy,
                     update_freq = update_freq,
-                    learning_rate = 1e-6,
+                    learning_rate = 1e-5,
                     nna_scale = 1.0,
                     nna_scale_critic = 1.0,
                     drop_middle_layer = true,
@@ -165,7 +166,7 @@ function generate_states()
     end
 end
 
-function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_channels = true)
+function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels)
 
     global states
 
@@ -233,7 +234,7 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
             # println("starting GrOWL training...")
 
             weights_before = deepcopy(apprentice.encoder.embedding.weight)
-            apply_growl(apprentice.encoder.embedding.weight; group_channels = group_channels)
+            apply_growl(apprentice.encoder.embedding.weight;  group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels)
             difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
 
             # println(difference)
@@ -346,7 +347,7 @@ end
 
 
 
-function apply_growl(model_weights; group_channels = true)
+function apply_growl(model_weights; group_rows_by_overlap = true, group_channels = true)
 
     pl_srate = growl_srate
 
@@ -354,46 +355,70 @@ function apply_growl(model_weights; group_channels = true)
 
     global row_groups
 
+    if group_rows_by_overlap
+        groups = deepcopy(row_groups)
+    else
+        groups =  [[i] for i in 1:size(reshaped_weight, 1)]
+    end
+
     # Compute the L2 norm for each row.
-    n_rows = size(reshaped_weight, 1)
-    n2_rows_W = [norm(reshaped_weight[i, :], 2) for i in 1:n_rows]
+    n_groups = length(groups)
+    n2_groups = [norm(reshaped_weight[i, :][:], 2) for i in groups]
 
     # --- Create GrOWL parameters ---
     # Sort the row norms (returns indices that sort in increasing order).
-    s_inds = sortperm(n2_rows_W)
+    s_inds = sortperm(n2_groups)
     # Generate theta parameters (user-supplied function).
-    theta_is = ones(n_rows) * 0.2
-    theta_is[1:Int(floor(0.6 * n_rows))] .= 1.0
-    theta_is = ones(n_rows)
+    theta_is = ones(n_groups) * 0.2
+    theta_is[1:Int(floor(0.6 * n_groups))] .= 1.0
+    theta_is = ones(n_groups)
     # make the parameters smaller in general
     theta_is .*= growl_power
 
     # Apply the proximal operator.
-    new_n2_rows_W = proxOWL(copy(n2_rows_W), copy(theta_is))
+    new_n2_groups = proxOWL(deepcopy(n2_groups), deepcopy(theta_is))
 
     # --- Rescale the weight rows ---
     new_W = similar(reshaped_weight)
     eps_val = eps(Float32)
-    for i in 1:n_rows
-        if n2_rows_W[i] < eps_val
-            new_W[i, :] .= zeros(eltype(reshaped_weight), size(reshaped_weight, 2))
+
+    for i in 1:n_groups
+
+        if new_n2_groups[i] < eps_val
+            # If the norm is too small, set all rows belonging to the group to zero.
+            for j in groups[i]
+                new_W[j, :] .= zeros(eltype(reshaped_weight), size(reshaped_weight, 2))
+            end
         else
-            new_W[i, :] .= reshaped_weight[i, :] .* (new_n2_rows_W[i] / n2_rows_W[i])
+            # Scale all rows belonging to the group.
+            for j in groups[i]
+                new_W[j, :] .= reshaped_weight[j, :] .* (new_n2_groups[i] / n2_groups[i])
+            end       
         end
     end
 
+
     # --- Check for excessive pruning ---
-    # Find indices of rows that are entirely zero.
-    zero_row_idcs = [i for i in 1:n_rows if all(new_W[i, :] .== 0)]
-    max_slct = Int(floor(pl_srate * n_rows))
-    if length(zero_row_idcs) > max_slct
-        numel = length(zero_row_idcs)
+
+    # Find indices of groups that are entirely zero.
+    zero_group_idcs = [i for i in 1:n_groups if new_n2_groups[i] < eps_val]
+
+    max_slct = Int(floor(pl_srate * n_groups))
+
+    if length(zero_group_idcs) > max_slct
+
+        numel = length(zero_group_idcs)
         shuffled_idcs = shuffle(1:numel)
         use_slct = numel - max_slct
         selected_idcs = shuffled_idcs[1:use_slct]
-        selected_elmts = zero_row_idcs[selected_idcs]
+        selected_elmts = zero_group_idcs[selected_idcs]
+
+
         for i in selected_elmts
-            new_W[i, :] .= reshaped_weight[i, :]
+            # Restore all rows belonging to the group.
+            for j in groups[i]
+                new_W[j, :] .= reshaped_weight[j, :]
+            end
         end
     end
 
@@ -406,7 +431,7 @@ end
 
 
 function proxOWL(z::Vector, mu::Vector)
-    # Restore the signs of z.
+    # store the signs of z.
     sgn = sign.(z)
     # Work with absolute values.
     z_abs = abs.(z)
@@ -424,8 +449,8 @@ function proxOWL(z::Vector, mu::Vector)
     if flag > 0
         # In Python: k = n - indc, but note the 1-index adjustment in Julia.
         k = n - indc + 1
-        v1 = copy(z_sorted[1:k])
-        v2 = copy(mu[1:k])
+        v1 = deepcopy(z_sorted[1:k])
+        v2 = deepcopy(mu[1:k])
         v = proxOWL_segments(v1, v2)
         # Prepare an output array in original order.
         x_orig = zeros(n)
