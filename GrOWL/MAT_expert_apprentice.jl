@@ -9,11 +9,14 @@ using Flux
 
 batch_size = 20
 
-growl_power = 0.1
-growl_freq = 500
+growl_power = 0.0001
+growl_freq = 1
 growl_srate = 0.9
 
-total_steps = 4_000
+group_channels = true
+
+training_steps = 5_000
+extra_steps = 0
 
 block_num = 1
 dim_model = 22
@@ -38,7 +41,7 @@ apprentice_agent = create_agent_mat(n_actors = actuators,
                     start_steps = start_steps, 
                     start_policy = start_policy,
                     update_freq = update_freq,
-                    learning_rate = 1e-4,
+                    learning_rate = 1e-6,
                     nna_scale = 1.0,
                     nna_scale_critic = 1.0,
                     drop_middle_layer = true,
@@ -85,17 +88,24 @@ function update_mask(threshold = 0.1)
 
     mask = ones(Float32, size(env.state[:,1]))
 
-    first_layer_matrix = apprentice.encoder.embedding.weight
+    # first_layer_matrix = apprentice.encoder.embedding.weight
 
-    back_projection = zeros(size(env.state[:,1]))
+    # back_projection = zeros(size(env.state[:,1]))
 
-    for i in 1:size(first_layer_matrix)[1]
-        for j in 1:size(first_layer_matrix)[2]
-            back_projection[j] += abs(first_layer_matrix[i,j])
-        end
-    end
+    # for i in 1:size(first_layer_matrix)[1]
+    #     for j in 1:size(first_layer_matrix)[2]
+    #         back_projection[j] += abs(first_layer_matrix[i,j])
+    #     end
+    # end
 
-    indexes_to_be_zero = findall(x -> x < threshold, back_projection)
+    # another, more simple way
+    transposed_weights = transpose(apprentice.encoder.embedding.weight)
+    transposed_weights = abs.(transposed_weights)
+    back_projection = sum(transposed_weights, dims=2)[:]
+
+    indexes_to_be_zero = findall(x -> x <= threshold, back_projection)
+
+    println("Number of indexes to be zero: ", length(indexes_to_be_zero))
 
     mask[indexes_to_be_zero] .= 0.0f0
 end
@@ -122,7 +132,7 @@ function plot_masked_input()
     add_trace!(p, heatmap(z=temp_y[2,:,:]', coloraxis="coloraxis"), col = 2)
     add_trace!(p, heatmap(z=temp_y[3,:,:]', coloraxis="coloraxis"), col = 3)
 
-    colorscale = [[0, "rgb(0, 0, 0)"], [0.1, "rgb(140, 90, 230)"], [1, "rgb(190, 120, 255)"], ]
+    colorscale = [[0, "rgb(0, 0, 0)"], [0.01, "rgb(140, 90, 230)"], [1, "rgb(190, 120, 255)"], ]
 
     layout = Layout(
             plot_bgcolor="#f1f3f7",
@@ -151,11 +161,11 @@ function generate_states()
 
         env(action)
 
-        println(i, "% of simulation done")
+        # println(i, "% of simulation done")
     end
 end
 
-function growl_train(total_steps = total_steps; growl=true)
+function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_channels = true)
 
     global states
 
@@ -165,9 +175,12 @@ function growl_train(total_steps = total_steps; growl=true)
 
 
     global losses = Float32[]
-    for i in 1:total_steps
+    for i in 1:training_steps+extra_steps
         
-        i%100 == 0 && println(i*100/total_steps, "% done")
+        i%100 == 0 && i <= training_steps && println(i*100/training_steps, "% done")
+
+        i == training_steps+1 && println("training_steps finished, starting extra_steps...")
+        i%100 == 0 && i > training_steps && println((i-training_steps)*100/extra_steps, "% of extra steps done")
 
         # training call
         rand_inds = shuffle!(rng, Vector(1:100))
@@ -214,22 +227,35 @@ function growl_train(total_steps = total_steps; growl=true)
             Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
         end
 
-        if i%growl_freq == 0 && growl
+        if i%growl_freq == 0 && growl && i <= training_steps
             # GroWL routine
-            println("starting GrOWL training...")
+
+            # println("starting GrOWL training...")
+
             weights_before = deepcopy(apprentice.encoder.embedding.weight)
-            apply_growl(apprentice.encoder.embedding.weight)
+            apply_growl(apprentice.encoder.embedding.weight; group_channels = group_channels)
             difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
-            println(difference)
+
+            # println(difference)
+
+
+            #keep the zeros if this is the last growl step
+            if i+growl_freq > training_steps
+                println("keeping the zeros in the last grOWL step")
+                update_mask(0.0)
+            end
+        end
+
+        if i%100 == 0 
             transposed_weights = transpose(apprentice.encoder.embedding.weight)
             n_rows = size(transposed_weights, 1)
             zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
-            println(length(zero_row_idcs))
+            println("zero inputs: $(length(zero_row_idcs))")
         end
 
 
         #check current performance of the apprentice
-        diff = prob(apprentice, states, nothing).μ - agent.policy.approximator.actor(states)[1]
+        diff = prob(apprentice, states .* mask, nothing).μ - agent.policy.approximator.actor(states)[1]
         mse = sum(diff.^2)
         push!(losses, mse)
     end
@@ -241,11 +267,92 @@ end
 
 
 
-function apply_growl(model_weights)
+
+function get_row_groups(;group_channels = true)
+
+    row_groups = []
+
+    index_array = collect(1:size(env.state[:,1])[1])
+
+    index_y = reshape(index_array, 3,window_size,sensors[2]+1)
+
+    # create stencil for grouping
+    center_point = Int(ceil(window_size/2))
+    agent_delta = Int(sensors[1] / actuators)
+
+
+    anchor_steps = Int(ceil(center_point/agent_delta)+1)
+    
+    if group_channels
+        stencil_index_array = collect(1:agent_delta*(sensors[2]+1))
+        index_stencil = reshape(stencil_index_array, 1, agent_delta, sensors[2]+1)
+
+        anchors = [
+            [1,2,3],
+            [center_point + (j * agent_delta) for j in -anchor_steps:anchor_steps],
+            [1]
+        ]
+    else
+        stencil_index_array = collect(1:3*agent_delta*(sensors[2]+1))
+        index_stencil = reshape(stencil_index_array, 3, agent_delta, sensors[2]+1)
+
+        anchors = [
+            [1],
+            [center_point + (j * agent_delta) for j in -anchor_steps:anchor_steps],
+            [1]
+        ]
+    end
+    
+    for i in stencil_index_array
+        # get the stencil offset for the current index
+        stencil_offset = collect(findfirst(x -> x == i, index_stencil).I .- 1)
+
+        # get the anchor points for the current stencil offset
+        anchor_points = deepcopy(anchors)
+        anchor_points[1] .+=  stencil_offset[1]
+        anchor_points[2] .+=  stencil_offset[2]
+        anchor_points[3] .+=  stencil_offset[3]
+
+        # filter for valid indices
+        anchor_points[1] = filter(i -> (1 ≤ i ≤ size(index_y, 1)), anchor_points[1])
+        anchor_points[2] = filter(i -> (1 ≤ i ≤ size(index_y, 2)), anchor_points[2])
+        anchor_points[3] = filter(i -> (1 ≤ i ≤ size(index_y, 3)), anchor_points[3])
+
+        # get the indices of the row group
+        push!(row_groups, index_y[anchor_points...][:])
+    end
+
+    return row_groups
+end
+
+row_groups = get_row_groups(group_channels = group_channels)
+
+
+# utility function to check for duplicates of row_groups. Should return false
+function any_shared(c)
+    seen = Set{Int}()
+
+    for arr in c
+        for x in arr
+            if x in seen
+                return true              # x appeared in a previous sub‐array
+            end
+            push!(seen, x)
+        end
+    end
+    return false                        # no element was seen twice
+end
+
+
+
+
+function apply_growl(model_weights; group_channels = true)
 
     pl_srate = growl_srate
 
     reshaped_weight = transpose(model_weights)
+
+    global row_groups
 
     # Compute the L2 norm for each row.
     n_rows = size(reshaped_weight, 1)
@@ -454,18 +561,21 @@ function render_run_apprentice()
 
     println(reward_sum)
 
+    p = plot(rewards)
+    display(p)
+
 
 
     if true
         isdir("video_output") || mkdir("video_output")
-        rm("video_output/$scriptname.mp4", force=true)
-        #run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le "video_output/$scriptname.mp4"`)
+        rm("video_output/MAT_Apprentice.mp4", force=true)
+        #run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le "video_output/MAT_Apprentice.mp4"`)
 
-        run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac "video_output/$scriptname.mp4"`)
+        run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac "video_output/MAT_Apprentice.mp4"`)
     end
 end
 
 
-#growl_train(total_steps)
+#growl_train(training_steps)
 
 #render_run_apprentice()
