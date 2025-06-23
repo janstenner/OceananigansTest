@@ -717,7 +717,9 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            action = agent(env)
+            # action = agent(env)
+            prob_temp = prob(agent.policy, env)
+            action = prob_temp.μ
         end
 
         env(action)
@@ -726,13 +728,13 @@ function render_run(;use_zeros = false)
         result_W = env.y[2,:,:]
         result_U = env.y[3,:,:]
 
-        p = make_subplots(rows=1, cols=3)
+        # p = make_subplots(rows=1, cols=3)
 
-        add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
-        add_trace!(p, heatmap(z=result_W'), col = 2)
-        add_trace!(p, heatmap(z=result_U'), col = 3)
+        # add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
+        # add_trace!(p, heatmap(z=result_W'), col = 2)
+        # add_trace!(p, heatmap(z=result_U'), col = 3)
 
-        # p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
+        p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
 
         relayout!(p, layout.fields)
 

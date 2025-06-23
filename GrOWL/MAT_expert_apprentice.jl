@@ -9,14 +9,14 @@ using Flux
 
 batch_size = 20
 
-growl_power = 0.0006
+growl_power = 0.00016
 growl_freq = 1
-growl_srate = 0.7
+growl_srate = 0.9
 
 group_rows_by_overlap = true
-group_channels = false
+group_channels = true
 
-training_steps = 5_000
+training_steps = 35_000
 extra_steps = 0
 
 block_num = 1
@@ -42,7 +42,7 @@ apprentice_agent = create_agent_mat(n_actors = actuators,
                     start_steps = start_steps, 
                     start_policy = start_policy,
                     update_freq = update_freq,
-                    learning_rate = 1e-4,
+                    learning_rate = 3e-4,
                     nna_scale = 1.0,
                     nna_scale_critic = 1.0,
                     drop_middle_layer = true,
@@ -162,6 +162,14 @@ function plot_masked_input()
 
     p = plot(heatmap(z=total_sensors_combined'))
     display(p)
+
+
+    indexes_zero = findall(x -> x == 0.0, mask)
+    println("Sparsity: $(100*length(indexes_zero)/length(mask))%")
+
+    combined = total_sensors_combined[:]
+    indexes_zero_combined = findall(x -> x == 0.0, combined)
+    println("Sparsity combined channels: $(length(indexes_zero_combined)/length(combined))%")
 end
 
 
@@ -191,6 +199,10 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
     if !(@isdefined states)
         generate_states()
     end
+
+    global row_groups
+
+    row_groups = get_row_groups(;group_channels = group_channels)
 
 
     global losses = Float32[]
@@ -229,7 +241,7 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
 
 
                 # new variant
-                μ_expert = agent.policy.approximator.actor(batch)[1]
+                μ_expert = prob(agent.policy, batch, nothing).μ
 
                 temp_act = cat(zeros(Float32,na,1,batch_size),μ_expert[:,1:end-1,:],dims=2)
                 μ, logσ = p_decoder(temp_act, obsrep)
@@ -244,37 +256,43 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
 
             Flux.update!(apprentice.encoder_state_tree, apprentice.encoder, g_encoder)
             Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
-        end
-
-        if i%growl_freq == 0 && growl && i <= training_steps
-            # GroWL routine
-
-            # println("starting GrOWL training...")
-
-            weights_before = deepcopy(apprentice.encoder.embedding.weight)
-            apply_growl(apprentice.encoder.embedding.weight;  group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels)
-            difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
-
-            # println(difference)
 
 
-            #keep the zeros if this is the last growl step
-            if i+growl_freq > training_steps
-                println("keeping the zeros in the last grOWL step")
-                update_mask(0.0)
+
+            if i%growl_freq == 0 && growl && i <= training_steps
+                # GroWL routine
+
+                # println("starting GrOWL training...")
+
+                # weights_before = deepcopy(apprentice.encoder.embedding.weight)
+                apply_growl(apprentice.encoder.embedding.weight;  group_rows_by_overlap = group_rows_by_overlap)
+                # difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
+
+                # println(difference)
+
+
+                #keep the zeros if this is the last growl step
+                if i+growl_freq > training_steps
+                    println("keeping the zeros in the last grOWL step")
+                    update_mask(0.0)
+                end
             end
         end
+
 
         if i%100 == 0 
             transposed_weights = transpose(apprentice.encoder.embedding.weight)
             n_rows = size(transposed_weights, 1)
             zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
+            
             println("zero inputs: $(length(zero_row_idcs))")
+            weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
+            println("weight factor: $(weight_factor)")
         end
 
 
         #check current performance of the apprentice
-        diff = prob(apprentice, states .* mask, nothing).μ - agent.policy.approximator.actor(states)[1]
+        diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
         mse = sum(diff.^2)
         push!(losses, mse)
     end
@@ -365,7 +383,7 @@ end
 
 
 
-function apply_growl(model_weights; group_rows_by_overlap = true, group_channels = true)
+function apply_growl(model_weights; group_rows_by_overlap = true)
 
     pl_srate = growl_srate
 
@@ -622,3 +640,126 @@ end
 #growl_train(training_steps)
 
 #render_run_apprentice()
+
+
+
+
+#dir variable
+dirpath = string(@__DIR__)
+open(dirpath * "/.gitignore", "w") do io
+    println(io, "saves/*")
+end
+
+function load(number = nothing)
+    if isnothing(number)
+        global apprentice = FileIO.load(dirpath * "/saves/MAT_Apprentice.jld2","apprentice")
+    else
+        global apprentice = FileIO.load(dirpath * "/saves/MAT_Apprentice$number.jld2","apprentice")
+    end
+end
+
+function save(number = nothing)
+    isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
+
+    if isnothing(number)
+        FileIO.save(dirpath * "/saves/MAT_Apprentice.jld2","apprentice",apprentice)
+    else
+        FileIO.save(dirpath * "/saves/MAT_Apprentice$number.jld2","apprentice",apprentice)
+    end
+end
+
+
+
+
+
+function train_masked(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+    rm(dirpath * "/training_frames/", recursive=true, force=true)
+    mkdir(dirpath * "/training_frames/")
+    frame = 1
+
+    if visuals
+        colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
+        ymax = 30
+        layout = Layout(
+                plot_bgcolor="#f1f3f7",
+                coloraxis = attr(cmin = 1, cmid = 2.5, cmax = 3, colorscale = colorscale),
+            )
+    end
+
+
+    if use_random_init
+        hook.generate_random_init = generate_random_init
+    else
+        hook.generate_random_init = false
+    end
+    
+
+    for i = 1:outer_loops
+        
+        for i = 1:inner_loops
+            println("")
+            
+            stop_condition = StopAfterEpisodeWithMinSteps(num_steps)
+
+
+            # run start
+            hook(PRE_EXPERIMENT_STAGE, agent, env)
+            agent(PRE_EXPERIMENT_STAGE, env)
+            is_stop = false
+            while !is_stop
+                reset!(env)
+                agent(PRE_EPISODE_STAGE, env)
+                hook(PRE_EPISODE_STAGE, agent, env)
+
+                while !is_terminated(env) # one episode
+
+                    # update env state!!!!!
+                    env.state = env.state .* mask
+
+                    action = agent(env)
+
+                    agent(PRE_ACT_STAGE, env, action)
+                    hook(PRE_ACT_STAGE, agent, env, action)
+
+                    env(action)
+
+                    agent(POST_ACT_STAGE, env)
+                    hook(POST_ACT_STAGE, agent, env)
+
+                    if visuals
+                        p = plot(heatmap(z=env.y[1,:,:]', coloraxis="coloraxis"), layout)
+
+                        savefig(p, dirpath * "/training_frames//a$(lpad(string(frame), 5, '0')).png"; width=1000, height=800)
+                    end
+
+                    frame += 1
+
+                    if stop_condition(agent, env)
+                        is_stop = true
+                        break
+                    end
+                end # end of an episode
+
+                if is_terminated(env)
+                    agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
+                    hook(POST_EPISODE_STAGE, agent, env)
+                end
+            end
+            hook(POST_EXPERIMENT_STAGE, agent, env)
+            # run end
+
+
+            println(hook.bestreward)
+            
+
+            # hook.rewards = clamp.(hook.rewards, -3000, 0)
+        end
+    end
+
+    if visuals && false
+        rm(dirpath * "/training.mp4", force=true)
+        run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le $(dirpath * "/training.mp4")`)
+    end
+
+    #save()
+end

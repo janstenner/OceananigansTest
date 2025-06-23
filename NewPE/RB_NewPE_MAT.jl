@@ -79,7 +79,7 @@ fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 45 #15
+window_size = 15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -747,7 +747,9 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            action = agent(env)
+            # action = agent(env)
+            prob_temp = prob(agent.policy, env)
+            action = prob_temp.μ
         end
 
         collected_actions[i,:] = action[:]
@@ -757,17 +759,17 @@ function render_run(;use_zeros = false)
         result_W = env.y[2,:,:]
         result_U = env.y[3,:,:]
 
-        p = make_subplots(rows=1, cols=3)
+        # p = make_subplots(rows=1, cols=3)
 
-        add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
-        add_trace!(p, heatmap(z=result_W'), col = 2)
-        add_trace!(p, heatmap(z=result_U'), col = 3)
+        # add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
+        # add_trace!(p, heatmap(z=result_W'), col = 2)
+        # add_trace!(p, heatmap(z=result_U'), col = 3)
 
-        # p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
+        p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
 
         relayout!(p, layout.fields)
 
-        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=2400, height=800)
+        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1200, height=800)
         #body!(w,p)
 
         temp_reward = reward_function(env; returnGlobalNu = true)
