@@ -763,3 +763,30 @@ function train_masked(use_random_init = true; visuals = false, num_steps = 1600,
 
     #save()
 end
+
+
+function load_masked(number = nothing)
+    if isnothing(number)
+        global hook = FileIO.load(dirpath * "/saves/masked_hookMAT.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/masked_agentMAT.jld2","agent")
+        global mask = FileIO.load(dirpath * "/saves/masked_maskMAT.jld2","mask")
+    else
+        global hook = FileIO.load(dirpath * "/saves/masked_hookMAT$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/masked_agentMAT$number.jld2","agent")
+        global mask = FileIO.load(dirpath * "/saves/masked_maskMAT$number.jld2","mask")
+    end
+end
+
+function save_masked(number = nothing)
+    isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
+
+    if isnothing(number)
+        FileIO.save(dirpath * "/saves/masked_hookMAT.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/masked_agentMAT.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/masked_maskMAT.jld2","mask",mask)
+    else
+        FileIO.save(dirpath * "/saves/masked_hookMAT$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/masked_agentMAT$number.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/masked_maskMAT$number.jld2","mask",mask)
+    end
+end
