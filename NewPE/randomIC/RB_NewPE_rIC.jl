@@ -20,7 +20,7 @@ dt = 1.5
 
 
 
-scriptname = "RB_MAT_rIC"
+scriptname = "RB_AC_$(dt)_$(sensors[2])"
 
 #dir variable
 dirpath = string(@__DIR__)
@@ -73,13 +73,13 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 memory_size = 0
 nna_scale = 6.4
 nna_scale_critic = 3.2
-drop_middle_layer = true
-drop_middle_layer_critic = true
+drop_middle_layer = false
+drop_middle_layer_critic = false
 fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 15
+window_size = 7 #47
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -92,17 +92,15 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 200
+update_freq = 400
 
 
-learning_rate = 1e-4
-n_epochs = 17
-n_microbatches = 10
+learning_rate = 3e-4
+n_epochs = 3
+n_microbatches = 20
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.01
-actor_loss_weight = 100.0
-critic_loss_weight = 0.001
+entropy_loss_weight = 0.001
 clip_grad = 0.3
 target_kl = 0.8
 clip1 = false
@@ -110,21 +108,9 @@ start_logσ = - 0.4
 tanh_end = false
 clip_range = 0.05f0
 
+betas = (0.9, 0.999)#(0.99,0.99)
 
-block_num = 1
-dim_model = 32
-head_num = 2
-head_dim = 16
-ffn_dim = 32
-drop_out = 0.00#1
 
-betas = (0.9, 0.999)
-
-customCrossAttention = false
-adaptive_weights = false
-jointPPO = false
-one_by_one_training = false
-positional_encoding = 3 #ZeroEncoding
 square_rewards = true
 randomIC = true
 
@@ -484,7 +470,7 @@ function initialize_setup(;use_random_init = false)
                 max_value = max_value,
                 check_max_value = check_max_value)
 
-    global agent = create_agent_mat(n_actors = actuators,
+    global agent = create_agent_ppo(n_envs = actuators,
                 action_space = actionspace,
                 state_space = env.state_space,
                 use_gpu = use_gpu, 
@@ -498,33 +484,19 @@ function initialize_setup(;use_random_init = false)
                 nna_scale_critic = nna_scale_critic,
                 drop_middle_layer = drop_middle_layer,
                 drop_middle_layer_critic = drop_middle_layer_critic,
-                fun = gelu,
+                fun = fun,
                 clip1 = clip1,
                 n_epochs = n_epochs,
                 n_microbatches = n_microbatches,
                 logσ_is_network = logσ_is_network,
                 max_σ = max_σ,
                 entropy_loss_weight = entropy_loss_weight,
-                actor_loss_weight = actor_loss_weight,
-                critic_loss_weight = critic_loss_weight,
-                adaptive_weights = adaptive_weights,
                 clip_grad = clip_grad,
                 target_kl = target_kl,
                 start_logσ = start_logσ,
-                dim_model = dim_model,
-                block_num = block_num,
-                head_num = head_num,
-                head_dim = head_dim,
-                ffn_dim = ffn_dim,
-                drop_out = drop_out,
-                betas = betas,
-                jointPPO = jointPPO,
-                customCrossAttention = customCrossAttention,
-                one_by_one_training = one_by_one_training,
-                clip_range = clip_range,
                 tanh_end = tanh_end,
-                positional_encoding = positional_encoding,
-                )
+                betas = betas,
+                clip_range = clip_range,)
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
@@ -679,12 +651,12 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global hook = FileIO.load(dirpath * "/saves/hookMAT.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agentMAT.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookPPO.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentPPO.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env.jld2","env")
     else
-        global hook = FileIO.load(dirpath * "/saves/hookMAT$number.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agentMAT$number.jld2","agent")
+        global hook = FileIO.load(dirpath * "/saves/hookPPO$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agentPPO$number.jld2","agent")
         #global env = FileIO.load(dirpath * "/saves/env$number.jld2","env")
     end
 end
@@ -693,12 +665,12 @@ function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
     if isnothing(number)
-        FileIO.save(dirpath * "/saves/hookMAT.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agentMAT.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookPPO.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentPPO.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env.jld2","env",env)
     else
-        FileIO.save(dirpath * "/saves/hookMAT$number.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agentMAT$number.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/hookPPO$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agentPPO$number.jld2","agent",agent)
         #FileIO.save(dirpath * "/saves/env$number.jld2","env",env)
     end
 end
@@ -722,7 +694,6 @@ function render_run(;use_zeros = false)
     # agent.policy.decoder.logσ[1] = -14.0f0
 
     # agent.policy.update_step = 0
-
 
     global rewards = Float64[]
     global collected_actions = zeros(200,actuators)
@@ -749,9 +720,7 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            # action = agent(env)
-            prob_temp = prob(agent.policy, env)
-            action = prob_temp.μ
+            action = agent(env)
         end
 
         collected_actions[i,:] = action[:]
@@ -761,17 +730,17 @@ function render_run(;use_zeros = false)
         result_W = env.y[2,:,:]
         result_U = env.y[3,:,:]
 
-        # p = make_subplots(rows=1, cols=3)
+        p = make_subplots(rows=1, cols=3)
 
-        # add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
-        # add_trace!(p, heatmap(z=result_W'), col = 2)
-        # add_trace!(p, heatmap(z=result_U'), col = 3)
+        add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
+        add_trace!(p, heatmap(z=result_W'), col = 2)
+        add_trace!(p, heatmap(z=result_U'), col = 3)
 
-        p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
+        # p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
 
         relayout!(p, layout.fields)
 
-        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1200, height=800)
+        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=2400, height=800)
         #body!(w,p)
 
         temp_reward = reward_function(env; returnGlobalNu = true)
@@ -791,8 +760,7 @@ function render_run(;use_zeros = false)
     #copyto!(agent.policy.behavior_actor, hook.currentNNA)
 
     agent.policy.start_steps = temp_start_steps
-    # agent.policy.update_freq = temp_update_after
-    # agent.policy.decoder.logσ[1] = temp_logσ
+    #agent.policy.update_freq = temp_update_after
 
     if true
         isdir("video_output") || mkdir("video_output")
