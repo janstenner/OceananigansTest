@@ -599,7 +599,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                 agent(PRE_EPISODE_STAGE, env)
                 hook(PRE_EPISODE_STAGE, agent, env)
 
-                while !is_terminated(env) # one episode
+                while !(is_terminated(env) || is_truncated(env))
                     action = agent(env)
 
                     agent(PRE_ACT_STAGE, env, action)
@@ -625,7 +625,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                     end
                 end # end of an episode
 
-                if is_terminated(env)
+                if is_terminated(env) || is_truncated(env)
                     agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
                     hook(POST_EPISODE_STAGE, agent, env)
                 end

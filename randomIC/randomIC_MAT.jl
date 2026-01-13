@@ -94,18 +94,18 @@ update_freq = 200
 
 
 learning_rate = 1e-4
-n_epochs = 20
-n_microbatches = 5
-logσ_is_network = true
+n_epochs = 4
+n_microbatches = 10
+logσ_is_network = false
 max_σ = 1000.0f0
 entropy_loss_weight = 0.0
 actor_loss_weight = 100.0
-critic_loss_weight = 0.001
+critic_loss_weight = 0.003
 adaptive_weights = false
-clip_grad = 0.3
+clip_grad = 0.2
 target_kl = Inf
 clip1 = false
-start_logσ = -0.6
+start_logσ = -0.8
 clip_range = 0.2f0
 tanh_end = false
 
@@ -114,20 +114,21 @@ tanh_end = false
 drop_middle_layer = true
 drop_middle_layer_critic = true
 block_num = 1
-dim_model = 64
+dim_model = 32
 head_num = 2
-head_dim = 32
-ffn_dim = 64
+head_dim = 16
+ffn_dim = 32
 drop_out = 0.00#1
 
 betas = (0.9, 0.999)
 
-customCrossAttention = false
+customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
-square_rewards = true
+square_rewards = false
 joon_pe = true
 positional_encoding = 3 #ZeroEncoding
+useSeparateValueChain = true
 
 
 
@@ -395,7 +396,7 @@ function reward_function(env; returnGlobalNu = false)
         localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = - (0.9985*globalNu + 0.0015*localNu)
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -535,6 +536,7 @@ function initialize_setup(;use_random_init = false)
                 clip_range = clip_range,
                 tanh_end = tanh_end,
                 positional_encoding = positional_encoding,
+                useSeparateValueChain = useSeparateValueChain,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
@@ -633,7 +635,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                 agent(PRE_EPISODE_STAGE, env)
                 hook(PRE_EPISODE_STAGE, agent, env)
 
-                while !is_terminated(env) # one episode
+                while !(is_terminated(env) || is_truncated(env))
                     action = agent(env)
 
                     agent(PRE_ACT_STAGE, env, action)
@@ -659,7 +661,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                     end
                 end # end of an episode
 
-                if is_terminated(env)
+                if is_terminated(env) || is_truncated(env)
                     agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
                     hook(POST_EPISODE_STAGE, agent, env)
                 end
