@@ -111,7 +111,7 @@ clip_range = 0.05f0
 betas = (0.9, 0.999)#(0.99,0.99)
 
 
-square_rewards = true
+square_rewards = false
 randomIC = true
 
 
@@ -371,7 +371,7 @@ function reward_function(env; returnGlobalNu = false)
         localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = - (0.9985*globalNu + 0.0015*localNu)
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -714,7 +714,8 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            action = agent(env)
+            #action = agent(env)
+            action = RL.prob(agent.policy, env).μ
         end
 
         env(action)

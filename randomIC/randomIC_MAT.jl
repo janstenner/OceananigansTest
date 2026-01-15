@@ -757,7 +757,8 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            action = agent(env)
+            #action = agent(env)
+            action = RL.prob(agent.policy, env).μ
         end
 
         env(action)
