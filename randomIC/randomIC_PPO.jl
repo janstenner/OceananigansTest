@@ -79,7 +79,7 @@ fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 47
+window_size = 15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -95,22 +95,23 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 200
 
 
-learning_rate = 3e-4
-n_epochs = 7
-n_microbatches = 24
+learning_rate = 1e-4
+n_epochs = 4
+n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
-clip_grad = 0.3
-target_kl = 0.8
+clip_grad = 0.2
+target_kl = Inf
 clip1 = false
 start_logσ = -1.1
 tanh_end = false
-clip_range = 0.05f0
+clip_range = 0.2f0
 
 betas = (0.9, 0.999)#(0.99,0.99)
 
 
+joon_pe = true
 square_rewards = false
 randomIC = true
 
@@ -361,8 +362,8 @@ function reward_function(env; returnGlobalNu = false)
         tempT = reshape(tempT, window_size, sensors[2])
         tempW = reshape(tempW, window_size, sensors[2])
 
-        tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-        tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
 
         q_1_mean = mean(tempT .* tempW)
         Tx = mean(tempT', dims = 2)
@@ -393,14 +394,16 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     sensordata = y[:,sensor_positions[1],sensor_positions[2]]
 
     # New Positional Encoding
-    P_Temp = zeros(sensors[1], sensors[2])
+    if joon_pe
+        P_Temp = zeros(sensors[1], sensors[2])
 
-    for j in 1:sensors[1]
-        i_rad = (2*pi/sensors[1])*j
-        P_Temp[j,:] .= sin(i_rad)
+        for j in 1:sensors[1]
+            i_rad = (2*pi/sensors[1])*j
+            P_Temp[j,:] .= sin(i_rad)
+        end
+
+        sensordata[1,:,:] += P_Temp
     end
-
-    sensordata[1,:,:] += P_Temp
 
     window_half_size = Int(floor(window_size/2))
 

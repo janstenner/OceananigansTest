@@ -77,7 +77,7 @@ fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 47
+window_size = 15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -105,7 +105,7 @@ adaptive_weights = false
 clip_grad = 0.2
 target_kl = Inf
 clip1 = false
-start_logσ = -0.8
+start_logσ = -1.1
 clip_range = 0.2f0
 tanh_end = false
 
@@ -125,10 +125,12 @@ betas = (0.9, 0.999)
 customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
-square_rewards = false
-joon_pe = true
 positional_encoding = 3 #ZeroEncoding
 useSeparateValueChain = true
+
+joon_pe = true
+square_rewards = false
+randomIC = true
 
 
 
@@ -565,11 +567,13 @@ function generate_random_init()
     ww = values["w/data"][4:Nx+3,:,4:Nz+4]
     bb = values["b/data"][4:Nx+3,:,4:Nz+3]
 
-    circshift_amount = rand(1:Nx)
+    if randomIC
+        circshift_amount = rand(1:Nx)
 
-    uu = circshift(uu, (circshift_amount,0,0))
-    ww = circshift(ww, (circshift_amount,0,0))
-    bb = circshift(bb, (circshift_amount,0,0))
+        uu = circshift(uu, (circshift_amount,0,0))
+        ww = circshift(ww, (circshift_amount,0,0))
+        bb = circshift(bb, (circshift_amount,0,0))
+    end
 
     set!(model, u = uu, w = ww, b = bb)
 

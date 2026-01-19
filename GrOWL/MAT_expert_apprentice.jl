@@ -33,6 +33,9 @@ jointPPO = false
 one_by_one_training = false
 positional_encoding = 3 #ZeroEncoding
 
+square_rewards = false
+randomIC = false
+
 apprentice_agent = create_agent_mat(n_actors = actuators,
                     action_space = actionspace,
                     state_space = env.state_space,
@@ -179,6 +182,8 @@ function generate_states()
     states = zeros(Float32, size(env.state)[1], size(env.state)[2], 100)
 
     reset!(env)
+    generate_random_init()
+
     for i in 1:100
 
         #action = agent(env)
@@ -711,7 +716,7 @@ function train_masked(use_random_init = true; visuals = false, num_steps = 1600,
                 agent(PRE_EPISODE_STAGE, env)
                 hook(PRE_EPISODE_STAGE, agent, env)
 
-                while !is_terminated(env) # one episode
+                while !(is_terminated(env) || is_truncated(env))
 
                     # update env state!!!!!
                     env.state = env.state .* mask
@@ -740,7 +745,7 @@ function train_masked(use_random_init = true; visuals = false, num_steps = 1600,
                     end
                 end # end of an episode
 
-                if is_terminated(env)
+                if is_terminated(env) || is_truncated(env)
                     agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
                     hook(POST_EPISODE_STAGE, agent, env)
                 end

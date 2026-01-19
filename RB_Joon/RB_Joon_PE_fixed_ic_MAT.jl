@@ -21,7 +21,7 @@ dt = 1.5
 
 
 
-scriptname = "RB_AC_$(dt)_$(sensors[2])"
+scriptname = "RB_Joon_MAT_fixed_ic"
 
 #dir variable
 dirpath = string(@__DIR__)
@@ -77,7 +77,7 @@ fun = leakyrelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 7
+window_size = 15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -94,33 +94,40 @@ update_freq = 100
 
 
 learning_rate = 1e-4
-n_epochs = 10
-n_microbatches = 4
+n_epochs = 4
+n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.01
-clip_grad = 0.5
+entropy_loss_weight = 0.0#1
+clip_grad = 0.2
 target_kl = Inf
 clip1 = false
-start_logσ = -0.8
-clip_range = 0.05f0
+start_logσ = -1.1
+clip_range = 0.2f0
+tanh_end = false
 
 
 drop_middle_layer = true
 drop_middle_layer_critic = true
-block_num = 2
-dim_model = 280
-head_num = 5
-head_dim = 50
-ffn_dim = 320
-drop_out = 0.1
+block_num = 1
+dim_model = 32
+head_num = 2
+head_dim = 16
+ffn_dim = 32
+drop_out = 0.00#1
 
 betas = (0.9, 0.999)
 
 customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
-square_rewards = true
+positional_encoding = 3 #ZeroEncoding
+useSeparateValueChain = true
+
+
+joon_pe = true
+square_rewards = false
+randomIC = false
 
 
 
@@ -379,7 +386,7 @@ function reward_function(env; returnGlobalNu = false)
         localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = - (0.9985*globalNu + 0.0015*localNu)
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -401,14 +408,16 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     sensordata = y[:,sensor_positions[1],sensor_positions[2]]
 
     # New Positional Encoding
-    # P_Temp = zeros(sensors[1], sensors[2])
+    if joon_pe
+        P_Temp = zeros(sensors[1], sensors[2])
 
-    # for j in 1:sensors[1]
-    #     i_rad = (2*pi/sensors[1])*j
-    #     P_Temp[j,:] .= sin(i_rad)
-    # end
+        for j in 1:sensors[1]
+            i_rad = (2*pi/sensors[1])*j
+            P_Temp[j,:] .= sin(i_rad)
+        end
 
-    # sensordata[1,:,:] += P_Temp
+        sensordata[1,:,:] += P_Temp
+    end
 
     window_half_size = Int(floor(window_size/2))
 
@@ -512,6 +521,9 @@ function initialize_setup(;use_random_init = false)
                 customCrossAttention = customCrossAttention,
                 one_by_one_training = one_by_one_training,
                 clip_range = clip_range,
+                tanh_end = tanh_end,
+                positional_encoding = positional_encoding,
+                useSeparateValueChain = useSeparateValueChain,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
@@ -535,7 +547,20 @@ function generate_random_init()
     )
 
     global values
-    set!(model, u = values["u/data"][1:Nx,:,1:Nz], w = values["w/data"][1:Nx,:,1:Nz+1], b = values["b/data"][1:Nx,:,1:Nz])
+
+    uu = values["u/data"][4:Nx+3,:,4:Nz+3]
+    ww = values["w/data"][4:Nx+3,:,4:Nz+4]
+    bb = values["b/data"][4:Nx+3,:,4:Nz+3]
+
+    if randomIC
+        circshift_amount = rand(1:Nx)
+
+        uu = circshift(uu, (circshift_amount,0,0))
+        ww = circshift(ww, (circshift_amount,0,0))
+        bb = circshift(bb, (circshift_amount,0,0))
+    end
+
+    set!(model, u = uu, w = ww, b = bb)
 
 
     global simulation = Simulation(model, Δt = inner_dt, stop_time = dt)
@@ -721,7 +746,8 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            action = agent(env)
+            #action = agent(env)
+            action = RL.prob(agent.policy, env).μ
         end
 
         env(action)
