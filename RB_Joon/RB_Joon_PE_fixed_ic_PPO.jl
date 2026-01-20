@@ -106,7 +106,7 @@ target_kl = Inf
 clip1 = false
 start_logσ = -1.1
 tanh_end = false
-clip_range = 0.2f0
+clip_range = 0.05f0
 
 betas = (0.9, 0.999)#(0.99,0.99)
 

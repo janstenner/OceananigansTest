@@ -106,7 +106,7 @@ clip_grad = 0.2
 target_kl = Inf
 clip1 = false
 start_logσ = -1.1
-clip_range = 0.2f0
+clip_range = 0.05f0
 tanh_end = false
 
 

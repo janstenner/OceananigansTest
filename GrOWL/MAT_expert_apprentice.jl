@@ -9,21 +9,26 @@ using Flux
 
 batch_size = 20
 
-growl_power = 0.00016
+growl_power = 0.5
 growl_freq = 1
-growl_srate = 0.9
+growl_srate = 0.999
+# theta_rate = 0.7
 
 group_rows_by_overlap = true
 group_channels = true
 
-training_steps = 35_000
+training_steps = 3_000
 extra_steps = 0
 
+
+learning_rate = 6e-4
+clip_grad = Inf
+
 block_num = 1
-dim_model = 22
+dim_model = 32
 head_num = 2
-head_dim = 11
-ffn_dim = 22
+head_dim = 16
+ffn_dim = 32
 drop_out = 0.00#1
 
 betas = (0.9, 0.999)
@@ -33,6 +38,8 @@ jointPPO = false
 one_by_one_training = false
 positional_encoding = 3 #ZeroEncoding
 
+joon_pe = true
+new_pe = false
 square_rewards = false
 randomIC = false
 
@@ -45,7 +52,7 @@ apprentice_agent = create_agent_mat(n_actors = actuators,
                     start_steps = start_steps, 
                     start_policy = start_policy,
                     update_freq = update_freq,
-                    learning_rate = 3e-4,
+                    learning_rate = learning_rate,
                     nna_scale = 1.0,
                     nna_scale_critic = 1.0,
                     drop_middle_layer = true,
@@ -128,7 +135,13 @@ function plot_masked_input()
         end
     end
 
-    temp_y = reshape(back_projection .* mask, 3,window_size,sensors[2]+1)
+    if new_pe
+        channel_size = sensors[2]+1
+    else
+        channel_size = sensors[2]
+    end
+
+    temp_y = reshape(back_projection .* mask, 3,window_size,channel_size)
 
     p = make_subplots(rows=1, cols=3)
 
@@ -150,8 +163,8 @@ function plot_masked_input()
 
     # now plot the overlayed windows of all agents and the sensor counts by channels
 
-    sensor_window = reshape(mask, 3, window_size, sensors[2]+1)
-    total_sensors = zeros(3, sensors[1], sensors[2]+1)
+    sensor_window = reshape(mask, 3, window_size, channel_size)
+    total_sensors = zeros(3, sensors[1], channel_size)
     window_half_size = Int(floor(window_size/2))
 
     for i in actuators_to_sensors
@@ -275,24 +288,7 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
 
                 # println(difference)
 
-
-                #keep the zeros if this is the last growl step
-                if i+growl_freq > training_steps
-                    println("keeping the zeros in the last grOWL step")
-                    update_mask(0.0)
-                end
             end
-        end
-
-
-        if i%100 == 0 
-            transposed_weights = transpose(apprentice.encoder.embedding.weight)
-            n_rows = size(transposed_weights, 1)
-            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
-            
-            println("zero inputs: $(length(zero_row_idcs))")
-            weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
-            println("weight factor: $(weight_factor)")
         end
 
 
@@ -300,6 +296,25 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
         diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
         mse = sum(diff.^2)
         push!(losses, mse)
+
+        if i%100 == 0 
+            transposed_weights = transpose(apprentice.encoder.embedding.weight)
+            n_rows = size(transposed_weights, 1)
+            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
+            println("zero inputs: $(length(zero_row_idcs))")
+
+            weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
+            println("weight factor: $(weight_factor)")
+
+            loss_mean = mean(losses[max(1, end-99):end])
+            println("mean squared error over last 100 steps: $(loss_mean)")
+        end
+
+        #keep the zeros if this is the last growl step
+        if i+growl_freq > training_steps
+            println("keeping the zeros in the last grOWL step")
+            update_mask(0.0)
+        end
     end
 
     plot(losses)
@@ -316,7 +331,13 @@ function get_row_groups(;group_channels = true)
 
     index_array = collect(1:size(env.state[:,1])[1])
 
-    index_y = reshape(index_array, 3,window_size,sensors[2]+1)
+    if new_pe
+        channel_size = sensors[2]+1
+    else
+        channel_size = sensors[2]
+    end
+
+    index_y = reshape(index_array, 3,window_size,channel_size)
 
     # create stencil for grouping
     center_point = Int(ceil(window_size/2))
@@ -326,8 +347,8 @@ function get_row_groups(;group_channels = true)
     anchor_steps = Int(ceil(center_point/agent_delta)+1)
     
     if group_channels
-        stencil_index_array = collect(1:agent_delta*(sensors[2]+1))
-        index_stencil = reshape(stencil_index_array, 1, agent_delta, sensors[2]+1)
+        stencil_index_array = collect(1:agent_delta*(channel_size))
+        index_stencil = reshape(stencil_index_array, 1, agent_delta, channel_size)
 
         anchors = [
             [1,2,3],
@@ -335,8 +356,8 @@ function get_row_groups(;group_channels = true)
             [1]
         ]
     else
-        stencil_index_array = collect(1:3*agent_delta*(sensors[2]+1))
-        index_stencil = reshape(stencil_index_array, 3, agent_delta, sensors[2]+1)
+        stencil_index_array = collect(1:3*agent_delta*(channel_size))
+        index_stencil = reshape(stencil_index_array, 3, agent_delta, channel_size)
 
         anchors = [
             [1],
@@ -395,6 +416,7 @@ function apply_growl(model_weights; group_rows_by_overlap = true)
     reshaped_weight = transpose(model_weights)
 
     global row_groups
+    global theta_is
 
     if group_rows_by_overlap
         groups = deepcopy(row_groups)
@@ -409,10 +431,13 @@ function apply_growl(model_weights; group_rows_by_overlap = true)
     # --- Create GrOWL parameters ---
     # Sort the row norms (returns indices that sort in increasing order).
     s_inds = sortperm(n2_groups)
+
     # Generate theta parameters (user-supplied function).
-    theta_is = ones(n_groups) * 0.2
-    theta_is[1:Int(floor(0.6 * n_groups))] .= 1.0
-    theta_is = ones(n_groups)
+    # theta_is = ones(n_groups) * 0.2
+    # theta_is[Int(floor((1-theta_rate) * n_groups)):end] .= 1.0
+
+    theta_is = [(i-1)/n_groups for i in 1:n_groups]
+
     # make the parameters smaller in general
     theta_is .*= growl_power
 
