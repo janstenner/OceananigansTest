@@ -19,6 +19,7 @@ dt = 1.5
 
 
 
+include("../rIC-validation.jl")
 
 
 scriptname = "RB_AC_$(dt)_$(sensors[2])"
