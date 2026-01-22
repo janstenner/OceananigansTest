@@ -3,13 +3,25 @@ using Optimisers
 using Flux
 
 
+
+
+include("../rIC-validation.jl")
+num_states_rIC = 4_000
+
+
+
+# rIC scores
+# reward_sums = [615.7707476337812, 624.3941283416106, 609.5391093036005, 619.7676701858056, 624.5986261657915, 619.788090752011, 608.0556788331446, 608.0675050989786, 633.0851505101531, 608.2508144582149, 608.2281812638724, 610.8829166565549, 618.9712552451455, 621.5389821749475, 611.131756274039]
+# reward_sums_apprentice = [631.3680399549766, 635.6042491734456, 609.1698638729115, 614.7200798278612, 638.5093351455699, 614.7552684554165, 608.5678228568422, 608.5839687893373, 634.8891254699676, 611.7081526563197, 611.6936244852278, 623.3501830035208, 632.8096368662949, 620.9601228808638, 610.1753205755912]
+
+
 # load()
 # load(701) # for window size 7
 # agent.policy.approximator.actor.logσ[1] = -14.0f0
 
 batch_size = 20
 
-growl_power = 0.5
+growl_power = 0.003
 growl_freq = 1
 growl_srate = 0.999
 # theta_rate = 0.7
@@ -210,12 +222,56 @@ function generate_states()
     end
 end
 
-function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels)
+function grab_states_rIC()
+    global states_rIC
+
+    states_rIC = zeros(Float32, size(env.state)[1], size(env.state)[2], num_states_rIC)
+
+    stop_condition = StopAfterEpisodeWithMinSteps(num_states_rIC)
+
+    i = 1
+    is_stop = false
+    while !is_stop
+        reset!(env)
+        generate_random_init()
+
+        while !(is_terminated(env) || is_truncated(env))
+
+            action = prob(agent.policy, env.state, nothing).μ
+
+            # take the explorative action here
+            # action = agent(env)
+
+            states_rIC[:, :, i] .= deepcopy(env.state)
+            i += 1
+            if i > num_states_rIC
+                is_stop = true
+                break
+            end
+
+            env(action)
+
+            if stop_condition(agent, env)
+                is_stop = true
+                break
+            end
+        end
+    end
+end
+
+function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = false)
 
     global states
+    global states_rIC
 
-    if !(@isdefined states)
-        generate_states()
+    if rIC
+        if !(@isdefined states_rIC)
+            grab_states_rIC()
+        end
+    else
+        if !(@isdefined states)
+            generate_states()
+        end
     end
 
     global row_groups
@@ -231,11 +287,24 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
         i == training_steps+1 && println("training_steps finished, starting extra_steps...")
         i%100 == 0 && i > training_steps && println((i-training_steps)*100/extra_steps, "% of extra steps done")
 
+
         # training call
-        rand_inds = shuffle!(rng, Vector(1:100))
+        if rIC
+            rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
+        else
+            rand_inds = shuffle!(rng, Vector(1:100))
+        end
+
+
         for j in 1:Int(100/batch_size)
             #println("j is $(j) of $(Int(100/batch_size))")
-            global batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+
+            if rIC
+                global batch = states_rIC[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            else
+                global batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            end
+
             batch_masked = batch .* mask
 
             na = size(apprentice.decoder.embedding.weight)[2]
@@ -293,7 +362,12 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
 
 
         #check current performance of the apprentice
-        diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
+        if rIC
+            diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
+        else
+            diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
+        end
+        
         mse = sum(diff.^2)
         push!(losses, mse)
 

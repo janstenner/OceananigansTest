@@ -48,9 +48,13 @@ function generate_random_init(circshift_amount)
 end
 
 
-function validate_agent()
+function validate_agent(; use_apprentice = false)
 
-    global reward_sums = Float64[]
+    if use_apprentice
+        global reward_sums_apprentice = Float64[]
+    else
+        global reward_sums = Float64[]
+    end
 
     for j in rIC_validation_offsets
         println("Validating random IC with offset $j")
@@ -62,7 +66,11 @@ function validate_agent()
         
         for i in 1:200
 
-            action = RL.prob(agent.policy, env).μ
+            if use_apprentice
+                action = RL.prob(apprentice, env).μ
+            else
+                action = RL.prob(agent.policy, env).μ
+            end
 
             env(action)
 
@@ -72,13 +80,28 @@ function validate_agent()
             reward_sum += temp_reward
         end
 
-        push!(reward_sums, reward_sum)
+        if use_apprentice
+            push!(reward_sums_apprentice, reward_sum)
+        else
+            push!(reward_sums, reward_sum)
+        end
     end
 
-    mean_reward = mean(reward_sums)
-    println("Mean reward over random ICs: $mean_reward")
+    if use_apprentice
+        mean_reward = mean(reward_sums_apprentice)
+        println("Mean reward over random ICs: $mean_reward")
 
-    p = plot(box(y=reward_sums, name="Current Agent", boxpoints="all", quartilemethod="linear"))
+        traces = AbstractTrace[]
+        push!(traces, box(y=reward_sums, name="Expert", boxpoints="all", quartilemethod="linear"))
+        push!(traces, box(y=reward_sums_apprentice, name="Apprentice", boxpoints="all", quartilemethod="linear"))
+        p = plot(traces)
+        display(p)
+    else
+        mean_reward = mean(reward_sums)
+        println("Mean reward over random ICs: $mean_reward")
 
-    display(p)
+        p = plot(box(y=reward_sums, name="Current Agent", boxpoints="all", quartilemethod="linear"))
+        display(p)
+    end
+
 end
