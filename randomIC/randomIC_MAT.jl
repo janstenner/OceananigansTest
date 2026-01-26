@@ -91,7 +91,7 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 200
+update_freq = 500
 
 
 learning_rate = 1e-4
@@ -106,8 +106,8 @@ adaptive_weights = false
 clip_grad = 0.2
 target_kl = Inf
 clip1 = false
-start_logσ = -1.1
-clip_range = 0.05f0
+start_logσ = -0.8
+clip_range = 0.1f0
 tanh_end = false
 
 
@@ -115,10 +115,10 @@ tanh_end = false
 drop_middle_layer = true
 drop_middle_layer_critic = true
 block_num = 1
-dim_model = 32
+dim_model = 44
 head_num = 2
-head_dim = 16
-ffn_dim = 32
+head_dim = 22
+ffn_dim = 44
 drop_out = 0.00#1
 
 betas = (0.9, 0.999)

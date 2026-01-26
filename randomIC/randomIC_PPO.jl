@@ -71,8 +71,8 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 
 # agent tuning parameters
 memory_size = 0
-nna_scale = 51.2
-nna_scale_critic = 25.6
+nna_scale = 7.0
+nna_scale_critic = 3.5
 drop_middle_layer = false
 drop_middle_layer_critic = false
 fun = leakyrelu
@@ -92,7 +92,7 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 200
+update_freq = 500
 
 
 learning_rate = 1e-4
@@ -104,9 +104,9 @@ entropy_loss_weight = 0.01
 clip_grad = 0.2
 target_kl = Inf
 clip1 = false
-start_logσ = -1.1
+start_logσ = -0.8
 tanh_end = false
-clip_range = 0.05f0
+clip_range = 0.1f0
 
 betas = (0.9, 0.999)#(0.99,0.99)
 
