@@ -18,6 +18,7 @@ dt = 1.5
 
 
 
+include("../rIC-validation.jl")
 
 
 scriptname = "RB_MAT"
@@ -96,19 +97,19 @@ update_freq = 200
 
 
 learning_rate = 1e-4
-n_epochs = 17
+n_epochs = 4
 n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.01
+entropy_loss_weight = 0.0
 actor_loss_weight = 100.0
-critic_loss_weight = 0.001
-clip_grad = 0.3
-target_kl = 0.8
+critic_loss_weight = 0.003
+clip_grad = 0.2
+target_kl = Inf
 clip1 = false
-start_logσ = - 0.4
+start_logσ = -0.8
 tanh_end = false
-clip_range = 0.05f0
+clip_range = 0.1f0
 
 
 block_num = 1
@@ -125,7 +126,9 @@ adaptive_weights = false
 jointPPO = false
 one_by_one_training = false
 positional_encoding = 3 #ZeroEncoding
-square_rewards = true
+useSeparateValueChain = true
+
+square_rewards = false
 randomIC = false
 
 
@@ -385,7 +388,7 @@ function reward_function(env; returnGlobalNu = false)
         # localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - globalNu
+        rewards[i] = - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -498,7 +501,7 @@ function initialize_setup(;use_random_init = false)
                 nna_scale_critic = nna_scale_critic,
                 drop_middle_layer = drop_middle_layer,
                 drop_middle_layer_critic = drop_middle_layer_critic,
-                fun = gelu,
+                fun = fun,
                 clip1 = clip1,
                 n_epochs = n_epochs,
                 n_microbatches = n_microbatches,
@@ -524,6 +527,7 @@ function initialize_setup(;use_random_init = false)
                 clip_range = clip_range,
                 tanh_end = tanh_end,
                 positional_encoding = positional_encoding,
+                useSeparateValueChain = useSeparateValueChain,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
@@ -584,11 +588,12 @@ initialize_setup()
 # plotrun(use_best = false, plot3D = true)
 
 function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
-    rm(dirpath * "/training_frames/", recursive=true, force=true)
-    mkdir(dirpath * "/training_frames/")
+    
     frame = 1
 
     if visuals
+        rm(dirpath * "/training_frames/", recursive=true, force=true)
+        mkdir(dirpath * "/training_frames/")
         colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
         ymax = 30
         layout = Layout(
@@ -718,10 +723,11 @@ function render_run(;use_zeros = false)
     temp_update_after = agent.policy.update_freq
     agent.policy.update_freq = 100000
 
-    temp_logσ = agent.policy.decoder.logσ[1]
-    agent.policy.decoder.logσ[1] = -14.0f0
+    # temp_logσ = agent.policy.decoder.logσ[1]
+    # agent.policy.decoder.logσ[1] = -14.0f0
 
-    agent.policy.update_step = 0
+    #agent.policy.update_step = 0
+
     global rewards = Float64[]
     global collected_actions = zeros(200,actuators)
     reward_sum = 0.0
@@ -748,8 +754,7 @@ function render_run(;use_zeros = false)
             action = zeros(12)'
         else
             # action = agent(env)
-            prob_temp = prob(agent.policy, env)
-            action = prob_temp.μ
+            action = RL.prob(agent.policy, env).μ
         end
 
         collected_actions[i,:] = action[:]
@@ -790,7 +795,7 @@ function render_run(;use_zeros = false)
 
     agent.policy.start_steps = temp_start_steps
     agent.policy.update_freq = temp_update_after
-    agent.policy.decoder.logσ[1] = temp_logσ
+    #agent.policy.decoder.logσ[1] = temp_logσ
 
     if true
         isdir("video_output") || mkdir("video_output")

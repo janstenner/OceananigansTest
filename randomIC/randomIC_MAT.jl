@@ -72,8 +72,10 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 
 # agent tuning parameters
 memory_size = 0
-nna_scale = 51.2
-nna_scale_critic = 25.6
+nna_scale = 6.4
+nna_scale_critic = 3.2
+drop_middle_layer = true
+drop_middle_layer_critic = true
 fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
@@ -112,8 +114,6 @@ tanh_end = false
 
 
 
-drop_middle_layer = true
-drop_middle_layer_critic = true
 block_num = 1
 dim_model = 44
 head_num = 2
@@ -276,11 +276,14 @@ uu = values["u/data"][4:Nx+3,:,4:Nz+3]
 ww = values["w/data"][4:Nx+3,:,4:Nz+4]
 bb = values["b/data"][4:Nx+3,:,4:Nz+3]
 
-circshift_amount = rand(1:Nx)
 
-uu = circshift(uu, (circshift_amount,0,0))
-ww = circshift(ww, (circshift_amount,0,0))
-bb = circshift(bb, (circshift_amount,0,0))
+if randomIC
+    circshift_amount = rand(1:Nx)
+
+    uu = circshift(uu, (circshift_amount,0,0))
+    ww = circshift(ww, (circshift_amount,0,0))
+    bb = circshift(bb, (circshift_amount,0,0))
+end
 
 set!(model, u = uu, w = ww, b = bb)
 
@@ -381,25 +384,25 @@ function reward_function(env; returnGlobalNu = false)
     hor_inv_probes = Int(sensors[1] / actuators)
 
     for i in 1:actuators
-        tempstate = env.state[:,i]
+        # tempstate = env.state[:,i]
 
-        tempT = tempstate[1:3:length(tempstate)]
-        tempW = tempstate[2:3:length(tempstate)]
+        # tempT = tempstate[1:3:length(tempstate)]
+        # tempW = tempstate[2:3:length(tempstate)]
 
-        tempT = reshape(tempT, window_size, sensors[2])
-        tempW = reshape(tempW, window_size, sensors[2])
+        # tempT = reshape(tempT, window_size, sensors[2])
+        # tempW = reshape(tempW, window_size, sensors[2])
 
-        #tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-        #tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
 
-        q_1_mean = mean(tempT .* tempW)
-        Tx = mean(tempT', dims = 2)
-        q_2 = kappa * mean(array_gradient(Tx))
+        # q_1_mean = mean(tempT .* tempW)
+        # Tx = mean(tempT', dims = 2)
+        # q_2 = kappa * mean(array_gradient(Tx))
 
-        localNu = (q_1_mean - q_2) / den
+        # localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -546,7 +549,7 @@ function initialize_setup(;use_random_init = false)
                 collect_NNA = false,
                 generate_random_init = generate_random_init,
                 collect_history = false,
-                collect_rewards_all_timesteps = true,
+                collect_rewards_all_timesteps = false,
                 early_success_possible = false)
 end
 
@@ -737,7 +740,7 @@ function render_run(;use_zeros = false)
     temp_update_after = agent.policy.update_freq
     agent.policy.update_freq = 100000
 
-    agent.policy.update_step = 0
+    #agent.policy.update_step = 0
     global rewards = Float64[]
     reward_sum = 0.0
 

@@ -71,15 +71,15 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 
 # agent tuning parameters
 memory_size = 0
-nna_scale = 6.4
-nna_scale_critic = 3.2
+nna_scale = 7.0
+nna_scale_critic = 3.5
 drop_middle_layer = false
 drop_middle_layer_critic = false
 fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 7 #47
+window_size = 15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -92,26 +92,26 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 200
+update_freq = 500
 
 
-learning_rate = 3e-4
-n_epochs = 7
-n_microbatches = 24
+learning_rate = 1e-4
+n_epochs = 4
+n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.01
-clip_grad = 0.3
-target_kl = 0.8
+entropy_loss_weight = 0.0
+clip_grad = 0.2
+target_kl = Inf
 clip1 = false
-start_logσ = - 0.4
+start_logσ = -0.8
 tanh_end = false
-clip_range = 0.05f0
+clip_range = 0.1f0
 
 betas = (0.9, 0.999)#(0.99,0.99)
 
 
-square_rewards = true
+square_rewards = false
 randomIC = false
 
 
@@ -371,7 +371,7 @@ function reward_function(env; returnGlobalNu = false)
         # localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - globalNu
+        rewards[i] = - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -716,7 +716,7 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            action = agent(env)
+            action = RL.prob(agent.policy, env).μ
         end
 
         collected_actions[i,:] = action[:]
