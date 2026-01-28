@@ -20,7 +20,7 @@ dt = 1.5
 
 
 
-scriptname = "RB_AC_$(dt)_$(sensors[2])"
+scriptname = "RB_MAT_rIC"
 
 #dir variable
 dirpath = string(@__DIR__)
@@ -64,7 +64,7 @@ variance = 0.001
 
 sensor_positions = [collect(1:Int(Nx/sensors[1]):Nx), collect(1:Int(Nz/sensors[2]):Nz)]
 
-actuator_positions = collect(1:Int(Nx/actuators):Nx)
+actuator_positions = collect(1:Int(Nx/actuators):Nx) .+ Int(0.5 * Nx/actuators)
 
 actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuator_positions]
 
@@ -79,7 +79,7 @@ fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 15 #47
+window_size = 15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -92,40 +92,42 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 200
+update_freq = 500
 
 
 learning_rate = 1e-4
-n_epochs = 17
+n_epochs = 4
 n_microbatches = 10
-logσ_is_network = true
+logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.01
+entropy_loss_weight = 0.0
 actor_loss_weight = 100.0
-critic_loss_weight = 0.001
-clip_grad = 0.3
-target_kl = 0.8
+critic_loss_weight = 0.003
+clip_grad = 0.2
+target_kl = Inf
 clip1 = false
-start_logσ = - 0.4
+start_logσ = -0.8
 tanh_end = false
-clip_range = 0.05f0
+clip_range = 0.1f0
 
 
 block_num = 1
-dim_model = 33
+dim_model = 44
 head_num = 2
-head_dim = 20
-ffn_dim = 33
-drop_out = 0.0004
+head_dim = 22
+ffn_dim = 44
+drop_out = 0.00#1
 
 betas = (0.9, 0.999)
 
 customCrossAttention = true
-adaptive_weights = true
+adaptive_weights = false
 jointPPO = false
 one_by_one_training = false
 positional_encoding = 3 #ZeroEncoding
-square_rewards = true
+useSeparateValueChain = true
+
+square_rewards = false
 randomIC = true
 
 
@@ -385,7 +387,7 @@ function reward_function(env; returnGlobalNu = false)
         # localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - globalNu
+        rewards[i] = - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -498,7 +500,7 @@ function initialize_setup(;use_random_init = false)
                 nna_scale_critic = nna_scale_critic,
                 drop_middle_layer = drop_middle_layer,
                 drop_middle_layer_critic = drop_middle_layer_critic,
-                fun = gelu,
+                fun = fun,
                 clip1 = clip1,
                 n_epochs = n_epochs,
                 n_microbatches = n_microbatches,
@@ -524,6 +526,7 @@ function initialize_setup(;use_random_init = false)
                 clip_range = clip_range,
                 tanh_end = tanh_end,
                 positional_encoding = positional_encoding,
+                useSeparateValueChain = useSeparateValueChain,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
@@ -584,11 +587,12 @@ initialize_setup()
 # plotrun(use_best = false, plot3D = true)
 
 function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
-    rm(dirpath * "/training_frames/", recursive=true, force=true)
-    mkdir(dirpath * "/training_frames/")
+
     frame = 1
 
     if visuals
+        rm(dirpath * "/training_frames/", recursive=true, force=true)
+        mkdir(dirpath * "/training_frames/")
         colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
         ymax = 30
         layout = Layout(
@@ -622,7 +626,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                 agent(PRE_EPISODE_STAGE, env)
                 hook(PRE_EPISODE_STAGE, agent, env)
 
-                while !is_terminated(env) # one episode
+                while !(is_terminated(env) || is_truncated(env))
                     action = agent(env)
 
                     agent(PRE_ACT_STAGE, env, action)
@@ -647,7 +651,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                     end
                 end # end of an episode
 
-                if is_terminated(env)
+                if is_terminated(env) || is_truncated(env)
                     agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
                     hook(POST_EPISODE_STAGE, agent, env)
                 end
@@ -715,13 +719,15 @@ function render_run(;use_zeros = false)
     temp_start_steps = agent.policy.start_steps
     agent.policy.start_steps  = -1
     
-    temp_update_after = agent.policy.update_freq
-    agent.policy.update_freq = 100000
+    # temp_update_after = agent.policy.update_freq
+    # agent.policy.update_freq = 100000
 
-    temp_logσ = agent.policy.decoder.logσ[1]
-    agent.policy.decoder.logσ[1] = -14.0f0
+    # temp_logσ = agent.policy.decoder.logσ[1]
+    # agent.policy.decoder.logσ[1] = -14.0f0
 
-    agent.policy.update_step = 0
+    # agent.policy.update_step = 0
+
+
     global rewards = Float64[]
     global collected_actions = zeros(200,actuators)
     reward_sum = 0.0
@@ -747,7 +753,8 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            action = agent(env)
+            # action = agent(env)
+            action = RL.prob(agent.policy, env).μ
         end
 
         collected_actions[i,:] = action[:]
@@ -757,17 +764,17 @@ function render_run(;use_zeros = false)
         result_W = env.y[2,:,:]
         result_U = env.y[3,:,:]
 
-        p = make_subplots(rows=1, cols=3)
+        # p = make_subplots(rows=1, cols=3)
 
-        add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
-        add_trace!(p, heatmap(z=result_W'), col = 2)
-        add_trace!(p, heatmap(z=result_U'), col = 3)
+        # add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
+        # add_trace!(p, heatmap(z=result_W'), col = 2)
+        # add_trace!(p, heatmap(z=result_U'), col = 3)
 
-        # p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
+        p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
 
         relayout!(p, layout.fields)
 
-        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=2400, height=800)
+        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1200, height=800)
         #body!(w,p)
 
         temp_reward = reward_function(env; returnGlobalNu = true)
@@ -787,8 +794,8 @@ function render_run(;use_zeros = false)
     #copyto!(agent.policy.behavior_actor, hook.currentNNA)
 
     agent.policy.start_steps = temp_start_steps
-    agent.policy.update_freq = temp_update_after
-    agent.policy.decoder.logσ[1] = temp_logσ
+    # agent.policy.update_freq = temp_update_after
+    # agent.policy.decoder.logσ[1] = temp_logσ
 
     if true
         isdir("video_output") || mkdir("video_output")

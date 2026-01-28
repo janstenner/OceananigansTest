@@ -3,7 +3,7 @@ using Optimisers
 using Flux
 
 
-load()
+#load()
 agent.policy.approximator.actor.logσ[1] = -14.0f0
 
 batch_size = 20

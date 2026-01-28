@@ -64,7 +64,7 @@ variance = 0.001
 
 sensor_positions = [collect(1:Int(Nx/sensors[1]):Nx), collect(1:Int(Nz/sensors[2]):Nz)]
 
-actuator_positions = collect(1:Int(Nx/actuators):Nx)
+actuator_positions = collect(1:Int(Nx/actuators):Nx) .+ Int(0.5 * Nx/actuators)
 
 actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuator_positions]
 
@@ -111,7 +111,6 @@ clip_range = 0.1f0
 betas = (0.9, 0.999)#(0.99,0.99)
 
 
-joon_pe = true
 square_rewards = false
 randomIC = true
 
@@ -391,19 +390,18 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
     end
 
     # convolution is delta
+    # global sensordata
     sensordata = y[:,sensor_positions[1],sensor_positions[2]]
 
-    # New Positional Encoding
-    if joon_pe
-        P_Temp = zeros(sensors[1], sensors[2])
+    # New (!!!) Positional Encoding
+    P_Temp = zeros(3, sensors[1])
 
-        for j in 1:sensors[1]
-            i_rad = (2*pi/sensors[1])*j
-            P_Temp[j,:] .= sin(i_rad)
-        end
-
-        sensordata[1,:,:] += P_Temp
+    for j in 1:sensors[1]
+        i_rad = (2*pi/sensors[1])*j
+        P_Temp[:,j] .= sin(i_rad)
     end
+
+    sensordata = [sensordata;;; P_Temp]
 
     window_half_size = Int(floor(window_size/2))
 
@@ -563,8 +561,6 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
     frame = 1
 
     if visuals
-        rm(dirpath * "/training_frames/", recursive=true, force=true)
-        mkdir(dirpath * "/training_frames/")
         colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
         ymax = 30
         layout = Layout(
@@ -694,8 +690,13 @@ function render_run(;use_zeros = false)
     temp_update_after = agent.policy.update_freq
     agent.policy.update_freq = 100000
 
+    # temp_logσ = agent.policy.decoder.logσ[1]
+    # agent.policy.decoder.logσ[1] = -14.0f0
+
     # agent.policy.update_step = 0
+
     global rewards = Float64[]
+    global collected_actions = zeros(200,actuators)
     reward_sum = 0.0
 
     #w = Window()
@@ -719,10 +720,10 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            #action = agent(env)
             action = RL.prob(agent.policy, env).μ
         end
 
+        collected_actions[i,:] = action[:]
         env(action)
 
         result = env.y[1,:,:]

@@ -3,23 +3,44 @@ using Optimisers
 using Flux
 
 
+
+
+include("../rIC-validation.jl")
+num_states_rIC = 4_000
+
+
+
+# rIC scores
+# reward_sums = [615.7707476337812, 624.3941283416106, 609.5391093036005, 619.7676701858056, 624.5986261657915, 619.788090752011, 608.0556788331446, 608.0675050989786, 633.0851505101531, 608.2508144582149, 608.2281812638724, 610.8829166565549, 618.9712552451455, 621.5389821749475, 611.131756274039]
+# reward_sums_apprentice = [631.3680399549766, 635.6042491734456, 609.1698638729115, 614.7200798278612, 638.5093351455699, 614.7552684554165, 608.5678228568422, 608.5839687893373, 634.8891254699676, 611.7081526563197, 611.6936244852278, 623.3501830035208, 632.8096368662949, 620.9601228808638, 610.1753205755912]
+
+
 # load()
-load(701) # for window size 7
-agent.policy.approximator.actor.logσ[1] = -14.0f0
+# load(701) # for window size 7
+# agent.policy.approximator.actor.logσ[1] = -14.0f0
 
 batch_size = 20
 
-growl_power = 0.1
-growl_freq = 5000000
-growl_srate = 0.9
+growl_power = 0.003
+growl_freq = 1
+growl_srate = 0.999
+# theta_rate = 0.7
 
-total_steps = 4_000
+group_rows_by_overlap = true
+group_channels = true
+
+training_steps = 3_000
+extra_steps = 0
+
+
+learning_rate = 6e-4
+clip_grad = Inf
 
 block_num = 1
-dim_model = 22
+dim_model = 32
 head_num = 2
-head_dim = 11
-ffn_dim = 22
+head_dim = 16
+ffn_dim = 32
 drop_out = 0.00#1
 
 betas = (0.9, 0.999)
@@ -28,6 +49,11 @@ customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
 positional_encoding = 3 #ZeroEncoding
+
+joon_pe = true
+new_pe = false
+square_rewards = false
+randomIC = false
 
 apprentice_agent = create_agent_mat(n_actors = actuators,
                     action_space = actionspace,
@@ -38,7 +64,7 @@ apprentice_agent = create_agent_mat(n_actors = actuators,
                     start_steps = start_steps, 
                     start_policy = start_policy,
                     update_freq = update_freq,
-                    learning_rate = 1e-4,
+                    learning_rate = learning_rate,
                     nna_scale = 1.0,
                     nna_scale_critic = 1.0,
                     drop_middle_layer = true,
@@ -83,17 +109,26 @@ mask = ones(Float32, size(env.state[:,1]))
 function update_mask(threshold = 0.1)
     global mask
 
-    first_layer_matrix = apprentice.encoder.embedding.weight
+    mask = ones(Float32, size(env.state[:,1]))
 
-    back_projection = zeros(size(env.state[:,1]))
+    # first_layer_matrix = apprentice.encoder.embedding.weight
 
-    for i in 1:size(first_layer_matrix)[1]
-        for j in 1:size(first_layer_matrix)[2]
-            back_projection[j] += abs(first_layer_matrix[i,j])
-        end
-    end
+    # back_projection = zeros(size(env.state[:,1]))
 
-    indexes_to_be_zero = findall(x -> x < threshold, back_projection)
+    # for i in 1:size(first_layer_matrix)[1]
+    #     for j in 1:size(first_layer_matrix)[2]
+    #         back_projection[j] += abs(first_layer_matrix[i,j])
+    #     end
+    # end
+
+    # another, more simple way
+    transposed_weights = transpose(apprentice.encoder.embedding.weight)
+    transposed_weights = abs.(transposed_weights)
+    back_projection = sum(transposed_weights, dims=2)[:]
+
+    indexes_to_be_zero = findall(x -> x <= threshold, back_projection)
+
+    println("Number of indexes to be zero: ", length(indexes_to_be_zero))
 
     mask[indexes_to_be_zero] .= 0.0f0
 end
@@ -112,7 +147,13 @@ function plot_masked_input()
         end
     end
 
-    temp_y = reshape(back_projection .* mask, 3,window_size,sensors[2]+1)
+    if new_pe
+        channel_size = sensors[2]+1
+    else
+        channel_size = sensors[2]
+    end
+
+    temp_y = reshape(back_projection .* mask, 3,window_size,channel_size)
 
     p = make_subplots(rows=1, cols=3)
 
@@ -120,7 +161,7 @@ function plot_masked_input()
     add_trace!(p, heatmap(z=temp_y[2,:,:]', coloraxis="coloraxis"), col = 2)
     add_trace!(p, heatmap(z=temp_y[3,:,:]', coloraxis="coloraxis"), col = 3)
 
-    colorscale = [[0, "rgb(0, 0, 0)"], [0.1, "rgb(140, 90, 230)"], [1, "rgb(190, 120, 255)"], ]
+    colorscale = [[0, "rgb(0, 0, 0)"], [0.01, "rgb(140, 90, 230)"], [1, "rgb(190, 120, 255)"], ]
 
     layout = Layout(
             plot_bgcolor="#f1f3f7",
@@ -131,6 +172,32 @@ function plot_masked_input()
     relayout!(p, layout.fields)
 
     display(p)
+
+    # now plot the overlayed windows of all agents and the sensor counts by channels
+
+    sensor_window = reshape(mask, 3, window_size, channel_size)
+    total_sensors = zeros(3, sensors[1], channel_size)
+    window_half_size = Int(floor(window_size/2))
+
+    for i in actuators_to_sensors
+        temp_indexes = [(i + j + sensors[1] - 1) % sensors[1] + 1 for j in 0-window_half_size:0+window_half_size]
+
+        total_sensors[:, temp_indexes, :] .+= sensor_window
+    end
+
+    total_sensors = clamp.(total_sensors, 0.0f0, 1.0f0)
+    total_sensors_combined = total_sensors[1,:,:] + total_sensors[2,:,:] + total_sensors[3,:,:]
+
+    p = plot(heatmap(z=total_sensors_combined'))
+    display(p)
+
+
+    indexes_zero = findall(x -> x == 0.0, mask)
+    println("Sparsity: $(100*length(indexes_zero)/length(mask))%")
+
+    combined = total_sensors_combined[:]
+    indexes_zero_combined = findall(x -> x == 0.0, combined)
+    println("Sparsity combined channels: $(length(indexes_zero_combined)/length(combined))%")
 end
 
 
@@ -140,36 +207,104 @@ function generate_states()
     states = zeros(Float32, size(env.state)[1], size(env.state)[2], 100)
 
     reset!(env)
+    generate_random_init()
+
     for i in 1:100
 
-        action = agent(env)
+        #action = agent(env)
+        action = prob(agent.policy, env.state, nothing).μ
 
         states[:, :, i] .= env.state
 
         env(action)
 
-        println(i, "% of simulation done")
+        # println(i, "% of simulation done")
     end
 end
 
-function growl_train(total_steps = 1_000; growl=true)
+function grab_states_rIC()
+    global states_rIC
+
+    states_rIC = zeros(Float32, size(env.state)[1], size(env.state)[2], num_states_rIC)
+
+    stop_condition = StopAfterEpisodeWithMinSteps(num_states_rIC)
+
+    i = 1
+    is_stop = false
+    while !is_stop
+        reset!(env)
+        generate_random_init()
+
+        while !(is_terminated(env) || is_truncated(env))
+
+            action = prob(agent.policy, env.state, nothing).μ
+
+            # take the explorative action here
+            # action = agent(env)
+
+            states_rIC[:, :, i] .= deepcopy(env.state)
+            i += 1
+            if i > num_states_rIC
+                is_stop = true
+                break
+            end
+
+            env(action)
+
+            if stop_condition(agent, env)
+                is_stop = true
+                break
+            end
+        end
+    end
+end
+
+function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = false)
 
     global states
+    global states_rIC
 
-    if !(@isdefined states)
-        generate_states()
+    if rIC
+        if !(@isdefined states_rIC)
+            grab_states_rIC()
+        end
+    else
+        if !(@isdefined states)
+            generate_states()
+        end
     end
+
+    global row_groups
+
+    row_groups = get_row_groups(;group_channels = group_channels)
 
 
     global losses = Float32[]
-    for i in 1:total_steps
+    for i in 1:training_steps+extra_steps
         
-        i%100 == 0 && println(i*100/total_steps, "% done")
+        i%100 == 0 && i <= training_steps && println(i*100/training_steps, "% done")
+
+        i == training_steps+1 && println("training_steps finished, starting extra_steps...")
+        i%100 == 0 && i > training_steps && println((i-training_steps)*100/extra_steps, "% of extra steps done")
+
 
         # training call
-        rand_inds = shuffle!(rng, Vector(1:100))
+        if rIC
+            rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
+        else
+            rand_inds = shuffle!(rng, Vector(1:100))
+        end
+
+
         for j in 1:Int(100/batch_size)
-            batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            #println("j is $(j) of $(Int(100/batch_size))")
+
+            if rIC
+                global batch = states_rIC[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            else
+                global batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            end
+
             batch_masked = batch .* mask
 
             na = size(apprentice.decoder.embedding.weight)[2]
@@ -189,8 +324,11 @@ function growl_train(total_steps = 1_000; growl=true)
                 #     μ = cat(μ, newμ[:,end:end,:], dims=2)
                 # end
 
+                # diff = μ - agent.policy.approximator.actor(batch)[1]
+
+
                 # new variant
-                μ_expert = agent.policy.approximator.actor(batch)[1]
+                μ_expert = prob(agent.policy, batch, nothing).μ
 
                 temp_act = cat(zeros(Float32,na,1,batch_size),μ_expert[:,1:end-1,:],dims=2)
                 μ, logσ = p_decoder(temp_act, obsrep)
@@ -198,33 +336,59 @@ function growl_train(total_steps = 1_000; growl=true)
                 diff = μ - μ_expert
                 mse = mean(diff.^2)
 
-                Zygote.@ignore println(mse)
+                # Zygote.@ignore println(mse)
 
-                return mse
+                mse
             end
 
             Flux.update!(apprentice.encoder_state_tree, apprentice.encoder, g_encoder)
             Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
-        end
 
-        if i%growl_freq == 0 && growl
-            # GroWL routine
-            println("starting GrOWL training...")
-            weights_before = deepcopy(apprentice.encoder.embedding.weight)
-            apply_growl(apprentice.encoder.embedding.weight)
-            difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
-            println(difference)
-            transposed_weights = transpose(apprentice.encoder.embedding.weight)
-            n_rows = size(transposed_weights, 1)
-            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
-            println(length(zero_row_idcs))
+
+
+            if i%growl_freq == 0 && growl && i <= training_steps
+                # GroWL routine
+
+                # println("starting GrOWL training...")
+
+                # weights_before = deepcopy(apprentice.encoder.embedding.weight)
+                apply_growl(apprentice.encoder.embedding.weight;  group_rows_by_overlap = group_rows_by_overlap)
+                # difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
+
+                # println(difference)
+
+            end
         end
 
 
         #check current performance of the apprentice
-        diff = prob(apprentice, states, nothing).μ - agent.policy.approximator.actor(states)[1]
+        if rIC
+            diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
+        else
+            diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
+        end
+        
         mse = sum(diff.^2)
         push!(losses, mse)
+
+        if i%100 == 0 
+            transposed_weights = transpose(apprentice.encoder.embedding.weight)
+            n_rows = size(transposed_weights, 1)
+            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
+            println("zero inputs: $(length(zero_row_idcs))")
+
+            weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
+            println("weight factor: $(weight_factor)")
+
+            loss_mean = mean(losses[max(1, end-99):end])
+            println("mean squared error over last 100 steps: $(loss_mean)")
+        end
+
+        #keep the zeros if this is the last growl step
+        if i+growl_freq > training_steps
+            println("keeping the zeros in the last grOWL step")
+            update_mask(0.0)
+        end
     end
 
     plot(losses)
@@ -234,52 +398,167 @@ end
 
 
 
-function apply_growl(model_weights)
+
+function get_row_groups(;group_channels = true)
+
+    row_groups = []
+
+    index_array = collect(1:size(env.state[:,1])[1])
+
+    if new_pe
+        channel_size = sensors[2]+1
+    else
+        channel_size = sensors[2]
+    end
+
+    index_y = reshape(index_array, 3,window_size,channel_size)
+
+    # create stencil for grouping
+    center_point = Int(ceil(window_size/2))
+    agent_delta = Int(sensors[1] / actuators)
+
+
+    anchor_steps = Int(ceil(center_point/agent_delta)+1)
+    
+    if group_channels
+        stencil_index_array = collect(1:agent_delta*(channel_size))
+        index_stencil = reshape(stencil_index_array, 1, agent_delta, channel_size)
+
+        anchors = [
+            [1,2,3],
+            [center_point + (j * agent_delta) for j in -anchor_steps:anchor_steps],
+            [1]
+        ]
+    else
+        stencil_index_array = collect(1:3*agent_delta*(channel_size))
+        index_stencil = reshape(stencil_index_array, 3, agent_delta, channel_size)
+
+        anchors = [
+            [1],
+            [center_point + (j * agent_delta) for j in -anchor_steps:anchor_steps],
+            [1]
+        ]
+    end
+    
+    for i in stencil_index_array
+        # get the stencil offset for the current index
+        stencil_offset = collect(findfirst(x -> x == i, index_stencil).I .- 1)
+
+        # get the anchor points for the current stencil offset
+        anchor_points = deepcopy(anchors)
+        anchor_points[1] .+=  stencil_offset[1]
+        anchor_points[2] .+=  stencil_offset[2]
+        anchor_points[3] .+=  stencil_offset[3]
+
+        # filter for valid indices
+        anchor_points[1] = filter(i -> (1 ≤ i ≤ size(index_y, 1)), anchor_points[1])
+        anchor_points[2] = filter(i -> (1 ≤ i ≤ size(index_y, 2)), anchor_points[2])
+        anchor_points[3] = filter(i -> (1 ≤ i ≤ size(index_y, 3)), anchor_points[3])
+
+        # get the indices of the row group
+        push!(row_groups, index_y[anchor_points...][:])
+    end
+
+    return row_groups
+end
+
+row_groups = get_row_groups(group_channels = group_channels)
+
+
+# utility function to check for duplicates of row_groups. Should return false
+function any_shared(c)
+    seen = Set{Int}()
+
+    for arr in c
+        for x in arr
+            if x in seen
+                return true              # x appeared in a previous sub‐array
+            end
+            push!(seen, x)
+        end
+    end
+    return false                        # no element was seen twice
+end
+
+
+
+
+function apply_growl(model_weights; group_rows_by_overlap = true)
 
     pl_srate = growl_srate
 
     reshaped_weight = transpose(model_weights)
 
+    global row_groups
+    global theta_is
+
+    if group_rows_by_overlap
+        groups = deepcopy(row_groups)
+    else
+        groups =  [[i] for i in 1:size(reshaped_weight, 1)]
+    end
+
     # Compute the L2 norm for each row.
-    n_rows = size(reshaped_weight, 1)
-    n2_rows_W = [norm(reshaped_weight[i, :], 2) for i in 1:n_rows]
+    n_groups = length(groups)
+    n2_groups = [norm(reshaped_weight[i, :][:], 2) for i in groups]
 
     # --- Create GrOWL parameters ---
     # Sort the row norms (returns indices that sort in increasing order).
-    s_inds = sortperm(n2_rows_W)
+    s_inds = sortperm(n2_groups)
+
     # Generate theta parameters (user-supplied function).
-    theta_is = ones(n_rows) * 0.2
-    theta_is[1:Int(floor(0.6 * n_rows))] .= 1.0
-    theta_is = ones(n_rows)
+    # theta_is = ones(n_groups) * 0.2
+    # theta_is[Int(floor((1-theta_rate) * n_groups)):end] .= 1.0
+
+    theta_is = [(i-1)/n_groups for i in 1:n_groups]
+
     # make the parameters smaller in general
     theta_is .*= growl_power
 
     # Apply the proximal operator.
-    new_n2_rows_W = proxOWL(copy(n2_rows_W), copy(theta_is))
+    new_n2_groups = proxOWL(deepcopy(n2_groups), deepcopy(theta_is))
 
     # --- Rescale the weight rows ---
     new_W = similar(reshaped_weight)
     eps_val = eps(Float32)
-    for i in 1:n_rows
-        if n2_rows_W[i] < eps_val
-            new_W[i, :] .= zeros(eltype(reshaped_weight), size(reshaped_weight, 2))
+
+    for i in 1:n_groups
+
+        if new_n2_groups[i] < eps_val
+            # If the norm is too small, set all rows belonging to the group to zero.
+            for j in groups[i]
+                new_W[j, :] .= zeros(eltype(reshaped_weight), size(reshaped_weight, 2))
+            end
         else
-            new_W[i, :] .= reshaped_weight[i, :] .* (new_n2_rows_W[i] / n2_rows_W[i])
+            # Scale all rows belonging to the group.
+            for j in groups[i]
+                new_W[j, :] .= reshaped_weight[j, :] .* (new_n2_groups[i] / n2_groups[i])
+            end       
         end
     end
 
+
     # --- Check for excessive pruning ---
-    # Find indices of rows that are entirely zero.
-    zero_row_idcs = [i for i in 1:n_rows if all(new_W[i, :] .== 0)]
-    max_slct = Int(floor(pl_srate * n_rows))
-    if length(zero_row_idcs) > max_slct
-        numel = length(zero_row_idcs)
+
+    # Find indices of groups that are entirely zero.
+    zero_group_idcs = [i for i in 1:n_groups if new_n2_groups[i] < eps_val]
+
+    max_slct = Int(floor(pl_srate * n_groups))
+
+    if length(zero_group_idcs) > max_slct
+
+        numel = length(zero_group_idcs)
         shuffled_idcs = shuffle(1:numel)
         use_slct = numel - max_slct
         selected_idcs = shuffled_idcs[1:use_slct]
-        selected_elmts = zero_row_idcs[selected_idcs]
+        selected_elmts = zero_group_idcs[selected_idcs]
+
+
         for i in selected_elmts
-            new_W[i, :] .= reshaped_weight[i, :]
+            # Restore all rows belonging to the group.
+            for j in groups[i]
+                new_W[j, :] .= reshaped_weight[j, :]
+            end
         end
     end
 
@@ -292,7 +571,7 @@ end
 
 
 function proxOWL(z::Vector, mu::Vector)
-    # Restore the signs of z.
+    # store the signs of z.
     sgn = sign.(z)
     # Work with absolute values.
     z_abs = abs.(z)
@@ -310,8 +589,8 @@ function proxOWL(z::Vector, mu::Vector)
     if flag > 0
         # In Python: k = n - indc, but note the 1-index adjustment in Julia.
         k = n - indc + 1
-        v1 = copy(z_sorted[1:k])
-        v2 = copy(mu[1:k])
+        v1 = deepcopy(z_sorted[1:k])
+        v2 = deepcopy(mu[1:k])
         v = proxOWL_segments(v1, v2)
         # Prepare an output array in original order.
         x_orig = zeros(n)
@@ -447,18 +726,171 @@ function render_run_apprentice()
 
     println(reward_sum)
 
+    p = plot(rewards)
+    display(p)
+
 
 
     if true
         isdir("video_output") || mkdir("video_output")
-        rm("video_output/$scriptname.mp4", force=true)
-        #run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le "video_output/$scriptname.mp4"`)
+        rm("video_output/MAT_Apprentice.mp4", force=true)
+        #run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le "video_output/MAT_Apprentice.mp4"`)
 
-        run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac "video_output/$scriptname.mp4"`)
+        run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac "video_output/MAT_Apprentice.mp4"`)
     end
 end
 
 
-#growl_train(total_steps)
+#growl_train(training_steps)
 
 #render_run_apprentice()
+
+
+
+
+#dir variable
+dirpath = string(@__DIR__)
+open(dirpath * "/.gitignore", "w") do io
+    println(io, "saves/*")
+end
+
+function load(number = nothing)
+    if isnothing(number)
+        global apprentice = FileIO.load(dirpath * "/saves/MAT_Apprentice.jld2","apprentice")
+    else
+        global apprentice = FileIO.load(dirpath * "/saves/MAT_Apprentice$number.jld2","apprentice")
+    end
+end
+
+function save(number = nothing)
+    isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
+
+    if isnothing(number)
+        FileIO.save(dirpath * "/saves/MAT_Apprentice.jld2","apprentice",apprentice)
+    else
+        FileIO.save(dirpath * "/saves/MAT_Apprentice$number.jld2","apprentice",apprentice)
+    end
+end
+
+
+
+
+
+function train_masked(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+    rm(dirpath * "/training_frames/", recursive=true, force=true)
+    mkdir(dirpath * "/training_frames/")
+    frame = 1
+
+    if visuals
+        colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
+        ymax = 30
+        layout = Layout(
+                plot_bgcolor="#f1f3f7",
+                coloraxis = attr(cmin = 1, cmid = 2.5, cmax = 3, colorscale = colorscale),
+            )
+    end
+
+
+    if use_random_init
+        hook.generate_random_init = generate_random_init
+    else
+        hook.generate_random_init = false
+    end
+    
+
+    for i = 1:outer_loops
+        
+        for i = 1:inner_loops
+            println("")
+            
+            stop_condition = StopAfterEpisodeWithMinSteps(num_steps)
+
+
+            # run start
+            hook(PRE_EXPERIMENT_STAGE, agent, env)
+            agent(PRE_EXPERIMENT_STAGE, env)
+            is_stop = false
+            while !is_stop
+                reset!(env)
+                agent(PRE_EPISODE_STAGE, env)
+                hook(PRE_EPISODE_STAGE, agent, env)
+
+                while !(is_terminated(env) || is_truncated(env))
+
+                    # update env state!!!!!
+                    env.state = env.state .* mask
+
+                    action = agent(env)
+
+                    agent(PRE_ACT_STAGE, env, action)
+                    hook(PRE_ACT_STAGE, agent, env, action)
+
+                    env(action)
+
+                    agent(POST_ACT_STAGE, env)
+                    hook(POST_ACT_STAGE, agent, env)
+
+                    if visuals
+                        p = plot(heatmap(z=env.y[1,:,:]', coloraxis="coloraxis"), layout)
+
+                        savefig(p, dirpath * "/training_frames//a$(lpad(string(frame), 5, '0')).png"; width=1000, height=800)
+                    end
+
+                    frame += 1
+
+                    if stop_condition(agent, env)
+                        is_stop = true
+                        break
+                    end
+                end # end of an episode
+
+                if is_terminated(env) || is_truncated(env)
+                    agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
+                    hook(POST_EPISODE_STAGE, agent, env)
+                end
+            end
+            hook(POST_EXPERIMENT_STAGE, agent, env)
+            # run end
+
+
+            println(hook.bestreward)
+            
+
+            # hook.rewards = clamp.(hook.rewards, -3000, 0)
+        end
+    end
+
+    if visuals && false
+        rm(dirpath * "/training.mp4", force=true)
+        run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le $(dirpath * "/training.mp4")`)
+    end
+
+    #save()
+end
+
+
+function load_masked(number = nothing)
+    if isnothing(number)
+        global hook = FileIO.load(dirpath * "/saves/masked_hookMAT.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/masked_agentMAT.jld2","agent")
+        global mask = FileIO.load(dirpath * "/saves/masked_maskMAT.jld2","mask")
+    else
+        global hook = FileIO.load(dirpath * "/saves/masked_hookMAT$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/masked_agentMAT$number.jld2","agent")
+        global mask = FileIO.load(dirpath * "/saves/masked_maskMAT$number.jld2","mask")
+    end
+end
+
+function save_masked(number = nothing)
+    isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
+
+    if isnothing(number)
+        FileIO.save(dirpath * "/saves/masked_hookMAT.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/masked_agentMAT.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/masked_maskMAT.jld2","mask",mask)
+    else
+        FileIO.save(dirpath * "/saves/masked_hookMAT$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/masked_agentMAT$number.jld2","agent",agent)
+        FileIO.save(dirpath * "/saves/masked_maskMAT$number.jld2","mask",mask)
+    end
+end

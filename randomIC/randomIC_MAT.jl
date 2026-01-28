@@ -19,6 +19,7 @@ dt = 1.5
 
 
 
+include("../rIC-validation.jl")
 
 
 scriptname = "RB_AC_$(dt)_$(sensors[2])"
@@ -71,13 +72,15 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 
 # agent tuning parameters
 memory_size = 0
-nna_scale = 51.2
-nna_scale_critic = 25.6
+nna_scale = 6.4
+nna_scale_critic = 3.2
+drop_middle_layer = true
+drop_middle_layer_critic = true
 fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
-window_size = 47
+window_size = 15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
@@ -90,44 +93,45 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 200
+update_freq = 500
 
 
 learning_rate = 1e-4
-n_epochs = 20
-n_microbatches = 5
-logσ_is_network = true
+n_epochs = 4
+n_microbatches = 10
+logσ_is_network = false
 max_σ = 1000.0f0
 entropy_loss_weight = 0.0
 actor_loss_weight = 100.0
-critic_loss_weight = 0.001
+critic_loss_weight = 0.003
 adaptive_weights = false
-clip_grad = 0.3
+clip_grad = 0.2
 target_kl = Inf
 clip1 = false
-start_logσ = -0.6
-clip_range = 0.2f0
+start_logσ = -0.8
+clip_range = 0.1f0
 tanh_end = false
 
 
 
-drop_middle_layer = true
-drop_middle_layer_critic = true
 block_num = 1
-dim_model = 64
+dim_model = 44
 head_num = 2
-head_dim = 32
-ffn_dim = 64
+head_dim = 22
+ffn_dim = 44
 drop_out = 0.00#1
 
 betas = (0.9, 0.999)
 
-customCrossAttention = false
+customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
-square_rewards = true
-joon_pe = true
 positional_encoding = 3 #ZeroEncoding
+useSeparateValueChain = true
+
+joon_pe = true
+square_rewards = false
+randomIC = true
 
 
 
@@ -272,11 +276,14 @@ uu = values["u/data"][4:Nx+3,:,4:Nz+3]
 ww = values["w/data"][4:Nx+3,:,4:Nz+4]
 bb = values["b/data"][4:Nx+3,:,4:Nz+3]
 
-circshift_amount = rand(1:Nx)
 
-uu = circshift(uu, (circshift_amount,0,0))
-ww = circshift(ww, (circshift_amount,0,0))
-bb = circshift(bb, (circshift_amount,0,0))
+if randomIC
+    circshift_amount = rand(1:Nx)
+
+    uu = circshift(uu, (circshift_amount,0,0))
+    ww = circshift(ww, (circshift_amount,0,0))
+    bb = circshift(bb, (circshift_amount,0,0))
+end
 
 set!(model, u = uu, w = ww, b = bb)
 
@@ -377,25 +384,25 @@ function reward_function(env; returnGlobalNu = false)
     hor_inv_probes = Int(sensors[1] / actuators)
 
     for i in 1:actuators
-        tempstate = env.state[:,i]
+        # tempstate = env.state[:,i]
 
-        tempT = tempstate[1:3:length(tempstate)]
-        tempW = tempstate[2:3:length(tempstate)]
+        # tempT = tempstate[1:3:length(tempstate)]
+        # tempW = tempstate[2:3:length(tempstate)]
 
-        tempT = reshape(tempT, window_size, sensors[2])
-        tempW = reshape(tempW, window_size, sensors[2])
+        # tempT = reshape(tempT, window_size, sensors[2])
+        # tempW = reshape(tempW, window_size, sensors[2])
 
-        #tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-        #tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
+        # tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
 
-        q_1_mean = mean(tempT .* tempW)
-        Tx = mean(tempT', dims = 2)
-        q_2 = kappa * mean(array_gradient(Tx))
+        # q_1_mean = mean(tempT .* tempW)
+        # Tx = mean(tempT', dims = 2)
+        # q_2 = kappa * mean(array_gradient(Tx))
 
-        localNu = (q_1_mean - q_2) / den
+        # localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = 2.6726 - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
@@ -535,13 +542,14 @@ function initialize_setup(;use_random_init = false)
                 clip_range = clip_range,
                 tanh_end = tanh_end,
                 positional_encoding = positional_encoding,
+                useSeparateValueChain = useSeparateValueChain,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
                 collect_NNA = false,
                 generate_random_init = generate_random_init,
                 collect_history = false,
-                collect_rewards_all_timesteps = true,
+                collect_rewards_all_timesteps = false,
                 early_success_possible = false)
 end
 
@@ -563,11 +571,13 @@ function generate_random_init()
     ww = values["w/data"][4:Nx+3,:,4:Nz+4]
     bb = values["b/data"][4:Nx+3,:,4:Nz+3]
 
-    circshift_amount = rand(1:Nx)
+    if randomIC
+        circshift_amount = rand(1:Nx)
 
-    uu = circshift(uu, (circshift_amount,0,0))
-    ww = circshift(ww, (circshift_amount,0,0))
-    bb = circshift(bb, (circshift_amount,0,0))
+        uu = circshift(uu, (circshift_amount,0,0))
+        ww = circshift(ww, (circshift_amount,0,0))
+        bb = circshift(bb, (circshift_amount,0,0))
+    end
 
     set!(model, u = uu, w = ww, b = bb)
 
@@ -633,7 +643,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                 agent(PRE_EPISODE_STAGE, env)
                 hook(PRE_EPISODE_STAGE, agent, env)
 
-                while !is_terminated(env) # one episode
+                while !(is_terminated(env) || is_truncated(env))
                     action = agent(env)
 
                     agent(PRE_ACT_STAGE, env, action)
@@ -659,7 +669,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
                     end
                 end # end of an episode
 
-                if is_terminated(env)
+                if is_terminated(env) || is_truncated(env)
                     agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
                     hook(POST_EPISODE_STAGE, agent, env)
                 end
@@ -730,7 +740,7 @@ function render_run(;use_zeros = false)
     temp_update_after = agent.policy.update_freq
     agent.policy.update_freq = 100000
 
-    agent.policy.update_step = 0
+    #agent.policy.update_step = 0
     global rewards = Float64[]
     reward_sum = 0.0
 
@@ -755,7 +765,8 @@ function render_run(;use_zeros = false)
         if use_zeros
             action = zeros(12)'
         else
-            action = agent(env)
+            #action = agent(env)
+            action = RL.prob(agent.policy, env).μ
         end
 
         env(action)
