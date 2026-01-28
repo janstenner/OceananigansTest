@@ -241,6 +241,17 @@ else
     values = FileIO.load("RBmodel300.jld2")
 end
 
+
+# values = JSON.read("RBC_Re1e5_Checkpoint.json")
+
+# rand_index = rand(size(values[end]))
+
+# bb = values[:,:,1,1,rand_index]
+# uu = values[:,:,2,1,rand_index]
+# ww = values[:,:,3,1,rand_index]
+
+# set!(model, u = uu, w = ww, b = bb)
+
 uu = values["u/data"][4:Nx+3,:,4:Nz+3]
 ww = values["w/data"][4:Nx+3,:,4:Nz+4]
 bb = values["b/data"][4:Nx+3,:,4:Nz+3]
