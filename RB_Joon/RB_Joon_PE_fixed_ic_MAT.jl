@@ -791,3 +791,16 @@ end
 # t2 = scatter(y=rewards2)
 # t3 = scatter(y=rewards3)
 # plot([t1, t2, t3])
+
+
+# xxx = collect(LinRange(0,Lx-dx,96))
+# zzz = collect(LinRange(0,Lz,64))
+# plot(heatmap(z=result', x=xxx, y=zzz, coloraxis="coloraxis"), layout)
+
+# temp_action = randn(12)
+# actuator_curve = [collate_actions_colin(temp_action,i,nothing) for i in xxx]
+# p = make_subplots(rows=2, cols=1, shared_xaxes=true)
+# add_trace!(p,scatter(x=xxx[actuator_positions.+4], y=temp_action, mode="markers", marker=attr()), row=2)
+# add_trace!(p,scatter(x=xxx, y=actuator_curve), row=1)
+# relayout!(p, Layout(plot_bgcolor="#F0F0F0",showlegend=false).fields)
+# display(p)
