@@ -17,7 +17,7 @@ runs = 1
 collect_pressure = false
 
 frames_to_collect = 1
-start_frame = 16000
+start_frame = 6000
 
 visuals = true
 
@@ -222,8 +222,11 @@ function generate_data()
     end
 
     global sim_results = zeros(Float32,Nx,Nz,channels,frames_to_collect,runs)
-
+    global Nus
+    
     for n in 1:runs
+        Nus = Float32[]
+
         model = NonhydrostaticModel(; grid,
                     advection = UpwindBiasedFifthOrder(),
                     timestepper = :RungeKutta3,
@@ -300,3 +303,5 @@ end
 
 
 generate_data()
+
+plot(Nus)

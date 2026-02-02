@@ -64,7 +64,7 @@ variance = 0.001
 
 sensor_positions = [collect(1:Int(Nx/sensors[1]):Nx), collect(1:Int(Nz/sensors[2]):Nz)]
 
-actuator_positions = collect(1:Int(Nx/actuators):Nx)
+actuator_positions = collect(1:Int(Nx/actuators):Nx) .+ Int(0.5 * Nx/actuators)
 
 actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuator_positions]
 
