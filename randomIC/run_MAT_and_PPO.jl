@@ -5,7 +5,7 @@ save_number = 1000
 
 
 function start()
-    include("./randomIC_MAT.jl")
+    include("./randomIC/randomIC_MAT.jl")
 
     train()
 
@@ -15,7 +15,7 @@ function start()
 
 
 
-    include("./randomIC_PPO.jl")
+    include("./randomIC/randomIC_PPO.jl")
 
     train()
 
