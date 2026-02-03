@@ -4,20 +4,21 @@ save_number = 1000
 
 
 
+function start()
+    include("./randomIC_MAT.jl")
 
-include("./randomIC_MAT.jl")
+    train()
 
-train()
-
-save(save_number)
-
-
+    save(save_number)
 
 
 
-include("./randomIC_PPO.jl")
 
-train()
 
-save(save_number)
+    include("./randomIC_PPO.jl")
+
+    train()
+
+    save(save_number)
+end
 
