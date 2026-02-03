@@ -7,9 +7,9 @@ save_number = 1000
 function start()
     include("./randomIC/randomIC_MAT.jl")
 
-    train()
+    Base.@invokelatest train()
 
-    save(save_number)
+    Base.@invokelatest save(save_number)
 
 
 
@@ -17,8 +17,8 @@ function start()
 
     include("./randomIC/randomIC_PPO.jl")
 
-    train()
+    Base.@invokelatest train()
 
-    save(save_number)
+    Base.@invokelatest save(save_number)
 end
 
