@@ -557,7 +557,7 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 200)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
     frame = 1

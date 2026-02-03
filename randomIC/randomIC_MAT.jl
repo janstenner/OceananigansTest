@@ -35,7 +35,7 @@ end
 
 # env parameters
 
-seed = Int(floor(rand()*1000))
+seed = Int(floor(rand()*100000))
 #seed = 857
 
 te = 300.0
@@ -602,7 +602,7 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 100)
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 200)
     
     frame = 1
 
@@ -690,7 +690,7 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
         run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le $(dirpath * "/training.mp4")`)
     end
 
-    save()
+    #save()
 end
 
 
