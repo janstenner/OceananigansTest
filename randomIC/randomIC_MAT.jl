@@ -693,6 +693,116 @@ function train(use_random_init = true; visuals = false, num_steps = 1600, inner_
     #save()
 end
 
+function train_stop_on_recent_reward(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 200)
+    
+    frame = 1
+    reward_window = 100
+    reward_threshold = -600.0
+    stop_due_to_recent_reward = false
+
+    if visuals
+        rm(dirpath * "/training_frames/", recursive=true, force=true)
+        mkdir(dirpath * "/training_frames/")
+        colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
+        ymax = 30
+        layout = Layout(
+                plot_bgcolor="#f1f3f7",
+                coloraxis = attr(cmin = 1, cmid = 2.5, cmax = 3, colorscale = colorscale),
+            )
+    end
+
+
+    if use_random_init
+        hook.generate_random_init = generate_random_init
+    else
+        hook.generate_random_init = false
+    end
+    
+
+    for i = 1:outer_loops
+        
+        for i = 1:inner_loops
+            println("")
+            
+            stop_condition = StopAfterEpisodeWithMinSteps(num_steps)
+            #stop_condition = StopAfterStep(num_steps)
+
+
+            # run start
+            hook(PRE_EXPERIMENT_STAGE, agent, env)
+            agent(PRE_EXPERIMENT_STAGE, env)
+            is_stop = false
+            while !is_stop
+                reset!(env)
+                agent(PRE_EPISODE_STAGE, env)
+                hook(PRE_EPISODE_STAGE, agent, env)
+
+                while !(is_terminated(env) || is_truncated(env))
+                    action = agent(env)
+
+                    agent(PRE_ACT_STAGE, env, action)
+                    hook(PRE_ACT_STAGE, agent, env, action)
+
+                    env(action)
+
+                    agent(POST_ACT_STAGE, env)
+                    hook(POST_ACT_STAGE, agent, env)
+
+                    if visuals
+                        p = plot(heatmap(z=env.y[1,:,:]', coloraxis="coloraxis"), layout)
+
+                        savefig(p, dirpath * "/training_frames//a$(lpad(string(frame), 5, '0')).png"; width=1000, height=800)
+
+                    end
+
+                    frame += 1
+
+                    if stop_condition(agent, env)
+                        is_stop = true
+                        break
+                    end
+                end # end of an episode
+
+                if is_terminated(env) || is_truncated(env)
+                    agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
+                    hook(POST_EPISODE_STAGE, agent, env)
+
+                    if length(hook.rewards) >= reward_window
+                        recent_mean = mean(@view hook.rewards[(end - reward_window + 1):end])
+                        if recent_mean > reward_threshold
+                            @printf(
+                                "Stopping training: mean of latest %d rewards is %.6f (threshold %.6f).\n",
+                                reward_window, recent_mean, reward_threshold
+                            )
+                            stop_due_to_recent_reward = true
+                            is_stop = true
+                            break
+                        end
+                    end
+                end
+            end
+            hook(POST_EXPERIMENT_STAGE, agent, env)
+            # run end
+
+
+            println(hook.bestreward)
+            
+            if stop_due_to_recent_reward
+                return
+            end
+
+            # hook.rewards = clamp.(hook.rewards, -3000, 0)
+        end
+    end
+
+    if visuals && false
+        rm(dirpath * "/training.mp4", force=true)
+        run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le $(dirpath * "/training.mp4")`)
+    end
+
+    #save()
+end
+
 
 #train()
 #train(;num_steps = 140)
