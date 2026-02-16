@@ -186,6 +186,61 @@ function print_last_100_ranking(run_rewards_by_algorithm::Dict{String, Dict{Int,
     end
 end
 
+function print_best_window_ranking(run_rewards_by_algorithm::Dict{String, Dict{Int, Vector{Float64}}}; window::Int = 100)
+    if window <= 0
+        error("window must be positive, got $window")
+    end
+
+    ranking = NamedTuple[]
+    for algorithm in ALGORITHMS
+        for run_number in RUN_NUMBERS
+            rewards = run_rewards_by_algorithm[algorithm][run_number]
+            n = length(rewards)
+            if n < window
+                error("[$algorithm run $run_number] has only $n rewards, fewer than window=$window.")
+            end
+
+            best_start = 1
+            best_end = window
+            window_sum = sum(@view rewards[1:window])
+            best_mean = window_sum / window
+
+            for start_idx in 2:(n - window + 1)
+                window_sum += rewards[start_idx + window - 1] - rewards[start_idx - 1]
+                current_mean = window_sum / window
+                if current_mean > best_mean
+                    best_mean = current_mean
+                    best_start = start_idx
+                    best_end = start_idx + window - 1
+                end
+            end
+
+            push!(
+                ranking,
+                (
+                    algorithm=algorithm,
+                    run_number=run_number,
+                    best_mean=best_mean,
+                    best_start=best_start,
+                    best_end=best_end,
+                ),
+            )
+        end
+    end
+
+    sort!(ranking, by=row -> row.best_mean, rev=true)
+
+    println("\nRanking by best $window-step reward window mean:")
+    for (idx, row) in enumerate(ranking)
+        @printf(
+            "%2d. %-3s run %4d | mean(%4d:%4d) = %12.6f\n",
+            idx, row.algorithm, row.run_number, row.best_start, row.best_end, row.best_mean
+        )
+    end
+
+    return ranking
+end
+
 function main()
     load_hooks!()
 
@@ -199,6 +254,7 @@ function main()
 
     plot_comparison(mat_mean, mat_std, ppo_mean, ppo_std)
     print_last_100_ranking(run_rewards_by_algorithm)
+    print_best_window_ranking(run_rewards_by_algorithm; window=100)
 end
 
 main()
