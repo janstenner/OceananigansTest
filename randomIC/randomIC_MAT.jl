@@ -358,6 +358,26 @@ function array_gradient(a)
     result
 end
 
+function state_Nu(env)
+    H = Lz
+
+    delta_T = Δb
+
+    kappa = model.closure.κ[1]
+
+    den = kappa * delta_T / H
+
+    sensordata = env.y[:,:,:]
+
+    q_1_mean = mean(sensordata[1,:,:] .* sensordata[2,:,:])
+    Tx = mean(sensordata[1,:,:]', dims = 2)
+    q_2 = kappa * mean(array_gradient(Tx))
+
+    globalNu = (q_1_mean - q_2) / den
+
+    globalNu
+end
+
 function reward_function(env; returnGlobalNu = false)
     H = Lz
 
@@ -697,7 +717,7 @@ function train_stop_on_recent_reward(use_random_init = true; visuals = false, nu
     
     frame = 1
     reward_window = 100
-    reward_threshold = -600.0
+    reward_threshold = -610.0
     stop_due_to_recent_reward = false
 
     if visuals
@@ -852,6 +872,7 @@ function render_run(;use_zeros = false)
 
     #agent.policy.update_step = 0
     global rewards = Float64[]
+    global state_Nu_values = Float64[]
     reward_sum = 0.0
 
     #w = Window()
@@ -889,10 +910,12 @@ function render_run(;use_zeros = false)
         #body!(w,p)
 
         temp_reward = reward_function(env; returnGlobalNu = true)
+        temp_state_Nu = state_Nu(env)
         println(temp_reward)
 
         reward_sum += temp_reward
         push!(rewards, temp_reward)
+        push!(state_Nu_values, temp_state_Nu)
 
         # println(mean(env.reward))
 

@@ -328,6 +328,26 @@ function array_gradient(a)
     result
 end
 
+function state_Nu(env)
+    H = Lz
+
+    delta_T = Δb
+
+    kappa = model.closure.κ[1]
+
+    den = kappa * delta_T / H
+
+    sensordata = env.y[:,:,:]
+
+    q_1_mean = mean(sensordata[1,:,:] .* sensordata[2,:,:])
+    Tx = mean(sensordata[1,:,:]', dims = 2)
+    q_2 = kappa * mean(array_gradient(Tx))
+
+    globalNu = (q_1_mean - q_2) / den
+
+    globalNu
+end
+
 function reward_function(env; returnGlobalNu = false)
     H = Lz
 
@@ -743,7 +763,7 @@ function render_run(;use_zeros = false)
         #body!(w,p)
 
         temp_reward = reward_function(env; returnGlobalNu = true)
-        println(temp_reward)
+        println(state_Nu(env))
 
         reward_sum += temp_reward
         push!(rewards, temp_reward)
