@@ -15,25 +15,27 @@ num_states_rIC = 4_000
 # reward_sums_apprentice = [631.3680399549766, 635.6042491734456, 609.1698638729115, 614.7200798278612, 638.5093351455699, 614.7552684554165, 608.5678228568422, 608.5839687893373, 634.8891254699676, 611.7081526563197, 611.6936244852278, 623.3501830035208, 632.8096368662949, 620.9601228808638, 610.1753205755912]
 
 
-# load()
-# load(701) # for window size 7
+# load_apprentice()
+# load_apprentice(701) # for window size 7
 # agent.policy.approximator.actor.logσ[1] = -14.0f0
 
 batch_size = 20
 
-growl_power = 0.003
+growl_power = 0.001
 growl_freq = 1
 growl_srate = 0.999
 # theta_rate = 0.7
 
+reweight_power = 0.00006
+
 group_rows_by_overlap = true
 group_channels = true
 
-training_steps = 3_000
+training_steps = 8_000
 extra_steps = 0
 
 
-learning_rate = 6e-4
+learning_rate = 1e-4
 clip_grad = Inf
 
 block_num = 1
@@ -53,7 +55,12 @@ positional_encoding = 3 #ZeroEncoding
 joon_pe = true
 new_pe = false
 square_rewards = false
-randomIC = false
+randomIC = true
+
+# Tracks which apprentice variant should be persisted/loaded.
+apprentice_training_kind = :growl
+#apprentice_training_kind = :weighted
+apprentice_training_rIC = randomIC
 
 apprentice_agent = create_agent_mat(n_actors = actuators,
                     action_space = actionspace,
@@ -204,12 +211,12 @@ end
 function generate_states()
     global states
 
-    states = zeros(Float32, size(env.state)[1], size(env.state)[2], 100)
+    states = zeros(Float32, size(env.state)[1], size(env.state)[2], 200)
 
     reset!(env)
     generate_random_init()
 
-    for i in 1:100
+    for i in 1:200
 
         #action = agent(env)
         action = prob(agent.policy, env.state, nothing).μ
@@ -259,7 +266,7 @@ function grab_states_rIC()
     end
 end
 
-function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = false)
+function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
 
     global states
     global states_rIC
@@ -277,6 +284,9 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
     global row_groups
 
     row_groups = get_row_groups(;group_channels = group_channels)
+
+    global apprentice_training_kind = :growl
+    global apprentice_training_rIC = rIC
 
 
     global losses = Float32[]
@@ -416,6 +426,9 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
 
     global row_groups
     row_groups = get_row_groups(;group_channels = group_channels)
+
+    global apprentice_training_kind = :weighted
+    global apprentice_training_rIC = rIC
 
     if group_rows_by_overlap
         groups = deepcopy(row_groups)
@@ -745,7 +758,7 @@ function apply_weighted(model_weights; group_rows_by_overlap = true, operator_we
     length(operator_weights) == n_groups || error("operator_weights length must match number of groups.")
 
     # Apply weighted L1 proximal operator.
-    new_n2_groups = prox_weighted_l1(deepcopy(n2_groups), deepcopy(operator_weights))
+    new_n2_groups = prox_weighted_l1(deepcopy(n2_groups), deepcopy(operator_weights .* reweight_power))
 
     # --- Rescale the weight rows ---
     new_W = similar(reshaped_weight)
@@ -945,10 +958,11 @@ function render_run_apprentice()
 
         relayout!(p, layout.fields)
 
-        savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1600, height=800)
+        #savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1600, height=800)
         #body!(w,p)
 
         temp_reward = reward_function(env; returnGlobalNu = true)
+        temp_reward = state_Nu(env)
         println(temp_reward)
 
         reward_sum += temp_reward
@@ -990,22 +1004,39 @@ open(dirpath * "/.gitignore", "w") do io
     println(io, "saves/*")
 end
 
-function load(number = nothing)
-    if isnothing(number)
-        global apprentice = FileIO.load(dirpath * "/saves/MAT_Apprentice.jld2","apprentice")
-    else
-        global apprentice = FileIO.load(dirpath * "/saves/MAT_Apprentice$number.jld2","apprentice")
+function apprentice_save_stem()
+    global apprentice_training_kind
+    global apprentice_training_rIC
+
+    method_tag = apprentice_training_kind == :growl ? "growl" :
+                 apprentice_training_kind == :weighted ? "weighted" :
+                 string(apprentice_training_kind)
+    ric_tag = apprentice_training_rIC ? "rIC_true" : "rIC_false"
+
+    return "MAT_Apprentice_$(method_tag)_$(ric_tag)"
+end
+
+function apprentice_save_path(number = nothing)
+    stem = apprentice_save_stem()
+    filename = isnothing(number) ? "$(stem).jld2" : "$(stem)_$(number).jld2"
+    return dirpath * "/saves/" * filename
+end
+
+function load_apprentice(number = nothing)
+    filepath = apprentice_save_path(number)
+    global apprentice = FileIO.load(filepath, "apprentice")
+
+    try
+        global mask = FileIO.load(filepath, "mask")
+    catch
+        @warn "No mask found in apprentice save. Keeping current mask." filepath
     end
 end
 
-function save(number = nothing)
+function save_apprentice(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
-    if isnothing(number)
-        FileIO.save(dirpath * "/saves/MAT_Apprentice.jld2","apprentice",apprentice)
-    else
-        FileIO.save(dirpath * "/saves/MAT_Apprentice$number.jld2","apprentice",apprentice)
-    end
+    FileIO.save(apprentice_save_path(number), "apprentice", apprentice, "mask", mask)
 end
 
 
@@ -1101,7 +1132,7 @@ function train_masked(use_random_init = true; visuals = false, num_steps = 1600,
         run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le $(dirpath * "/training.mp4")`)
     end
 
-    #save()
+    #save_apprentice()
 end
 
 

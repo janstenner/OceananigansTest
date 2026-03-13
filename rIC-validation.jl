@@ -75,6 +75,7 @@ function validate_agent(; use_apprentice = false)
             env(action)
 
             temp_reward = reward_function(env; returnGlobalNu = true)
+            temp_reward = state_Nu(env)
             println(temp_reward)
 
             reward_sum += temp_reward
