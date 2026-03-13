@@ -6,7 +6,7 @@ using Flux
 
 
 include("../rIC-validation.jl")
-num_states_rIC = 4_000
+
 
 
 
@@ -20,6 +20,11 @@ num_states_rIC = 4_000
 # agent.policy.approximator.actor.logσ[1] = -14.0f0
 
 batch_size = 20
+batch_size_rIC = 200
+
+num_states = 200
+num_states_rIC = 10_000
+
 
 growl_power = 0.001
 growl_freq = 1
@@ -211,12 +216,12 @@ end
 function generate_states()
     global states
 
-    states = zeros(Float32, size(env.state)[1], size(env.state)[2], 200)
+    states = zeros(Float32, size(env.state)[1], size(env.state)[2], num_states)
 
     reset!(env)
     generate_random_init()
 
-    for i in 1:200
+    for i in 1:num_states
 
         #action = agent(env)
         action = prob(agent.policy, env.state, nothing).μ
@@ -299,6 +304,10 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
 
 
         # training call
+        current_batch_size = rIC ? batch_size_rIC : batch_size
+        num_training_states = rIC ? num_states_rIC : num_states
+        num_batches = div(num_training_states, current_batch_size)
+
         if rIC
             rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
         else
@@ -306,13 +315,13 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
         end
 
 
-        for j in 1:Int(100/batch_size)
-            #println("j is $(j) of $(Int(100/batch_size))")
+        for j in 1:num_batches
+            #println("j is $(j) of $(num_batches)")
 
             if rIC
-                global batch = states_rIC[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+                global batch = states_rIC[:, :, rand_inds[(j-1)*current_batch_size+1:j*current_batch_size]]
             else
-                global batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+                global batch = states[:, :, rand_inds[(j-1)*current_batch_size+1:j*current_batch_size]]
             end
 
             batch_masked = batch .* mask
@@ -326,10 +335,10 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
 
                 obsrep, val = p_encoder(batch_masked)
 
-                # μ, logσ = p_decoder(zeros(Float32,na,1,batch_size), obsrep[:,1:1,:])
+                # μ, logσ = p_decoder(zeros(Float32,na,1,current_batch_size), obsrep[:,1:1,:])
 
                 # for n in 2:apprentice.n_actors
-                #     newμ, newlogσ = p_decoder(cat(zeros(Float32,na,1,batch_size), μ, dims=2), obsrep[:,1:n,:])
+                #     newμ, newlogσ = p_decoder(cat(zeros(Float32,na,1,current_batch_size), μ, dims=2), obsrep[:,1:n,:])
 
                 #     μ = cat(μ, newμ[:,end:end,:], dims=2)
                 # end
@@ -340,7 +349,7 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
                 # new variant
                 μ_expert = prob(agent.policy, batch, nothing).μ
 
-                temp_act = cat(zeros(Float32,na,1,batch_size),μ_expert[:,1:end-1,:],dims=2)
+                temp_act = cat(zeros(Float32,na,1,current_batch_size),μ_expert[:,1:end-1,:],dims=2)
                 μ, logσ = p_decoder(temp_act, obsrep)
 
                 diff = μ - μ_expert
@@ -409,10 +418,12 @@ end
 
 
 
-function reweight_train(;training_steps = training_steps, extra_steps = extra_steps, reweight = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = false, weight_update = 100)
+function reweight_train(;training_steps = training_steps, extra_steps = extra_steps, reweight = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 100)
 
     global states
     global states_rIC
+
+    println("checking for state set...")
 
     if rIC
         if !(@isdefined states_rIC)
@@ -423,6 +434,8 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
             generate_states()
         end
     end
+
+    println("state set existing!")
 
     global row_groups
     row_groups = get_row_groups(;group_channels = group_channels)
@@ -441,6 +454,8 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
     weight_eltype = eltype(apprentice.encoder.embedding.weight)
     global operator_weights = ones(weight_eltype, n_groups)
 
+    println("train starting...")
+
     global losses = Float32[]
     for i in 1:training_steps+extra_steps
         
@@ -451,6 +466,10 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
 
 
         # training call
+        current_batch_size = rIC ? batch_size_rIC : batch_size
+        num_training_states = rIC ? num_states_rIC : num_states
+        num_batches = div(num_training_states, current_batch_size)
+
         if rIC
             rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
         else
@@ -458,13 +477,13 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
         end
 
 
-        for j in 1:Int(100/batch_size)
-            #println("j is $(j) of $(Int(100/batch_size))")
+        for j in 1:num_batches
+            #println("j is $(j) of $(num_batches)")
 
             if rIC
-                global batch = states_rIC[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+                global batch = states_rIC[:, :, rand_inds[(j-1)*current_batch_size+1:j*current_batch_size]]
             else
-                global batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+                global batch = states[:, :, rand_inds[(j-1)*current_batch_size+1:j*current_batch_size]]
             end
 
             batch_masked = batch .* mask
@@ -478,10 +497,10 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
 
                 obsrep, val = p_encoder(batch_masked)
 
-                # μ, logσ = p_decoder(zeros(Float32,na,1,batch_size), obsrep[:,1:1,:])
+                # μ, logσ = p_decoder(zeros(Float32,na,1,current_batch_size), obsrep[:,1:1,:])
 
                 # for n in 2:apprentice.n_actors
-                #     newμ, newlogσ = p_decoder(cat(zeros(Float32,na,1,batch_size), μ, dims=2), obsrep[:,1:n,:])
+                #     newμ, newlogσ = p_decoder(cat(zeros(Float32,na,1,current_batch_size), μ, dims=2), obsrep[:,1:n,:])
 
                 #     μ = cat(μ, newμ[:,end:end,:], dims=2)
                 # end
@@ -492,7 +511,7 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
                 # new variant
                 μ_expert = prob(agent.policy, batch, nothing).μ
 
-                temp_act = cat(zeros(Float32,na,1,batch_size),μ_expert[:,1:end-1,:],dims=2)
+                temp_act = cat(zeros(Float32,na,1,current_batch_size),μ_expert[:,1:end-1,:],dims=2)
                 μ, logσ = p_decoder(temp_act, obsrep)
 
                 diff = μ - μ_expert

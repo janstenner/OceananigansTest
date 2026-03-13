@@ -50,8 +50,30 @@ end
 
 function validate_agent(; use_apprentice = false)
 
+    apprentice_kind = :growl
+    reward_sums_target = Float64[]
+
     if use_apprentice
-        global reward_sums_apprentice = Float64[]
+        if @isdefined(apprentice_training_kind)
+            if apprentice_training_kind isa Symbol
+                apprentice_kind = apprentice_training_kind
+            elseif apprentice_training_kind isa AbstractString
+                apprentice_kind = Symbol(lowercase(apprentice_training_kind))
+            end
+        end
+
+        if apprentice_kind == :weighted
+            global reward_sums_apprentice_weighted = Float64[]
+            reward_sums_target = reward_sums_apprentice_weighted
+        else
+            # Default to growl for backward compatibility.
+            apprentice_kind = :growl
+            global reward_sums_apprentice_growl = Float64[]
+            reward_sums_target = reward_sums_apprentice_growl
+        end
+
+        # Keep legacy variable name available for compatibility.
+        global reward_sums_apprentice = reward_sums_target
     else
         global reward_sums = Float64[]
     end
@@ -82,21 +104,33 @@ function validate_agent(; use_apprentice = false)
         end
 
         if use_apprentice
-            push!(reward_sums_apprentice, reward_sum)
+            push!(reward_sums_target, reward_sum)
         else
             push!(reward_sums, reward_sum)
         end
     end
 
     if use_apprentice
-        mean_reward = mean(reward_sums_apprentice)
-        println("Mean reward over random ICs: $mean_reward")
+        mean_reward = mean(reward_sums_target)
+        println("Mean reward over random ICs ($(apprentice_kind)): $mean_reward")
 
         traces = AbstractTrace[]
-        push!(traces, box(y=reward_sums, name="Expert", boxpoints="all", quartilemethod="linear"))
-        push!(traces, box(y=reward_sums_apprentice, name="Apprentice", boxpoints="all", quartilemethod="linear"))
-        p = plot(traces)
-        display(p)
+        if @isdefined(reward_sums) && !isempty(reward_sums)
+            push!(traces, box(y=reward_sums, name="Expert", boxpoints="all", quartilemethod="linear"))
+        end
+        if @isdefined(reward_sums_apprentice_growl) && !isempty(reward_sums_apprentice_growl)
+            push!(traces, box(y=reward_sums_apprentice_growl, name="Apprentice (Growl)", boxpoints="all", quartilemethod="linear"))
+        end
+        if @isdefined(reward_sums_apprentice_weighted) && !isempty(reward_sums_apprentice_weighted)
+            push!(traces, box(y=reward_sums_apprentice_weighted, name="Apprentice (Weighted)", boxpoints="all", quartilemethod="linear"))
+        end
+
+        if isempty(traces)
+            println("No reward sums available for plotting.")
+        else
+            p = plot(traces)
+            display(p)
+        end
     else
         mean_reward = mean(reward_sums)
         println("Mean reward over random ICs: $mean_reward")
