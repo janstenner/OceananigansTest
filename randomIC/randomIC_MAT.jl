@@ -127,6 +127,7 @@ customCrossAttention = true
 jointPPO = false
 one_by_one_training = false
 positional_encoding = 3 #ZeroEncoding
+positional_encoding_decoder = 1 #SinCosPositionEmbed
 useSeparateValueChain = true
 
 joon_pe = true

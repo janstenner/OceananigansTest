@@ -399,6 +399,160 @@ end
 
 
 
+function reweight_train(;training_steps = training_steps, extra_steps = extra_steps, reweight = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = false, weight_update = 100)
+
+    global states
+    global states_rIC
+
+    if rIC
+        if !(@isdefined states_rIC)
+            grab_states_rIC()
+        end
+    else
+        if !(@isdefined states)
+            generate_states()
+        end
+    end
+
+    global row_groups
+    row_groups = get_row_groups(;group_channels = group_channels)
+
+    if group_rows_by_overlap
+        groups = deepcopy(row_groups)
+    else
+        n_rows = size(transpose(apprentice.encoder.embedding.weight), 1)
+        groups = [[i] for i in 1:n_rows]
+    end
+
+    n_groups = length(groups)
+    weight_eltype = eltype(apprentice.encoder.embedding.weight)
+    global operator_weights = ones(weight_eltype, n_groups)
+
+    global losses = Float32[]
+    for i in 1:training_steps+extra_steps
+        
+        i%100 == 0 && i <= training_steps && println(i*100/training_steps, "% done")
+
+        i == training_steps+1 && println("training_steps finished, starting extra_steps...")
+        i%100 == 0 && i > training_steps && println((i-training_steps)*100/extra_steps, "% of extra steps done")
+
+
+        # training call
+        if rIC
+            rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
+        else
+            rand_inds = shuffle!(rng, Vector(1:100))
+        end
+
+
+        for j in 1:Int(100/batch_size)
+            #println("j is $(j) of $(Int(100/batch_size))")
+
+            if rIC
+                global batch = states_rIC[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            else
+                global batch = states[:, :, rand_inds[(j-1)*batch_size+1:j*batch_size]]
+            end
+
+            batch_masked = batch .* mask
+
+            na = size(apprentice.decoder.embedding.weight)[2]
+
+            global g_encoder
+            global g_decoder
+
+            g_encoder, g_decoder = Flux.gradient(apprentice.encoder, apprentice.decoder) do p_encoder, p_decoder
+
+                obsrep, val = p_encoder(batch_masked)
+
+                # μ, logσ = p_decoder(zeros(Float32,na,1,batch_size), obsrep[:,1:1,:])
+
+                # for n in 2:apprentice.n_actors
+                #     newμ, newlogσ = p_decoder(cat(zeros(Float32,na,1,batch_size), μ, dims=2), obsrep[:,1:n,:])
+
+                #     μ = cat(μ, newμ[:,end:end,:], dims=2)
+                # end
+
+                # diff = μ - agent.policy.approximator.actor(batch)[1]
+
+
+                # new variant
+                μ_expert = prob(agent.policy, batch, nothing).μ
+
+                temp_act = cat(zeros(Float32,na,1,batch_size),μ_expert[:,1:end-1,:],dims=2)
+                μ, logσ = p_decoder(temp_act, obsrep)
+
+                diff = μ - μ_expert
+                mse = mean(diff.^2)
+
+                # Zygote.@ignore println(mse)
+
+                mse
+            end
+
+            Flux.update!(apprentice.encoder_state_tree, apprentice.encoder, g_encoder)
+            Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
+
+            if i%growl_freq == 0 && reweight && i <= training_steps
+                apply_weighted(
+                    apprentice.encoder.embedding.weight;
+                    group_rows_by_overlap = group_rows_by_overlap,
+                    operator_weights = operator_weights,
+                )
+            end
+        end
+
+        if i%weight_update == 0 && reweight && i <= training_steps
+            reshaped_weight = transpose(apprentice.encoder.embedding.weight)
+
+            if group_rows_by_overlap
+                groups = deepcopy(row_groups)
+            else
+                n_rows = size(reshaped_weight, 1)
+                groups = [[idx] for idx in 1:n_rows]
+            end
+
+            n2_groups = [norm(reshaped_weight[idxs, :][:], 2) for idxs in groups]
+            eps_val = convert(eltype(operator_weights), 1e-3)
+            operator_weights .= one(eltype(operator_weights)) ./ (n2_groups .+ eps_val)
+        end
+
+
+        #check current performance of the apprentice
+        if rIC
+            diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
+        else
+            diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
+        end
+        
+        mse = sum(diff.^2)
+        push!(losses, mse)
+
+        if i%100 == 0 
+            transposed_weights = transpose(apprentice.encoder.embedding.weight)
+            n_rows = size(transposed_weights, 1)
+            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
+            println("zero inputs: $(length(zero_row_idcs))")
+
+            weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
+            println("weight factor: $(weight_factor)")
+
+            loss_mean = mean(losses[max(1, end-99):end])
+            println("mean squared error over last 100 steps: $(loss_mean)")
+        end
+
+        #keep the zeros if this is the last pruning step
+        if i+growl_freq > training_steps
+            println("keeping the zeros in the last reweight step")
+            update_mask(0.0)
+        end
+    end
+
+    plot(losses)
+end
+
+
+
 function get_row_groups(;group_channels = true)
 
     row_groups = []
@@ -566,6 +720,88 @@ function apply_growl(model_weights; group_rows_by_overlap = true)
 
     # Update the weight in the model (assumes in-place update is acceptable).
     model_weights .= new_W
+end
+
+
+
+function apply_weighted(model_weights; group_rows_by_overlap = true, operator_weights::Vector)
+
+    pl_srate = growl_srate
+
+    reshaped_weight = transpose(model_weights)
+
+    global row_groups
+
+    if group_rows_by_overlap
+        groups = deepcopy(row_groups)
+    else
+        groups = [[i] for i in 1:size(reshaped_weight, 1)]
+    end
+
+    # Compute the L2 norm for each row group.
+    n_groups = length(groups)
+    n2_groups = [norm(reshaped_weight[i, :][:], 2) for i in groups]
+
+    length(operator_weights) == n_groups || error("operator_weights length must match number of groups.")
+
+    # Apply weighted L1 proximal operator.
+    new_n2_groups = prox_weighted_l1(deepcopy(n2_groups), deepcopy(operator_weights))
+
+    # --- Rescale the weight rows ---
+    new_W = similar(reshaped_weight)
+    eps_val = eps(Float32)
+
+    for i in 1:n_groups
+        if new_n2_groups[i] < eps_val
+            # If the norm is too small, set all rows belonging to the group to zero.
+            for j in groups[i]
+                new_W[j, :] .= zeros(eltype(reshaped_weight), size(reshaped_weight, 2))
+            end
+        else
+            # Scale all rows belonging to the group.
+            for j in groups[i]
+                new_W[j, :] .= reshaped_weight[j, :] .* (new_n2_groups[i] / n2_groups[i])
+            end
+        end
+    end
+
+
+    # --- Check for excessive pruning ---
+
+    # Find indices of groups that are entirely zero.
+    zero_group_idcs = [i for i in 1:n_groups if new_n2_groups[i] < eps_val]
+
+    max_slct = Int(floor(pl_srate * n_groups))
+
+    if length(zero_group_idcs) > max_slct
+
+        numel = length(zero_group_idcs)
+        shuffled_idcs = shuffle(1:numel)
+        use_slct = numel - max_slct
+        selected_idcs = shuffled_idcs[1:use_slct]
+        selected_elmts = zero_group_idcs[selected_idcs]
+
+        for i in selected_elmts
+            # Restore all rows belonging to the group.
+            for j in groups[i]
+                new_W[j, :] .= reshaped_weight[j, :]
+            end
+        end
+    end
+
+    new_W = transpose(new_W)
+
+    # Update the weight in the model (assumes in-place update is acceptable).
+    model_weights .= new_W
+end
+
+
+
+function prox_weighted_l1(z::Vector, mu::Vector)
+    length(z) == length(mu) || error("z and mu must have the same length.")
+    x = z .- mu
+    x = max.(x, zero(eltype(x)))
+    return x
 end
 
 
