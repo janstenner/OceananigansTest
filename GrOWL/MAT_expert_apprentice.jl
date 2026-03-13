@@ -23,7 +23,7 @@ batch_size = 20
 batch_size_rIC = 200
 
 num_states = 200
-num_states_rIC = 10_000
+num_states_rIC = 4_000
 
 
 growl_power = 0.001
@@ -234,8 +234,24 @@ function generate_states()
     end
 end
 
+function states_rIC_cache_path()
+    return joinpath(@__DIR__, "..", "randomIC", "states_rIC_MAT_$(num_states_rIC).jld2")
+end
+
 function grab_states_rIC()
     global states_rIC
+    cache_path = states_rIC_cache_path()
+
+    if isfile(cache_path)
+        loaded_states_rIC = FileIO.load(cache_path, "states_rIC")
+        expected_size = (size(env.state)[1], size(env.state)[2], num_states_rIC)
+        if size(loaded_states_rIC) == expected_size
+            states_rIC = loaded_states_rIC
+            println("Loaded states_rIC from cache: $(cache_path)")
+            return
+        end
+        println("Found states_rIC cache with mismatched size, regenerating: $(cache_path)")
+    end
 
     states_rIC = zeros(Float32, size(env.state)[1], size(env.state)[2], num_states_rIC)
 
@@ -269,6 +285,11 @@ function grab_states_rIC()
             end
         end
     end
+
+    cache_dir = dirname(cache_path)
+    isdir(cache_dir) || mkdir(cache_dir)
+    FileIO.save(cache_path, "states_rIC", states_rIC)
+    println("Saved states_rIC cache to: $(cache_path)")
 end
 
 function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
@@ -560,7 +581,7 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
         mse = sum(diff.^2)
         push!(losses, mse)
 
-        if i%100 == 0 
+        if i%1 == 0 
             transposed_weights = transpose(apprentice.encoder.embedding.weight)
             n_rows = size(transposed_weights, 1)
             zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
