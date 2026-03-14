@@ -315,7 +315,11 @@ function grab_states_rIC()
     println("Saved states_rIC cache to: $(cache_path)")
 end
 
-function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl=true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
+function train_apprentice(;mode = apprentice_training_kind, training_steps = training_steps, extra_steps = extra_steps, prune = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 10)
+
+    kind_sym = mode isa Symbol ? mode : Symbol(lowercase(string(mode)))
+    kind_sym in (:growl, :weighted) || error("mode must be :growl or :weighted")
+    use_weighted = kind_sym == :weighted
 
     global states
     global states_rIC
@@ -331,12 +335,25 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
     end
 
     global row_groups
-
     row_groups = get_row_groups(;group_channels = group_channels)
 
-    global apprentice_training_kind = :growl
+    global apprentice_training_kind = kind_sym
     global apprentice_training_rIC = rIC
 
+    if use_weighted
+        if group_rows_by_overlap
+            groups = deepcopy(row_groups)
+        else
+            n_rows = size(transpose(apprentice.encoder.embedding.weight), 1)
+            groups = [[i] for i in 1:n_rows]
+        end
+
+        n_groups = length(groups)
+        weight_eltype = eltype(apprentice.encoder.embedding.weight)
+        global operator_weights = ones(weight_eltype, n_groups)
+    end
+
+    report_every = 10
 
     global losses = Float32[]
     for i in 1:training_steps+extra_steps
@@ -350,7 +367,12 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
         # training call
         current_batch_size = rIC ? batch_size_rIC : batch_size
         num_batches = rIC ? cld(200, current_batch_size) : div(num_states, current_batch_size)
-        current_growl_power = rIC ? growl_power_rIC : growl_power
+
+        if use_weighted
+            current_power = rIC ? reweight_power_rIC : reweight_power
+        else
+            current_power = rIC ? growl_power_rIC : growl_power
+        end
 
         if rIC
             rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
@@ -399,191 +421,31 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
                 diff = μ - μ_expert
                 mse = mean(diff.^2)
 
-                # Zygote.@ignore println(mse)
-
                 mse
             end
 
             Flux.update!(apprentice.encoder_state_tree, apprentice.encoder, g_encoder)
             Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
 
-
-
-            if i%growl_freq == 0 && growl && i <= training_steps
-                # GroWL routine
-
-                # println("starting GrOWL training...")
-
-                # weights_before = deepcopy(apprentice.encoder.embedding.weight)
-                apply_growl(
-                    apprentice.encoder.embedding.weight;
-                    group_rows_by_overlap = group_rows_by_overlap,
-                    growl_power_used = current_growl_power,
-                )
-                # difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
-
-                # println(difference)
-
+            if i%growl_freq == 0 && prune && i <= training_steps
+                if use_weighted
+                    apply_weighted(
+                        apprentice.encoder.embedding.weight;
+                        group_rows_by_overlap = group_rows_by_overlap,
+                        operator_weights = operator_weights,
+                        reweight_power_used = current_power,
+                    )
+                else
+                    apply_growl(
+                        apprentice.encoder.embedding.weight;
+                        group_rows_by_overlap = group_rows_by_overlap,
+                        growl_power_used = current_power,
+                    )
+                end
             end
         end
 
-
-        #check current performance of the apprentice
-        if rIC
-            diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
-        else
-            diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
-        end
-        
-        mse = sum(diff.^2)
-        push!(losses, mse)
-
-        if i%100 == 0 
-            transposed_weights = transpose(apprentice.encoder.embedding.weight)
-            n_rows = size(transposed_weights, 1)
-            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
-            println("zero inputs: $(length(zero_row_idcs))")
-
-            weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
-            println("weight factor: $(weight_factor)")
-
-            loss_mean = mean(losses[max(1, end-99):end])
-            println("mean squared error over last 100 steps: $(loss_mean)")
-        end
-
-        #keep the zeros if this is the last growl step
-        if i+growl_freq > training_steps
-            println("keeping the zeros in the last grOWL step")
-            update_mask(0.0)
-        end
-    end
-
-    plot(losses)
-end
-
-
-
-
-
-
-function reweight_train(;training_steps = training_steps, extra_steps = extra_steps, reweight = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 10)
-
-    global states
-    global states_rIC
-
-    println("checking for state set...")
-
-    if rIC
-        if !(@isdefined states_rIC)
-            grab_states_rIC()
-        end
-    else
-        if !(@isdefined states)
-            generate_states()
-        end
-    end
-
-    println("state set existing!")
-
-    global row_groups
-    row_groups = get_row_groups(;group_channels = group_channels)
-
-    global apprentice_training_kind = :weighted
-    global apprentice_training_rIC = rIC
-
-    if group_rows_by_overlap
-        groups = deepcopy(row_groups)
-    else
-        n_rows = size(transpose(apprentice.encoder.embedding.weight), 1)
-        groups = [[i] for i in 1:n_rows]
-    end
-
-    n_groups = length(groups)
-    weight_eltype = eltype(apprentice.encoder.embedding.weight)
-    global operator_weights = ones(weight_eltype, n_groups)
-
-    println("train starting...")
-
-    global losses = Float32[]
-    for i in 1:training_steps+extra_steps
-        
-        i%100 == 0 && i <= training_steps && println(i*100/training_steps, "% done")
-
-        i == training_steps+1 && println("training_steps finished, starting extra_steps...")
-        i%100 == 0 && i > training_steps && println((i-training_steps)*100/extra_steps, "% of extra steps done")
-
-
-        # training call
-        current_batch_size = rIC ? batch_size_rIC : batch_size
-        num_batches = rIC ? cld(200, current_batch_size) : div(num_states, current_batch_size)
-        current_reweight_power = rIC ? reweight_power_rIC : reweight_power
-
-        if rIC
-            rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
-        else
-            rand_inds = shuffle!(rng, Vector(1:num_states))
-        end
-
-
-        for j in 1:num_batches
-            #println("j is $(j) of $(num_batches)")
-
-            if rIC
-                global batch = states_rIC[:, :, rand_inds[(j-1)*current_batch_size+1:j*current_batch_size]]
-            else
-                global batch = states[:, :, rand_inds[(j-1)*current_batch_size+1:j*current_batch_size]]
-            end
-
-            batch_masked = batch .* mask
-
-            na = size(apprentice.decoder.embedding.weight)[2]
-
-            global g_encoder
-            global g_decoder
-
-            g_encoder, g_decoder = Flux.gradient(apprentice.encoder, apprentice.decoder) do p_encoder, p_decoder
-
-                obsrep, val = p_encoder(batch_masked)
-
-                # μ, logσ = p_decoder(zeros(Float32,na,1,current_batch_size), obsrep[:,1:1,:])
-
-                # for n in 2:apprentice.n_actors
-                #     newμ, newlogσ = p_decoder(cat(zeros(Float32,na,1,current_batch_size), μ, dims=2), obsrep[:,1:n,:])
-
-                #     μ = cat(μ, newμ[:,end:end,:], dims=2)
-                # end
-
-                # diff = μ - agent.policy.approximator.actor(batch)[1]
-
-
-                # new variant
-                μ_expert = prob(agent.policy, batch, nothing).μ
-
-                temp_act = cat(zeros(Float32,na,1,current_batch_size),μ_expert[:,1:end-1,:],dims=2)
-                μ, logσ = p_decoder(temp_act, obsrep)
-
-                diff = μ - μ_expert
-                mse = mean(diff.^2)
-
-                # Zygote.@ignore println(mse)
-
-                mse
-            end
-
-            Flux.update!(apprentice.encoder_state_tree, apprentice.encoder, g_encoder)
-            Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
-
-            if i%growl_freq == 0 && reweight && i <= training_steps
-                apply_weighted(
-                    apprentice.encoder.embedding.weight;
-                    group_rows_by_overlap = group_rows_by_overlap,
-                    operator_weights = operator_weights,
-                    reweight_power_used = current_reweight_power,
-                )
-            end
-        end
-
-        if i%weight_update == 0 && reweight && i <= training_steps
+        if use_weighted && i%weight_update == 0 && prune && i <= training_steps
             reshaped_weight = transpose(apprentice.encoder.embedding.weight)
 
             if group_rows_by_overlap
@@ -600,7 +462,6 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
 
 
         #check current performance of the apprentice
-        # TODO Too Slow for rIC
         if rIC
             diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
         else
@@ -610,7 +471,7 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
         mse = sum(diff.^2)
         push!(losses, mse)
 
-        if i%10 == 0 
+        if i%report_every == 0 
             transposed_weights = transpose(apprentice.encoder.embedding.weight)
             n_rows = size(transposed_weights, 1)
             zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
@@ -625,12 +486,39 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
 
         #keep the zeros if this is the last pruning step
         if i+growl_freq > training_steps
-            println("keeping the zeros in the last reweight step")
+            println("keeping the zeros in the last $(String(kind_sym)) step")
             update_mask(0.0)
         end
     end
 
     plot(losses)
+end
+
+
+function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
+    return train_apprentice(
+        mode = :growl,
+        training_steps = training_steps,
+        extra_steps = extra_steps,
+        prune = growl,
+        group_rows_by_overlap = group_rows_by_overlap,
+        group_channels = group_channels,
+        rIC = rIC,
+    )
+end
+
+
+function reweight_train(;training_steps = training_steps, extra_steps = extra_steps, reweight = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 10)
+    return train_apprentice(
+        mode = :weighted,
+        training_steps = training_steps,
+        extra_steps = extra_steps,
+        prune = reweight,
+        group_rows_by_overlap = group_rows_by_overlap,
+        group_channels = group_channels,
+        rIC = rIC,
+        weight_update = weight_update,
+    )
 end
 
 
