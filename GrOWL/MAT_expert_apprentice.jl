@@ -11,8 +11,9 @@ include("../rIC-validation.jl")
 
 
 # rIC scores
-# reward_sums = [615.7707476337812, 624.3941283416106, 609.5391093036005, 619.7676701858056, 624.5986261657915, 619.788090752011, 608.0556788331446, 608.0675050989786, 633.0851505101531, 608.2508144582149, 608.2281812638724, 610.8829166565549, 618.9712552451455, 621.5389821749475, 611.131756274039]
-# reward_sums_apprentice = [631.3680399549766, 635.6042491734456, 609.1698638729115, 614.7200798278612, 638.5093351455699, 614.7552684554165, 608.5678228568422, 608.5839687893373, 634.8891254699676, 611.7081526563197, 611.6936244852278, 623.3501830035208, 632.8096368662949, 620.9601228808638, 610.1753205755912]
+#reward_sums = [554.6305286939099, 560.2386884968918, 565.4618377650218, 557.434398548902, 561.6262672069304, 557.466004557712, 555.4317062304078, 555.4464920992392, 572.1192004805054, 548.639008840305, 548.6114441745203, 550.9900855238976, 556.3108301071123, 585.3668568567299, 552.5313324045303]
+#reward_sums_apprentice_growl = [553.6471336620853, 559.751815049584, 566.2764691470024, 556.4568649930598, 563.2828020581873, 556.4910212653255, 555.1814424620101, 555.1843951026261, 575.2583532783839, 549.4435999495879, 549.4232846558572, 552.0851559461055, 555.9527187866161, 566.501420245082, 552.6937315511888]
+#reward_sums_apprentice_weighted = [555.5770322738642, 561.3015369017154, 567.318438725923, 558.8736695183811, 565.0696314231911, 558.9010305657155, 556.3769813340348, 556.3772801885348, 580.7108541831584, 551.5193677556914, 551.5014181811501, 552.9761762643988, 556.9237503040824, 579.3869118654817, 553.5396500447647]
 
 
 # load_apprentice()
@@ -28,8 +29,10 @@ num_states_rIC = 4_000
 
 growl_power = 0.001
 reweight_power = 0.00006
-growl_power_rIC = 0.01
-reweight_power_rIC = 0.0003
+
+growl_power_rIC = 0.003
+reweight_power_rIC = 0.00035
+
 loss_stop_threshold = 0.001
 loss_stop_threshold_rIC = 0.003
 
@@ -988,7 +991,7 @@ open(dirpath * "/.gitignore", "w") do io
     println(io, "saves/*")
 end
 
-function apprentice_save_stem()
+function apprentice_save_stem(; group_channels_value = group_channels)
     global apprentice_training_kind
     global apprentice_training_rIC
 
@@ -996,18 +999,19 @@ function apprentice_save_stem()
                  apprentice_training_kind == :weighted ? "weighted" :
                  string(apprentice_training_kind)
     ric_tag = apprentice_training_rIC ? "rIC_true" : "rIC_false"
+    group_channels_suffix = group_channels_value ? "" : "_group_channels_false"
 
-    return "MAT_Apprentice_$(method_tag)_$(ric_tag)"
+    return "MAT_Apprentice_$(method_tag)_$(ric_tag)$(group_channels_suffix)"
 end
 
-function apprentice_save_path(number = nothing)
-    stem = apprentice_save_stem()
+function apprentice_save_path(number = nothing; group_channels_value = group_channels)
+    stem = apprentice_save_stem(; group_channels_value = group_channels_value)
     filename = isnothing(number) ? "$(stem).jld2" : "$(stem)_$(number).jld2"
     return dirpath * "/saves/" * filename
 end
 
-function load_apprentice(number = nothing)
-    filepath = apprentice_save_path(number)
+function load_apprentice(number = nothing; group_channels_value = group_channels)
+    filepath = apprentice_save_path(number; group_channels_value = group_channels_value)
     global apprentice = FileIO.load(filepath, "apprentice")
 
     try
@@ -1017,10 +1021,10 @@ function load_apprentice(number = nothing)
     end
 end
 
-function save_apprentice(number = nothing)
+function save_apprentice(number = nothing; group_channels_value = group_channels)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
-    FileIO.save(apprentice_save_path(number), "apprentice", apprentice, "mask", mask)
+    FileIO.save(apprentice_save_path(number; group_channels_value = group_channels_value), "apprentice", apprentice, "mask", mask)
 end
 
 

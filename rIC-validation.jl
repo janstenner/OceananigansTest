@@ -114,6 +114,13 @@ function validate_agent(; use_apprentice = false)
     mean_reward = mean(reward_sums_target)
     println("Mean reward over random ICs ($(apprentice_kind)): $mean_reward")
 
+    plot_scores_boxes()
+
+end
+
+
+function plot_scores_boxes()
+
     traces = AbstractTrace[]
     if @isdefined(reward_sums) && !isempty(reward_sums)
         push!(traces, box(y=reward_sums, name="Expert", boxpoints="all", quartilemethod="linear", boxmean=true))
@@ -125,11 +132,18 @@ function validate_agent(; use_apprentice = false)
         push!(traces, box(y=reward_sums_apprentice_weighted, name="Apprentice (Weighted)", boxpoints="all", quartilemethod="linear", boxmean=true))
     end
 
+    # uncontrolled score (799.2713775861112)
+    # push!(traces, box(y=[799.2713775861112], name="Uncontrolled", boxpoints="all", quartilemethod="linear", boxmean=true))
+
     if isempty(traces)
         println("No reward sums available for plotting.")
     else
         p = plot(traces)
         display(p)
     end
-
 end
+
+
+# @show reward_sums
+# @show reward_sums_apprentice_growl
+# @show reward_sums_apprentice_weighted
