@@ -30,6 +30,8 @@ growl_power = 0.001
 reweight_power = 0.00006
 growl_power_rIC = 0.01
 reweight_power_rIC = 0.0003
+loss_stop_threshold = 0.001
+loss_stop_threshold_rIC = 0.0022
 
 
 growl_freq = 1
@@ -354,6 +356,9 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
     end
 
     report_every = 10
+    stop_threshold = rIC ? loss_stop_threshold_rIC : loss_stop_threshold
+    threshold_reached_once = false
+    stop_training = false
 
     global losses = Float32[]
     for i in 1:training_steps+extra_steps
@@ -448,6 +453,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
                     )
                 end
             end
+
         end
 
         if use_weighted && i%weight_update == 0 && prune && i <= training_steps
@@ -474,7 +480,19 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
         # end
         # mse = mean(diff.^2)
 
-        push!(losses, mean(temp_losses))
+        !isempty(temp_losses) && push!(losses, mean(temp_losses))
+
+        if !isempty(losses)
+            current_loss = losses[end]
+            if !threshold_reached_once && current_loss < stop_threshold
+                threshold_reached_once = true
+                println("Loss dropped below threshold ($(stop_threshold)) at step $(i): $(current_loss)")
+            elseif threshold_reached_once && current_loss > stop_threshold
+                println("Stopping training at step $(i): loss rose above threshold ($(stop_threshold)) to $(current_loss)")
+                update_mask(0.0)
+                stop_training = true
+            end
+        end
 
         if i%report_every == 0 
             transposed_weights = transpose(apprentice.encoder.embedding.weight)
@@ -493,6 +511,10 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
         if i+growl_freq > training_steps
             println("keeping the zeros in the last $(String(kind_sym)) step")
             update_mask(0.0)
+        end
+
+        if stop_training
+            break
         end
     end
 
