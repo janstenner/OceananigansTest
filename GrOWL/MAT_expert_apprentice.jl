@@ -29,7 +29,7 @@ num_states_rIC = 4_000
 growl_power = 0.001
 reweight_power = 0.00006
 growl_power_rIC = 0.01
-reweight_power_rIC = 0.001
+reweight_power_rIC = 0.0003
 
 
 growl_freq = 1
@@ -86,8 +86,8 @@ end
 betas = (0.9, 0.999)
 
 # Tracks which apprentice variant should be persisted/loaded.
-apprentice_training_kind = :growl
-#apprentice_training_kind = :weighted
+#apprentice_training_kind = :growl
+apprentice_training_kind = :weighted
 apprentice_training_rIC = randomIC
 
 apprentice_agent = create_agent_mat(n_actors = actuators,
@@ -380,6 +380,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
             rand_inds = shuffle!(rng, Vector(1:num_states))
         end
 
+        temp_losses = Float32[]
 
         for j in 1:num_batches
             #println("j is $(j) of $(num_batches)")
@@ -420,6 +421,10 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
 
                 diff = μ - μ_expert
                 mse = mean(diff.^2)
+
+                Zygote.ignore() do
+                    push!(temp_losses, mse)
+                end
 
                 mse
             end
@@ -462,14 +467,14 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
 
 
         #check current performance of the apprentice
-        if rIC
-            diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
-        else
-            diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
-        end
-        
-        mse = sum(diff.^2)
-        push!(losses, mse)
+        # if rIC
+        #     diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
+        # else
+        #     diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
+        # end
+        # mse = mean(diff.^2)
+
+        push!(losses, mean(temp_losses))
 
         if i%report_every == 0 
             transposed_weights = transpose(apprentice.encoder.embedding.weight)
