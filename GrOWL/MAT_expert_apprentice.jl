@@ -20,18 +20,23 @@ include("../rIC-validation.jl")
 # agent.policy.approximator.actor.logσ[1] = -14.0f0
 
 batch_size = 20
-batch_size_rIC = 200
+batch_size_rIC = 100
 
 num_states = 200
 num_states_rIC = 4_000
 
 
 growl_power = 0.001
+reweight_power = 0.00006
+growl_power_rIC = 0.01
+reweight_power_rIC = 0.0006
+
+
 growl_freq = 1
 growl_srate = 0.999
 # theta_rate = 0.7
 
-reweight_power = 0.00006
+
 
 group_rows_by_overlap = true
 group_channels = true
@@ -326,13 +331,13 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
 
         # training call
         current_batch_size = rIC ? batch_size_rIC : batch_size
-        num_training_states = rIC ? num_states_rIC : num_states
-        num_batches = div(num_training_states, current_batch_size)
+        num_batches = rIC ? cld(200, current_batch_size) : div(num_states, current_batch_size)
+        current_growl_power = rIC ? growl_power_rIC : growl_power
 
         if rIC
             rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
         else
-            rand_inds = shuffle!(rng, Vector(1:100))
+            rand_inds = shuffle!(rng, Vector(1:num_states))
         end
 
 
@@ -392,7 +397,11 @@ function growl_train(;training_steps = training_steps, extra_steps = extra_steps
                 # println("starting GrOWL training...")
 
                 # weights_before = deepcopy(apprentice.encoder.embedding.weight)
-                apply_growl(apprentice.encoder.embedding.weight;  group_rows_by_overlap = group_rows_by_overlap)
+                apply_growl(
+                    apprentice.encoder.embedding.weight;
+                    group_rows_by_overlap = group_rows_by_overlap,
+                    growl_power_used = current_growl_power,
+                )
                 # difference = sum(abs.(weights_before - apprentice.encoder.embedding.weight))
 
                 # println(difference)
@@ -488,13 +497,13 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
 
         # training call
         current_batch_size = rIC ? batch_size_rIC : batch_size
-        num_training_states = rIC ? num_states_rIC : num_states
-        num_batches = div(num_training_states, current_batch_size)
+        num_batches = rIC ? cld(200, current_batch_size) : div(num_states, current_batch_size)
+        current_reweight_power = rIC ? reweight_power_rIC : reweight_power
 
         if rIC
             rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
         else
-            rand_inds = shuffle!(rng, Vector(1:100))
+            rand_inds = shuffle!(rng, Vector(1:num_states))
         end
 
 
@@ -551,6 +560,7 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
                     apprentice.encoder.embedding.weight;
                     group_rows_by_overlap = group_rows_by_overlap,
                     operator_weights = operator_weights,
+                    reweight_power_used = current_reweight_power,
                 )
             end
         end
@@ -690,7 +700,7 @@ end
 
 
 
-function apply_growl(model_weights; group_rows_by_overlap = true)
+function apply_growl(model_weights; group_rows_by_overlap = true, growl_power_used = growl_power)
 
     pl_srate = growl_srate
 
@@ -720,7 +730,7 @@ function apply_growl(model_weights; group_rows_by_overlap = true)
     theta_is = [(i-1)/n_groups for i in 1:n_groups]
 
     # make the parameters smaller in general
-    theta_is .*= growl_power
+    theta_is .*= growl_power_used
 
     # Apply the proximal operator.
     new_n2_groups = proxOWL(deepcopy(n2_groups), deepcopy(theta_is))
@@ -777,7 +787,7 @@ end
 
 
 
-function apply_weighted(model_weights; group_rows_by_overlap = true, operator_weights::Vector)
+function apply_weighted(model_weights; group_rows_by_overlap = true, operator_weights::Vector, reweight_power_used = reweight_power)
 
     pl_srate = growl_srate
 
@@ -798,7 +808,7 @@ function apply_weighted(model_weights; group_rows_by_overlap = true, operator_we
     length(operator_weights) == n_groups || error("operator_weights length must match number of groups.")
 
     # Apply weighted L1 proximal operator.
-    new_n2_groups = prox_weighted_l1(deepcopy(n2_groups), deepcopy(operator_weights .* reweight_power))
+    new_n2_groups = prox_weighted_l1(deepcopy(n2_groups), deepcopy(operator_weights .* reweight_power_used))
 
     # --- Rescale the weight rows ---
     new_W = similar(reshaped_weight)
