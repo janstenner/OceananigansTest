@@ -31,7 +31,7 @@ reweight_power = 0.00006
 growl_power_rIC = 0.01
 reweight_power_rIC = 0.0003
 loss_stop_threshold = 0.001
-loss_stop_threshold_rIC = 0.0022
+loss_stop_threshold_rIC = 0.003
 
 
 growl_freq = 1
@@ -483,7 +483,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
         !isempty(temp_losses) && push!(losses, mean(temp_losses))
 
         if !isempty(losses)
-            current_loss = mean(losses[max(1, end-99):end])
+            current_loss = mean(losses[max(1, end-199):end])
             if !threshold_reached_once && current_loss < stop_threshold
                 threshold_reached_once = true
                 println("Loss dropped below threshold ($(stop_threshold)) at step $(i): $(current_loss)")

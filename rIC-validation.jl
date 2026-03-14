@@ -110,32 +110,25 @@ function validate_agent(; use_apprentice = false)
         end
     end
 
-    if use_apprentice
-        mean_reward = mean(reward_sums_target)
-        println("Mean reward over random ICs ($(apprentice_kind)): $mean_reward")
 
-        traces = AbstractTrace[]
-        if @isdefined(reward_sums) && !isempty(reward_sums)
-            push!(traces, box(y=reward_sums, name="Expert", boxpoints="all", quartilemethod="linear"))
-        end
-        if @isdefined(reward_sums_apprentice_growl) && !isempty(reward_sums_apprentice_growl)
-            push!(traces, box(y=reward_sums_apprentice_growl, name="Apprentice (Growl)", boxpoints="all", quartilemethod="linear"))
-        end
-        if @isdefined(reward_sums_apprentice_weighted) && !isempty(reward_sums_apprentice_weighted)
-            push!(traces, box(y=reward_sums_apprentice_weighted, name="Apprentice (Weighted)", boxpoints="all", quartilemethod="linear"))
-        end
+    mean_reward = mean(reward_sums_target)
+    println("Mean reward over random ICs ($(apprentice_kind)): $mean_reward")
 
-        if isempty(traces)
-            println("No reward sums available for plotting.")
-        else
-            p = plot(traces)
-            display(p)
-        end
+    traces = AbstractTrace[]
+    if @isdefined(reward_sums) && !isempty(reward_sums)
+        push!(traces, box(y=reward_sums, name="Expert", boxpoints="all", quartilemethod="linear", boxmean=true))
+    end
+    if @isdefined(reward_sums_apprentice_growl) && !isempty(reward_sums_apprentice_growl)
+        push!(traces, box(y=reward_sums_apprentice_growl, name="Apprentice (Growl)", boxpoints="all", quartilemethod="linear", boxmean=true))
+    end
+    if @isdefined(reward_sums_apprentice_weighted) && !isempty(reward_sums_apprentice_weighted)
+        push!(traces, box(y=reward_sums_apprentice_weighted, name="Apprentice (Weighted)", boxpoints="all", quartilemethod="linear", boxmean=true))
+    end
+
+    if isempty(traces)
+        println("No reward sums available for plotting.")
     else
-        mean_reward = mean(reward_sums)
-        println("Mean reward over random ICs: $mean_reward")
-
-        p = plot(box(y=reward_sums, name="Current Agent", boxpoints="all", quartilemethod="linear"))
+        p = plot(traces)
         display(p)
     end
 
