@@ -29,7 +29,7 @@ num_states_rIC = 4_000
 growl_power = 0.001
 reweight_power = 0.00006
 growl_power_rIC = 0.01
-reweight_power_rIC = 0.0006
+reweight_power_rIC = 0.001
 
 
 growl_freq = 1
@@ -45,17 +45,9 @@ training_steps = 8_000
 extra_steps = 0
 
 
-learning_rate = 1e-4
-clip_grad = Inf
 
-block_num = 1
-dim_model = 32
-head_num = 2
-head_dim = 16
-ffn_dim = 32
-drop_out = 0.00#1
 
-betas = (0.9, 0.999)
+
 
 customCrossAttention = true
 jointPPO = false
@@ -66,6 +58,32 @@ joon_pe = true
 new_pe = false
 square_rewards = false
 randomIC = true
+
+
+if randomIC
+    block_num = 1
+    dim_model = 44
+    head_num = 2
+    head_dim = 22
+    ffn_dim = 44
+    drop_out = 0.00#1
+
+    learning_rate = 2e-4
+    clip_grad = Inf
+else
+    block_num = 1
+    dim_model = 32
+    head_num = 2
+    head_dim = 16
+    ffn_dim = 32
+    drop_out = 0.00#1
+
+    learning_rate = 1e-4
+    clip_grad = Inf
+end
+
+
+betas = (0.9, 0.999)
 
 # Tracks which apprentice variant should be persisted/loaded.
 apprentice_training_kind = :growl
@@ -448,7 +466,7 @@ end
 
 
 
-function reweight_train(;training_steps = training_steps, extra_steps = extra_steps, reweight = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 100)
+function reweight_train(;training_steps = training_steps, extra_steps = extra_steps, reweight = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 10)
 
     global states
     global states_rIC
@@ -582,6 +600,7 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
 
 
         #check current performance of the apprentice
+        # TODO Too Slow for rIC
         if rIC
             diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
         else
@@ -591,7 +610,7 @@ function reweight_train(;training_steps = training_steps, extra_steps = extra_st
         mse = sum(diff.^2)
         push!(losses, mse)
 
-        if i%1 == 0 
+        if i%10 == 0 
             transposed_weights = transpose(apprentice.encoder.embedding.weight)
             n_rows = size(transposed_weights, 1)
             zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
