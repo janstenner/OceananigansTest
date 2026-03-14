@@ -44,7 +44,7 @@ growl_srate = 0.999
 
 
 group_rows_by_overlap = true
-group_channels = true
+group_channels = false
 
 training_steps = 8_000
 extra_steps = 0
@@ -91,8 +91,8 @@ end
 betas = (0.9, 0.999)
 
 # Tracks which apprentice variant should be persisted/loaded.
-#apprentice_training_kind = :growl
-apprentice_training_kind = :weighted
+apprentice_training_kind = :growl
+#apprentice_training_kind = :weighted
 apprentice_training_rIC = randomIC
 
 apprentice_agent = create_agent_mat(n_actors = actuators,

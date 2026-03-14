@@ -1,3 +1,6 @@
+using FileIO
+
+rIC_scores_save_default_path = joinpath(@__DIR__, "GrOWL", "saves", "rIC_validation_scores.jld2")
 
 
 rIC_validation_offsets = [73, 28, 47, 90, 30, 42, 5, 53, 35, 65, 17, 22, 26, 40, 46]
@@ -51,6 +54,7 @@ end
 function validate_agent(; use_apprentice = false)
 
     apprentice_kind = :growl
+    group_channels_value = @isdefined(group_channels) ? group_channels : true
     reward_sums_target = Float64[]
 
     if use_apprentice
@@ -62,20 +66,29 @@ function validate_agent(; use_apprentice = false)
             end
         end
 
-        if apprentice_kind == :weighted
-            global reward_sums_apprentice_weighted = Float64[]
-            reward_sums_target = reward_sums_apprentice_weighted
-        else
+        if !@isdefined(reward_sums_apprentice_by_config)
+            global reward_sums_apprentice_by_config = Dict{Tuple{Symbol,Bool}, Vector{Float64}}()
+        end
+
+        if apprentice_kind != :weighted
             # Default to growl for backward compatibility.
             apprentice_kind = :growl
-            global reward_sums_apprentice_growl = Float64[]
-            reward_sums_target = reward_sums_apprentice_growl
         end
+
+        key = (apprentice_kind, group_channels_value)
+        reward_sums_apprentice_by_config[key] = Float64[]
+        reward_sums_target = reward_sums_apprentice_by_config[key]
 
         # Keep legacy variable name available for compatibility.
         global reward_sums_apprentice = reward_sums_target
+        if apprentice_kind == :growl && group_channels_value
+            global reward_sums_apprentice_growl = reward_sums_target
+        elseif apprentice_kind == :weighted && group_channels_value
+            global reward_sums_apprentice_weighted = reward_sums_target
+        end
     else
         global reward_sums = Float64[]
+        reward_sums_target = reward_sums
     end
 
     for j in rIC_validation_offsets
@@ -112,7 +125,11 @@ function validate_agent(; use_apprentice = false)
 
 
     mean_reward = mean(reward_sums_target)
-    println("Mean reward over random ICs ($(apprentice_kind)): $mean_reward")
+    if use_apprentice
+        println("Mean reward over random ICs ($(apprentice_kind), group_channels=$(group_channels_value)): $mean_reward")
+    else
+        println("Mean reward over random ICs (expert): $mean_reward")
+    end
 
     plot_scores_boxes()
 
@@ -125,11 +142,31 @@ function plot_scores_boxes()
     if @isdefined(reward_sums) && !isempty(reward_sums)
         push!(traces, box(y=reward_sums, name="Expert", boxpoints="all", quartilemethod="linear", boxmean=true))
     end
-    if @isdefined(reward_sums_apprentice_growl) && !isempty(reward_sums_apprentice_growl)
-        push!(traces, box(y=reward_sums_apprentice_growl, name="Apprentice (Growl)", boxpoints="all", quartilemethod="linear", boxmean=true))
-    end
-    if @isdefined(reward_sums_apprentice_weighted) && !isempty(reward_sums_apprentice_weighted)
-        push!(traces, box(y=reward_sums_apprentice_weighted, name="Apprentice (Weighted)", boxpoints="all", quartilemethod="linear", boxmean=true))
+
+    if @isdefined(reward_sums_apprentice_by_config)
+        config_keys = collect(keys(reward_sums_apprentice_by_config))
+        sort!(config_keys, by = x -> (x[1] == :growl ? 0 : 1, x[2] ? 0 : 1))
+
+        for (kind, grouped_channels) in config_keys
+            y = reward_sums_apprentice_by_config[(kind, grouped_channels)]
+            isempty(y) && continue
+
+            kind_label = kind == :growl ? "Growl" :
+                         kind == :weighted ? "Weighted" :
+                         string(kind)
+            channels_label = grouped_channels ? "GroupedChannels" : "SeparateChannels"
+            trace_name = "Apprentice ($(kind_label), $(channels_label))"
+
+            push!(traces, box(y=y, name=trace_name, boxpoints="all", quartilemethod="linear", boxmean=true))
+        end
+    else
+        # Backward-compatible fallback for older in-memory state.
+        if @isdefined(reward_sums_apprentice_growl) && !isempty(reward_sums_apprentice_growl)
+            push!(traces, box(y=reward_sums_apprentice_growl, name="Apprentice (Growl)", boxpoints="all", quartilemethod="linear", boxmean=true))
+        end
+        if @isdefined(reward_sums_apprentice_weighted) && !isempty(reward_sums_apprentice_weighted)
+            push!(traces, box(y=reward_sums_apprentice_weighted, name="Apprentice (Weighted)", boxpoints="all", quartilemethod="linear", boxmean=true))
+        end
     end
 
     # uncontrolled score (799.2713775861112)
@@ -141,6 +178,37 @@ function plot_scores_boxes()
         p = plot(traces)
         display(p)
     end
+end
+
+
+function save_rIC_scores(filepath = rIC_scores_save_default_path)
+    isdir(dirname(filepath)) || mkpath(dirname(filepath))
+
+    scores_expert = @isdefined(reward_sums) ? reward_sums : Float64[]
+    scores_by_config = @isdefined(reward_sums_apprentice_by_config) ? reward_sums_apprentice_by_config : Dict{Tuple{Symbol,Bool}, Vector{Float64}}()
+
+    FileIO.save(
+        filepath,
+        "reward_sums", scores_expert,
+        "reward_sums_apprentice_by_config", scores_by_config,
+    )
+    println("Saved rIC scores to: $(filepath)")
+end
+
+
+function load_rIC_scores(filepath = rIC_scores_save_default_path)
+    global reward_sums = FileIO.load(filepath, "reward_sums")
+    global reward_sums_apprentice_by_config = FileIO.load(filepath, "reward_sums_apprentice_by_config")
+
+    # Backward-compatible aliases for grouped-channel apprentice scores.
+    if haskey(reward_sums_apprentice_by_config, (:growl, true))
+        global reward_sums_apprentice_growl = reward_sums_apprentice_by_config[(:growl, true)]
+    end
+    if haskey(reward_sums_apprentice_by_config, (:weighted, true))
+        global reward_sums_apprentice_weighted = reward_sums_apprentice_by_config[(:weighted, true)]
+    end
+
+    println("Loaded rIC scores from: $(filepath)")
 end
 
 
