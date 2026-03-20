@@ -95,18 +95,18 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 200
 
 
-learning_rate = 1e-4
+learning_rate = 3e-4
 n_epochs = 4
 n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.01
-clip_grad = 0.2
+clip_grad = 1.0
 target_kl = Inf
 clip1 = false
 start_logσ = -1.1
 tanh_end = false
-clip_range = 0.05f0
+clip_range = 0.2f0
 
 betas = (0.9, 0.999)#(0.99,0.99)
 
@@ -557,7 +557,7 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 25)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
     frame = 1

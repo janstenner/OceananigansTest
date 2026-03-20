@@ -71,9 +71,11 @@ actuators_to_sensors = [findfirst(x->x==i, sensor_positions[1]) for i in actuato
 
 # agent tuning parameters
 memory_size = 0
-nna_scale = 51.2
-nna_scale_critic = 25.6
-fun = leakyrelu
+nna_scale = 6.4
+nna_scale_critic = 3.2
+drop_middle_layer = true
+drop_middle_layer_critic = true
+fun = gelu
 temporal_steps = 1
 action_punish = 0#0.002#0.2
 delta_action_punish = 0#0.002#0.5
@@ -93,22 +95,23 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 100
 
 
-learning_rate = 5e-5
+learning_rate = 3e-4
 n_epochs = 4
 n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
 entropy_loss_weight = 0.0#1
-clip_grad = 0.2
+actor_loss_weight = 100.0
+critic_loss_weight = 0.003
+adaptive_weights = false
+clip_grad = 1.0
 target_kl = Inf
 clip1 = false
-start_logσ = -1.1
-clip_range = 0.05f0
+start_logσ = -0.8
+clip_range = 0.2f0
 tanh_end = false
 
 
-drop_middle_layer = true
-drop_middle_layer_critic = true
 block_num = 1
 dim_model = 32
 head_num = 2
@@ -527,6 +530,9 @@ function initialize_setup(;use_random_init = false)
                 logσ_is_network = logσ_is_network,
                 max_σ = max_σ,
                 entropy_loss_weight = entropy_loss_weight,
+                actor_loss_weight = actor_loss_weight,
+                critic_loss_weight = critic_loss_weight,
+                adaptive_weights = adaptive_weights,
                 clip_grad = clip_grad,
                 target_kl = target_kl,
                 start_logσ = start_logσ,
@@ -603,8 +609,9 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 25)
     
+    println("MAT GO")
     frame = 1
 
     if visuals
