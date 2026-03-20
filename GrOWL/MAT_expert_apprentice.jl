@@ -177,6 +177,11 @@ end
 function plot_masked_input()
     global mask
 
+    rIC_label = randomIC ? "Variying IC" : "Fixed IC"
+    kind_label = apprentice_training_kind == :growl ? "Group Ordered" : "Group Reweighted"
+    channels_label = group_channels ? "Grouped Channels" : "Separate Channels"
+    trace_name = "Apprentice ($(kind_label), $(channels_label), $(rIC_label))"
+
     first_layer_matrix = apprentice.encoder.embedding.weight
 
     back_projection = zeros(size(env.state[:,1]))
@@ -206,6 +211,8 @@ function plot_masked_input()
     layout = Layout(
             plot_bgcolor="#f1f3f7",
             coloraxis = attr(cmin = 0, cmax = maximum(temp_y), colorscale = colorscale),
+            title = trace_name,
+            template="plotly_white",
         )
 
 
@@ -228,16 +235,23 @@ function plot_masked_input()
     total_sensors = clamp.(total_sensors, 0.0f0, 1.0f0)
     total_sensors_combined = total_sensors[1,:,:] + total_sensors[2,:,:] + total_sensors[3,:,:]
 
-    p = plot(heatmap(z=total_sensors_combined'))
+    p = plot(heatmap(z=total_sensors_combined', coloraxis="coloraxis"), layout)
     display(p)
 
 
+    println("--- $trace_name ---")
+
     indexes_zero = findall(x -> x == 0.0, mask)
-    println("Sparsity: $(100*length(indexes_zero)/length(mask))%")
+    println("Window Sparsity: $(100*length(indexes_zero)/length(mask))%")
+
+    window_sensors_combined = sensor_window[1,:,:] + sensor_window[2,:,:] + sensor_window[3,:,:]
+    window_combined = window_sensors_combined[:]
+    indexes_zero_combined = findall(x -> x == 0.0, window_combined)
+    println("Window Sparsity combined channels: $(100*length(indexes_zero_combined)/length(window_combined))%")
 
     combined = total_sensors_combined[:]
-    indexes_zero_combined = findall(x -> x == 0.0, combined)
-    println("Sparsity combined channels: $(100*length(indexes_zero_combined)/length(combined))%")
+    indexes_zero_total_combined = findall(x -> x == 0.0, combined)
+    println("Total Sparsity combined channels: $(100*length(indexes_zero_total_combined)/length(combined))%")
 end
 
 
