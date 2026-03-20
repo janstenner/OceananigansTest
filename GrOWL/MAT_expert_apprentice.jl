@@ -30,8 +30,8 @@ num_states_rIC = 4_000
 growl_power = 0.001
 reweight_power = 0.00006
 
-growl_power_rIC = 0.003
-reweight_power_rIC = 0.00035
+growl_power_rIC = 0.0045
+reweight_power_rIC = 0.00015
 
 loss_stop_threshold = 0.001
 loss_stop_threshold_rIC = 0.003
@@ -44,7 +44,7 @@ growl_srate = 0.999
 
 
 group_rows_by_overlap = true
-group_channels = false
+group_channels = true
 
 training_steps = 8_000
 extra_steps = 0
@@ -237,7 +237,7 @@ function plot_masked_input()
 
     combined = total_sensors_combined[:]
     indexes_zero_combined = findall(x -> x == 0.0, combined)
-    println("Sparsity combined channels: $(length(indexes_zero_combined)/length(combined))%")
+    println("Sparsity combined channels: $(100*length(indexes_zero_combined)/length(combined))%")
 end
 
 

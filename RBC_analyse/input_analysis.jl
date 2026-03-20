@@ -13,7 +13,7 @@ first_layer_matrix = apprentice.encoder.embedding.weight
 
 # try state-to-y
 # temp_y = reshape(env.state[:,1], 3,window_size,sensors[2])
-# plot(heatmap(z=temp_y[3,:,:]'))
+# plot(heatmap(z=temp_y[1,:,:]'))
 # passes
 
 

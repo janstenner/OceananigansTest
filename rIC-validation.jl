@@ -175,10 +175,121 @@ function plot_scores_boxes()
     if isempty(traces)
         println("No reward sums available for plotting.")
     else
-        p = plot(traces)
+        layout = Layout(
+            #title="RandomIC reward comparison (MAT vs PPO)",
+            #xaxis_title="Step",
+            yaxis_title="Cumulative Reward",
+            template="plotly_white",
+        )
+
+        p = plot(traces, layout)
         display(p)
     end
 end
+
+
+
+function same_day(; use_apprentice = false)
+
+    apprentice_kind = :growl
+    group_channels_value = @isdefined(group_channels) ? group_channels : true
+    same_day_sum_target = Float64[]
+
+    if use_apprentice
+        if @isdefined(apprentice_training_kind)
+            if apprentice_training_kind isa Symbol
+                apprentice_kind = apprentice_training_kind
+            elseif apprentice_training_kind isa AbstractString
+                apprentice_kind = Symbol(lowercase(apprentice_training_kind))
+            end
+        end
+
+        if !@isdefined(same_day_rewards_apprentice_by_config)
+            global same_day_rewards_apprentice_by_config = Dict{Tuple{Symbol,Bool}, Vector{Float64}}()
+        end
+
+        if apprentice_kind != :weighted
+            # Default to growl for backward compatibility.
+            apprentice_kind = :growl
+        end
+
+        key = (apprentice_kind, group_channels_value)
+        same_day_rewards_apprentice_by_config[key] = Float64[]
+        same_day_sum_target = same_day_rewards_apprentice_by_config[key]
+
+    else
+        global same_day_sum_expert = Float64[]
+        same_day_sum_target = same_day_sum_expert
+    end
+
+    j = rIC_validation_offsets[1]
+
+    RL.reset!(env)
+    generate_random_init(j)
+    
+    
+    for i in 1:200
+
+        if use_apprentice
+            action = RL.prob(apprentice, env).μ
+        else
+            action = RL.prob(agent.policy, env).μ
+        end
+
+        env(action)
+
+        temp_reward = state_Nu(env)
+        println(temp_reward)
+
+        push!(same_day_sum_target, temp_reward)
+    end
+
+
+    plot_same_day()
+
+end
+
+
+
+function plot_same_day()
+
+    traces = AbstractTrace[]
+    if @isdefined(same_day_sum_expert) && !isempty(same_day_sum_expert)
+        push!(traces, scatter(y=same_day_sum_expert, name="Expert"))
+    end
+
+    if @isdefined(same_day_rewards_apprentice_by_config)
+        config_keys = collect(keys(same_day_rewards_apprentice_by_config))
+        sort!(config_keys, by = x -> (x[1] == :growl ? 0 : 1, x[2] ? 0 : 1))
+
+        for (kind, grouped_channels) in config_keys
+            y = same_day_rewards_apprentice_by_config[(kind, grouped_channels)]
+            isempty(y) && continue
+
+            kind_label = kind == :growl ? "Growl" :
+                         kind == :weighted ? "Weighted" :
+                         string(kind)
+            channels_label = grouped_channels ? "GroupedChannels" : "SeparateChannels"
+            trace_name = "Apprentice ($(kind_label), $(channels_label))"
+
+            push!(traces, scatter(y=y, name=trace_name))
+        end
+    end
+
+    if isempty(traces)
+        println("No reward sums available for plotting.")
+    else
+        layout = Layout(
+            #title="RandomIC reward comparison (MAT vs PPO)",
+            xaxis_title="Step",
+            yaxis_title="Nu",
+            template="plotly_white",
+        )
+        p = plot(traces, layout)
+        display(p)
+    end
+end
+
 
 
 function save_rIC_scores(filepath = rIC_scores_save_default_path)
@@ -187,10 +298,15 @@ function save_rIC_scores(filepath = rIC_scores_save_default_path)
     scores_expert = @isdefined(reward_sums) ? reward_sums : Float64[]
     scores_by_config = @isdefined(reward_sums_apprentice_by_config) ? reward_sums_apprentice_by_config : Dict{Tuple{Symbol,Bool}, Vector{Float64}}()
 
+    scores_same_day_expert = @isdefined(reward_sums) ? same_day_sum_expert : Float64[]
+    scores_same_day_rewards_apprentice_by_config = @isdefined(same_day_rewards_apprentice_by_config) ? same_day_rewards_apprentice_by_config : Dict{Tuple{Symbol,Bool}, Vector{Float64}}()
+
     FileIO.save(
         filepath,
         "reward_sums", scores_expert,
         "reward_sums_apprentice_by_config", scores_by_config,
+        "same_day_sum_expert",scores_same_day_expert,
+        "same_day_rewards_apprentice_by_config", scores_same_day_rewards_apprentice_by_config
     )
     println("Saved rIC scores to: $(filepath)")
 end
@@ -199,6 +315,9 @@ end
 function load_rIC_scores(filepath = rIC_scores_save_default_path)
     global reward_sums = FileIO.load(filepath, "reward_sums")
     global reward_sums_apprentice_by_config = FileIO.load(filepath, "reward_sums_apprentice_by_config")
+
+    global same_day_sum_expert = FileIO.load(filepath, "same_day_sum_expert")
+    global same_day_rewards_apprentice_by_config = FileIO.load(filepath, "same_day_rewards_apprentice_by_config")
 
     # Backward-compatible aliases for grouped-channel apprentice scores.
     if haskey(reward_sums_apprentice_by_config, (:growl, true))
