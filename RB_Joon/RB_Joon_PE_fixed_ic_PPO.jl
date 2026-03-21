@@ -104,7 +104,7 @@ entropy_loss_weight = 0.0
 clip_grad = 1.0
 target_kl = Inf
 clip1 = false
-start_logσ = -1.1
+start_logσ = -0.8
 tanh_end = false
 clip_range = 0.2f0
 
