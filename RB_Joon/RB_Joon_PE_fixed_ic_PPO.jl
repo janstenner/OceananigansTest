@@ -92,7 +92,7 @@ p = 0.95f0
 start_steps = -1
 start_policy = ZeroPolicy(actionspace)
 
-update_freq = 100
+update_freq = 400
 
 
 learning_rate = 1e-4
