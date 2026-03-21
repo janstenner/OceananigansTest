@@ -27,14 +27,14 @@ num_states = 200
 num_states_rIC = 4_000
 
 
-growl_power = 0.001
-reweight_power = 0.00006
+growl_power = 0.09
+reweight_power = 0.00004
 
-growl_power_rIC = 0.0045
-reweight_power_rIC = 0.00015
+growl_power_rIC = 0.025
+reweight_power_rIC = 0.0001
 
 loss_stop_threshold = 0.001
-loss_stop_threshold_rIC = 0.003
+loss_stop_threshold_rIC = 0.03
 
 
 growl_freq = 1
@@ -44,7 +44,7 @@ growl_srate = 0.999
 
 
 group_rows_by_overlap = true
-group_channels = true
+group_channels = false
 
 training_steps = 8_000
 extra_steps = 0
@@ -91,8 +91,8 @@ end
 betas = (0.9, 0.999)
 
 # Tracks which apprentice variant should be persisted/loaded.
-apprentice_training_kind = :growl
-#apprentice_training_kind = :weighted
+#apprentice_training_kind = :growl
+apprentice_training_kind = :weighted
 apprentice_training_rIC = randomIC
 
 apprentice_agent = create_agent_mat(n_actors = actuators,
@@ -206,11 +206,11 @@ function plot_masked_input()
     add_trace!(p, heatmap(z=temp_y[2,:,:]', coloraxis="coloraxis"), col = 2)
     add_trace!(p, heatmap(z=temp_y[3,:,:]', coloraxis="coloraxis"), col = 3)
 
-    colorscale = [[0, "rgb(0, 0, 0)"], [0.01, "rgb(140, 90, 230)"], [1, "rgb(190, 120, 255)"], ]
+    colorscale = [[0, "rgb(0, 0, 0)"], [0.01, "rgb(59, 24, 124)"], [1, "rgb(195, 131, 255)"], ]
 
     layout = Layout(
             plot_bgcolor="#f1f3f7",
-            coloraxis = attr(cmin = 0, cmax = maximum(temp_y), colorscale = colorscale),
+            coloraxis = attr(cmin = 0, cmax = 5, colorscale = colorscale),
             title = trace_name,
             template="plotly_white",
         )

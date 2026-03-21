@@ -95,7 +95,7 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 100
 
 
-learning_rate = 3e-4
+learning_rate = 1e-4
 n_epochs = 4
 n_microbatches = 10
 logσ_is_network = false
