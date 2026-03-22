@@ -6,6 +6,7 @@ using Flux
 
 
 include("../rIC-validation.jl")
+include("../fixedIC-validation.jl")
 
 
 
@@ -62,7 +63,7 @@ positional_encoding = 3 #ZeroEncoding
 joon_pe = true
 new_pe = false
 square_rewards = false
-randomIC = true
+randomIC = false
 
 
 if randomIC
@@ -91,8 +92,8 @@ end
 betas = (0.9, 0.999)
 
 # Tracks which apprentice variant should be persisted/loaded.
-#apprentice_training_kind = :growl
-apprentice_training_kind = :weighted
+apprentice_training_kind = :growl
+#apprentice_training_kind = :weighted
 apprentice_training_rIC = randomIC
 
 apprentice_agent = create_agent_mat(n_actors = actuators,
