@@ -241,10 +241,39 @@ function print_best_window_ranking(run_rewards_by_algorithm::Dict{String, Dict{I
     return ranking
 end
 
+
+function plot_all()
+
+    traces = AbstractTrace[]
+
+    for (key, value) in run_rewards_by_algorithm["MAT"]
+        push!(traces, scatter(
+            y=value,
+            mode="lines",
+            line=attr(color="rgb(31, 119, 180)", width=1),
+            name="MAT $key",
+        ) )
+    end
+
+    for (key, value) in run_rewards_by_algorithm["PPO"]
+        push!(traces, scatter(
+            y=value,
+            mode="lines",
+            line=attr(color="rgb(255, 127, 14)", width=1),
+            name="PPO $key",
+        ) )
+    end
+
+
+    plot(traces)
+        
+end
+
+
 function main()
     load_hooks!()
 
-    run_rewards_by_algorithm = Dict(
+    global run_rewards_by_algorithm = Dict(
         "MAT" => reward_by_run("MAT"),
         "PPO" => reward_by_run("PPO"),
     )
