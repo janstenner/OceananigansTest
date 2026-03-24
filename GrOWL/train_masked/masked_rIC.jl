@@ -83,6 +83,8 @@ window_size = 15
 use_gpu = false
 actionspace = Space(fill(-1..1, (1 + memory_size, length(actuator_positions))))
 
+# mask_space = Space(fill(-1..1, (length(findall(x -> x != 0.0, mask)), length(actuator_positions))))
+
 # additional agent parameters
 rng = StableRNG(seed)
 Random.seed!(seed)
@@ -130,7 +132,7 @@ useSeparateValueChain = true
 
 joon_pe = true
 square_rewards = false
-randomIC = false
+randomIC = true
 
 
 
@@ -388,27 +390,10 @@ function reward_function(env; returnGlobalNu = false)
 
     rewards = zeros(actuators)
 
-    hor_inv_probes = Int(sensors[1] / actuators)
+
 
     for i in 1:actuators
-        tempstate = env.state[:,i]
 
-        tempT = tempstate[1:3:length(tempstate)]
-        tempW = tempstate[2:3:length(tempstate)]
-
-        tempT = reshape(tempT, window_size, sensors[2])
-        tempW = reshape(tempW, window_size, sensors[2])
-
-        #tempT = tempT[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-        #tempW = tempW[Int(actuators/2)*hor_inv_probes : (Int(actuators/2)+1)*hor_inv_probes, :]
-
-        q_1_mean = mean(tempT .* tempW)
-        Tx = mean(tempT', dims = 2)
-        q_2 = kappa * mean(array_gradient(Tx))
-
-        localNu = (q_1_mean - q_2) / den
-
-        # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
         rewards[i] = - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
@@ -477,7 +462,7 @@ function featurize(y0 = nothing, t0 = nothing; env = nothing)
         end
     end
 
-    return Float32.(result)
+    return Float32.((result  .*  mask)[findall(x -> x != 0.0, mask),:])
 end
 
 function prepare_action(action0 = nothing, t0 = nothing; env = nothing) 
@@ -609,7 +594,7 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 25)
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 5)
     
     println("MAT GO")
     frame = 1
@@ -709,13 +694,13 @@ end
 
 function load(number = nothing)
     if isnothing(number)
-        global hook = FileIO.load(dirpath * "/saves/hook.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agent.jld2","agent")
-        #global env = FileIO.load(dirpath * "/saves/env.jld2","env")
+        global hook = FileIO.load(dirpath * "/saves/hook_rIC.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agent_rIC.jld2","agent")
+        #global env = FileIO.load(dirpath * "/saves/env_rIC.jld2","env")
     else
-        global hook = FileIO.load(dirpath * "/saves/hook$number.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/agent$number.jld2","agent")
-        #global env = FileIO.load(dirpath * "/saves/env$number.jld2","env")
+        global hook = FileIO.load(dirpath * "/saves/hook_rIC$number.jld2","hook")
+        global agent = FileIO.load(dirpath * "/saves/agent_rIC$number.jld2","agent")
+        #global env = FileIO.load(dirpath * "/saves/env_rIC$number.jld2","env")
     end
 end
 
@@ -723,13 +708,13 @@ function save(number = nothing)
     isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
 
     if isnothing(number)
-        FileIO.save(dirpath * "/saves/hook.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agent.jld2","agent",agent)
-        #FileIO.save(dirpath * "/saves/env.jld2","env",env)
+        FileIO.save(dirpath * "/saves/hook_rIC.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agent_rIC.jld2","agent",agent)
+        #FileIO.save(dirpath * "/saves/env_rIC.jld2","env",env)
     else
-        FileIO.save(dirpath * "/saves/hook$number.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/agent$number.jld2","agent",agent)
-        #FileIO.save(dirpath * "/saves/env$number.jld2","env",env)
+        FileIO.save(dirpath * "/saves/hook_rIC$number.jld2","hook",hook)
+        FileIO.save(dirpath * "/saves/agent_rIC$number.jld2","agent",agent)
+        #FileIO.save(dirpath * "/saves/env_rIC$number.jld2","env",env)
     end
 end
 

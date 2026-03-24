@@ -6,6 +6,7 @@ using Flux
 
 
 include("../rIC-validation.jl")
+include("../fixedIC-validation.jl")
 
 
 
@@ -44,7 +45,7 @@ growl_srate = 0.999
 
 
 group_rows_by_overlap = true
-group_channels = false
+group_channels = true
 
 training_steps = 8_000
 extra_steps = 0
@@ -91,8 +92,8 @@ end
 betas = (0.9, 0.999)
 
 # Tracks which apprentice variant should be persisted/loaded.
-#apprentice_training_kind = :growl
-apprentice_training_kind = :weighted
+apprentice_training_kind = :growl
+#apprentice_training_kind = :weighted
 apprentice_training_rIC = randomIC
 
 apprentice_agent = create_agent_mat(n_actors = actuators,
@@ -1045,7 +1046,7 @@ end
 
 
 
-function train_masked(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 1)
+function train_masked(use_random_init = randomIC; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 25)
     rm(dirpath * "/training_frames/", recursive=true, force=true)
     mkdir(dirpath * "/training_frames/")
     frame = 1
@@ -1063,7 +1064,7 @@ function train_masked(use_random_init = true; visuals = false, num_steps = 1600,
     if use_random_init
         hook.generate_random_init = generate_random_init
     else
-        hook.generate_random_init = false
+        hook.generate_random_init = generate_random_init
     end
     
 
@@ -1090,6 +1091,19 @@ function train_masked(use_random_init = true; visuals = false, num_steps = 1600,
                     env.state = env.state .* mask
 
                     action = agent(env)
+
+                    # dist = prob(agent.policy, env.state .* mask, nothing)
+                    # action = rand.(agent.policy.rng, dist)
+
+                    # if ndims(action) == 2
+                    #     log_p = vec(sum(normlogpdf(dist.μ, dist.σ, action), dims=1))
+                    # else
+                    #     log_p = normlogpdf(dist.μ, dist.σ, action)
+                    # end
+
+                    # agent.policy.last_action_log_prob = log_p[:]
+
+
 
                     agent(PRE_ACT_STAGE, env, action)
                     hook(PRE_ACT_STAGE, agent, env, action)

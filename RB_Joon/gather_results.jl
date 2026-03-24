@@ -5,7 +5,7 @@ using Statistics
 using Printf
 using PlotlyJS
 
-const RUN_NUMBERS = 1001:1008
+const RUN_NUMBERS = 1001:1010
 const ALGORITHMS = ("MAT", "PPO")
 const SAVES_DIR = joinpath(@__DIR__, "saves")
 const ROLLING_WINDOW = 50
@@ -16,6 +16,9 @@ const HOOKS = Dict(
 )
 
 function load_hooks!()
+    empty!(HOOKS["MAT"])
+    empty!(HOOKS["PPO"])
+
     missing_files = String[]
     for algorithm in ALGORITHMS
         for run_number in RUN_NUMBERS
@@ -38,20 +41,29 @@ function load_hooks!()
     end
 
     if !isempty(missing_files)
-        error(
-            "Missing hook files:\n" * join(missing_files, "\n") *
-            "\nExpected files for runs $(first(RUN_NUMBERS)) to $(last(RUN_NUMBERS))."
-        )
+        println("Missing hook files (skipping):")
+        println(join(missing_files, "\n"))
+        println("Expected files for runs $(first(RUN_NUMBERS)) to $(last(RUN_NUMBERS)).")
+    end
+
+    for algorithm in ALGORITHMS
+        loaded = sort!(collect(keys(HOOKS[algorithm])))
+        println("Loaded $(length(loaded)) $(algorithm) hooks: $(isempty(loaded) ? "none" : join(loaded, ", "))")
     end
 end
 
 reward_vector(hook) = Float64.(collect(hook.rewards))
 
 function reward_by_run(algorithm::String)
-    Dict(run_number => reward_vector(HOOKS[algorithm][run_number]) for run_number in RUN_NUMBERS)
+    Dict(run_number => reward_vector(HOOKS[algorithm][run_number]) for run_number in keys(HOOKS[algorithm]))
 end
 
-function summarize_rewards(algorithm::String, run_rewards::Dict{Int, Vector{Float64}})
+function summarize_rewards(algorithm::String, run_rewards::AbstractDict)
+    if isempty(run_rewards)
+        @printf("[%s] no runs available; skipping aggregate statistics.\n", algorithm)
+        return nothing
+    end
+
     run_ids = sort!(collect(keys(run_rewards)))
     lengths = [length(run_rewards[run_id]) for run_id in run_ids]
     min_len = minimum(lengths)
@@ -66,10 +78,13 @@ function summarize_rewards(algorithm::String, run_rewards::Dict{Int, Vector{Floa
     end
 
     if min_len < ROLLING_WINDOW
-        error(
-            "[$algorithm] need at least $ROLLING_WINDOW rewards per run to compute rolling mean; " *
-            "minimum available length is $min_len."
+        @printf(
+            "[%s] need at least %d rewards per run to compute rolling mean; minimum available length is %d. Skipping aggregate statistics.\n",
+            algorithm,
+            ROLLING_WINDOW,
+            min_len,
         )
+        return nothing
     end
 
     # Keep run_rewards untouched: build rolling means from truncated views.
@@ -91,68 +106,97 @@ function summarize_rewards(algorithm::String, run_rewards::Dict{Int, Vector{Floa
     stacked = hcat(rolling_by_run...)
     mean_vec = vec(mean(stacked, dims=2))
     std_vec = vec(std(stacked, dims=2; corrected=false))
-    return mean_vec, std_vec, min_len
+    return (mean_vec, std_vec, min_len)
 end
 
-function plot_comparison(mat_mean, mat_std, ppo_mean, ppo_std)
-    mat_steps = 1:length(mat_mean)
-    ppo_steps = 1:length(ppo_mean)
+function plot_comparison(mat_stats, ppo_stats)
+    traces = AbstractTrace[]
 
-    traces = [
-        scatter(
-            x=mat_steps,
-            y=mat_mean .+ mat_std,
-            mode="lines",
-            line=attr(width=0),
-            name="MAT +1 std",
-            showlegend=false,
-            hoverinfo="skip",
-        ),
-        scatter(
-            x=mat_steps,
-            y=mat_mean .- mat_std,
-            mode="lines",
-            line=attr(width=0),
-            fill="tonexty",
-            fillcolor="rgba(31, 119, 180, 0.40)",
-            name="MAT ±1 std",
-        ),
-        scatter(
-            x=ppo_steps,
-            y=ppo_mean .+ ppo_std,
-            mode="lines",
-            line=attr(width=0),
-            name="PPO +1 std",
-            showlegend=false,
-            hoverinfo="skip",
-        ),
-        scatter(
-            x=ppo_steps,
-            y=ppo_mean .- ppo_std,
-            mode="lines",
-            line=attr(width=0),
-            fill="tonexty",
-            fillcolor="rgba(255, 127, 14, 0.40)",
-            name="PPO ±1 std",
-        ),
-        scatter(
-            x=ppo_steps,
-            y=ppo_mean,
-            mode="lines",
-            line=attr(color="rgb(255, 127, 14)", width=2),
-            name="PPO mean",
-        ),
-        scatter(
-            x=mat_steps,
-            y=mat_mean,
-            mode="lines",
-            line=attr(color="rgb(31, 119, 180)", width=2),
-            name="MAT mean",
-        ),
-    ]
+    if mat_stats !== nothing
+        mat_mean, mat_std, _ = mat_stats
+        mat_steps = 1:length(mat_mean)
+        push!(
+            traces,
+            scatter(
+                x=mat_steps,
+                y=mat_mean .+ mat_std,
+                mode="lines",
+                line=attr(width=0),
+                name="MAT +1 std",
+                showlegend=false,
+                hoverinfo="skip",
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x=mat_steps,
+                y=mat_mean .- mat_std,
+                mode="lines",
+                line=attr(width=0),
+                fill="tonexty",
+                fillcolor="rgba(31, 119, 180, 0.40)",
+                name="MAT ±1 std",
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x=mat_steps,
+                y=mat_mean,
+                mode="lines",
+                line=attr(color="rgb(31, 119, 180)", width=2),
+                name="MAT mean",
+            ),
+        )
+    end
+
+    if ppo_stats !== nothing
+        ppo_mean, ppo_std, _ = ppo_stats
+        ppo_steps = 1:length(ppo_mean)
+        push!(
+            traces,
+            scatter(
+                x=ppo_steps,
+                y=ppo_mean .+ ppo_std,
+                mode="lines",
+                line=attr(width=0),
+                name="PPO +1 std",
+                showlegend=false,
+                hoverinfo="skip",
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x=ppo_steps,
+                y=ppo_mean .- ppo_std,
+                mode="lines",
+                line=attr(width=0),
+                fill="tonexty",
+                fillcolor="rgba(255, 127, 14, 0.40)",
+                name="PPO ±1 std",
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x=ppo_steps,
+                y=ppo_mean,
+                mode="lines",
+                line=attr(color="rgb(255, 127, 14)", width=2),
+                name="PPO mean",
+            ),
+        )
+    end
+
+    if isempty(traces)
+        println("No aggregate traces available to plot.")
+        return
+    end
 
     layout = Layout(
-        title="RandomIC reward comparison (MAT vs PPO)",
+        title="Reward comparison (available MAT/PPO runs)",
         xaxis_title="Step",
         yaxis_title="Reward",
         template="plotly_white",
@@ -170,15 +214,20 @@ function plot_comparison(mat_mean, mat_std, ppo_mean, ppo_std)
     end
 end
 
-function print_last_100_ranking(run_rewards_by_algorithm::Dict{String, Dict{Int, Vector{Float64}}})
+function print_last_100_ranking(run_rewards_by_algorithm::AbstractDict)
     ranking = NamedTuple[]
     for algorithm in ALGORITHMS
-        for run_number in RUN_NUMBERS
+        for run_number in sort!(collect(keys(run_rewards_by_algorithm[algorithm])))
             rewards = run_rewards_by_algorithm[algorithm][run_number]
             n = min(100, length(rewards))
             tail_mean = n == 0 ? NaN : mean(@view rewards[(end - n + 1):end])
             push!(ranking, (algorithm=algorithm, run_number=run_number, tail_mean=tail_mean, n=n))
         end
+    end
+
+    if isempty(ranking)
+        println("\nNo runs available for last-100 ranking.")
+        return ranking
     end
 
     sort!(ranking, by=row -> row.tail_mean, rev=true)
@@ -192,18 +241,25 @@ function print_last_100_ranking(run_rewards_by_algorithm::Dict{String, Dict{Int,
     end
 end
 
-function print_best_window_ranking(run_rewards_by_algorithm::Dict{String, Dict{Int, Vector{Float64}}}; window::Int = 100)
+function print_best_window_ranking(run_rewards_by_algorithm::AbstractDict; window::Int = 100)
     if window <= 0
         error("window must be positive, got $window")
     end
 
     ranking = NamedTuple[]
     for algorithm in ALGORITHMS
-        for run_number in RUN_NUMBERS
+        for run_number in sort!(collect(keys(run_rewards_by_algorithm[algorithm])))
             rewards = run_rewards_by_algorithm[algorithm][run_number]
             n = length(rewards)
             if n < window
-                error("[$algorithm run $run_number] has only $n rewards, fewer than window=$window.")
+                @printf(
+                    "[%s run %d] has only %d rewards, fewer than window=%d. Skipping.\n",
+                    algorithm,
+                    run_number,
+                    n,
+                    window,
+                )
+                continue
             end
 
             best_start = 1
@@ -232,6 +288,11 @@ function print_best_window_ranking(run_rewards_by_algorithm::Dict{String, Dict{I
                 ),
             )
         end
+    end
+
+    if isempty(ranking)
+        println("\nNo runs available for best-window ranking.")
+        return ranking
     end
 
     sort!(ranking, by=row -> row.best_mean, rev=true)
@@ -283,10 +344,10 @@ function main()
         "PPO" => reward_by_run("PPO"),
     )
 
-    mat_mean, mat_std, _ = summarize_rewards("MAT", run_rewards_by_algorithm["MAT"])
-    ppo_mean, ppo_std, _ = summarize_rewards("PPO", run_rewards_by_algorithm["PPO"])
+    mat_stats = summarize_rewards("MAT", run_rewards_by_algorithm["MAT"])
+    ppo_stats = summarize_rewards("PPO", run_rewards_by_algorithm["PPO"])
 
-    plot_comparison(mat_mean, mat_std, ppo_mean, ppo_std)
+    plot_comparison(mat_stats, ppo_stats)
     print_last_100_ranking(run_rewards_by_algorithm)
     print_best_window_ranking(run_rewards_by_algorithm; window=100)
 end
