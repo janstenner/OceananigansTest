@@ -594,7 +594,7 @@ initialize_setup()
 
 # plotrun(use_best = false, plot3D = true)
 
-function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 5)
+function train(use_random_init = true; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 10)
     
     println("MAT GO")
     frame = 1
