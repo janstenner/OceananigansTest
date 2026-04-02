@@ -42,15 +42,20 @@ const COMPARISONS = (
         name = "fixedIC",
         title = "Reward comparison (RB_Joon MAT vs masked MAT)",
         output_filename = "reward_comparison_MAT_vs_maskedMAT_fixedIC.html",
+        max_steps = nothing,
         algorithms = FIXED_IC_ALGORITHMS,
     ),
     (
         name = "randomIC",
         title = "RandomIC reward comparison (MAT vs masked MAT)",
         output_filename = "reward_comparison_MAT_vs_maskedMAT_randomIC.html",
+        max_steps = 8000,
         algorithms = RANDOM_IC_ALGORITHMS,
     ),
 )
+
+const RUN_REWARDS_BY_COMPARISON = Dict{String, Dict{String, Dict{Int, Vector{Float64}}}}()
+const LAST_COMPARISON = Ref{Any}(nothing)
 
 reward_vector(hook) = Float64.(collect(hook.rewards))
 
@@ -179,20 +184,27 @@ function add_mean_and_std_traces!(
     traces::Vector{AbstractTrace},
     algorithm::String,
     stats,
+    max_steps::Union{Nothing, Int},
 )
     if stats === nothing
         return
     end
 
     mean_vec, std_vec, _ = stats
-    steps = 1:length(mean_vec)
+    n_points = length(mean_vec)
+    if max_steps !== nothing
+        n_points = min(n_points, max_steps)
+    end
+    steps = 1:n_points
+    mean_values = @view mean_vec[1:n_points]
+    std_values = @view std_vec[1:n_points]
     line_color, fill_color = style_for_algorithm(algorithm)
 
     push!(
         traces,
         scatter(
             x = steps,
-            y = mean_vec .+ std_vec,
+            y = mean_values .+ std_values,
             mode = "lines",
             line = attr(width = 0),
             name = "$algorithm +1 std",
@@ -204,7 +216,7 @@ function add_mean_and_std_traces!(
         traces,
         scatter(
             x = steps,
-            y = mean_vec .- std_vec,
+            y = mean_values .- std_values,
             mode = "lines",
             line = attr(width = 0),
             fill = "tonexty",
@@ -216,7 +228,7 @@ function add_mean_and_std_traces!(
         traces,
         scatter(
             x = steps,
-            y = mean_vec,
+            y = mean_values,
             mode = "lines",
             line = attr(color = line_color, width = 2),
             name = "$algorithm mean",
@@ -224,11 +236,16 @@ function add_mean_and_std_traces!(
     )
 end
 
-function plot_comparison(stats_by_algorithm::AbstractDict; title::String, output_filename::String)
+function plot_comparison(
+    stats_by_algorithm::AbstractDict;
+    title::String,
+    output_filename::String,
+    max_steps::Union{Nothing, Int} = nothing,
+)
     traces = AbstractTrace[]
 
-    add_mean_and_std_traces!(traces, "MAT", get(stats_by_algorithm, "MAT", nothing))
-    add_mean_and_std_traces!(traces, "masked MAT", get(stats_by_algorithm, "masked MAT", nothing))
+    add_mean_and_std_traces!(traces, "MAT", get(stats_by_algorithm, "MAT", nothing), max_steps)
+    add_mean_and_std_traces!(traces, "masked MAT", get(stats_by_algorithm, "masked MAT", nothing), max_steps)
 
     if isempty(traces)
         println("No aggregate traces available to plot for: $title")
@@ -252,6 +269,60 @@ function plot_comparison(stats_by_algorithm::AbstractDict; title::String, output
     catch err
         println("Could not save comparison plot to HTML: $(typeof(err))")
     end
+end
+
+function plot_all(run_rewards_by_algorithm::AbstractDict; title::String = "All run rewards")
+    traces = AbstractTrace[]
+
+    for algorithm in ("MAT", "masked MAT")
+        if !haskey(run_rewards_by_algorithm, algorithm)
+            continue
+        end
+
+        line_color, _ = style_for_algorithm(algorithm)
+        for run_number in sort!(collect(keys(run_rewards_by_algorithm[algorithm])))
+            rewards = run_rewards_by_algorithm[algorithm][run_number]
+            push!(
+                traces,
+                scatter(
+                    y = rewards,
+                    mode = "lines",
+                    line = attr(color = line_color, width = 1),
+                    name = "$algorithm $run_number",
+                ),
+            )
+        end
+    end
+
+    if isempty(traces)
+        println("No run traces available to plot for: $title")
+        return nothing
+    end
+
+    layout = Layout(
+        title = title,
+        xaxis_title = "Step",
+        yaxis_title = "Reward",
+        template = "plotly_white",
+    )
+
+    fig = plot(traces, layout)
+    display(fig)
+    return fig
+end
+
+function plot_all(; comparison_name::Union{Nothing, String} = nothing)
+    selected_comparison = comparison_name === nothing ? LAST_COMPARISON[] : comparison_name
+
+    if selected_comparison === nothing || !haskey(RUN_REWARDS_BY_COMPARISON, selected_comparison)
+        println("No cached run rewards found. Run main() or run_comparison(...) first.")
+        return nothing
+    end
+
+    return plot_all(
+        RUN_REWARDS_BY_COMPARISON[selected_comparison];
+        title = "All run rewards ($(selected_comparison))",
+    )
 end
 
 function print_last_100_ranking(run_rewards_by_algorithm::AbstractDict, algorithm_order)
@@ -374,6 +445,8 @@ function run_comparison(comparison)
     run_rewards_by_algorithm = Dict(
         spec.label => reward_by_run(hooks[spec.label]) for spec in comparison.algorithms
     )
+    RUN_REWARDS_BY_COMPARISON[comparison.name] = run_rewards_by_algorithm
+    LAST_COMPARISON[] = comparison.name
 
     stats_by_algorithm = Dict(
         spec.label => summarize_rewards(spec.label, run_rewards_by_algorithm[spec.label]) for spec in comparison.algorithms
@@ -383,6 +456,7 @@ function run_comparison(comparison)
         stats_by_algorithm;
         title = comparison.title,
         output_filename = comparison.output_filename,
+        max_steps = comparison.max_steps,
     )
 
     algorithm_order = Tuple(spec.label for spec in comparison.algorithms)
