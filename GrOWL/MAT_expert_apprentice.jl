@@ -255,7 +255,7 @@ function plot_masked_input()
     println("Total Sparsity combined channels: $(100*length(indexes_zero_total_combined)/length(combined))%")
 end
 
-function report_masked_input(; rIC = randomIC)
+function report_masked_input(; rIC = randomIC, use_evaluation_set::Bool = false)
     global mask
 
     rIC_label = rIC ? "Variying IC" : "Fixed IC"
@@ -296,28 +296,38 @@ function report_masked_input(; rIC = randomIC)
     println("Total Sparsity combined channels: $(100 * length(indexes_zero_total_combined) / length(combined))%")
 
     if rIC
-        if !(@isdefined states_rIC)
-            grab_states_rIC()
+        if use_evaluation_set
+            ensure_rIC_evaluation_cache()
+            state_set = rIC_eval_states
+            expert_actions = rIC_eval_expert_actions
+            dataset_label = "rIC evaluation"
+        else
+            if !(@isdefined states_rIC)
+                grab_states_rIC()
+            end
+            state_set = states_rIC
+            expert_actions = prob(agent.policy, state_set, nothing).μ
+            dataset_label = "rIC training"
         end
-        state_set = states_rIC
     else
         if !(@isdefined states)
             generate_states()
         end
         state_set = states
+        expert_actions = prob(agent.policy, state_set, nothing).μ
+        dataset_label = "fixedIC"
     end
 
-    expert_actions = prob(agent.policy, state_set, nothing).μ
     apprentice_actions = prob(apprentice, state_set .* mask, nothing).μ
     action_diff = apprentice_actions .- expert_actions
 
     mean_l1_error = mean(abs, action_diff)
-    println("Mean L1 error ($(rIC ? "rIC" : "fixedIC") state set): $(mean_l1_error)")
+    println("Mean L1 error ($(dataset_label) state set): $(mean_l1_error)")
 
     return mean_l1_error
 end
 
-function report_masked_input_all_combinations(; rIC = randomIC, number = nothing)
+function report_masked_input_all_combinations(; rIC = randomIC, number = nothing, use_evaluation_set::Bool = false)
     global apprentice_training_kind
     global group_channels
     global row_groups
@@ -330,6 +340,10 @@ function report_masked_input_all_combinations(; rIC = randomIC, number = nothing
     first_block = true
 
     try
+        if rIC && use_evaluation_set
+            ensure_rIC_evaluation_cache()
+        end
+
         for kind in kinds
             for group_channels_value in channel_options
                 first_block || println("")
@@ -340,7 +354,7 @@ function report_masked_input_all_combinations(; rIC = randomIC, number = nothing
                 row_groups = get_row_groups(group_channels = group_channels)
 
                 load_apprentice(number)
-                report_masked_input(rIC = rIC)
+                report_masked_input(rIC = rIC, use_evaluation_set = use_evaluation_set)
             end
         end
     finally
@@ -350,6 +364,60 @@ function report_masked_input_all_combinations(; rIC = randomIC, number = nothing
     end
 
     return nothing
+end
+
+function build_rIC_evaluation_cache(; steps_per_offset = 200)
+    global rIC_eval_states
+    global rIC_eval_expert_actions
+    global rIC_eval_offsets
+    global rIC_eval_steps_per_offset
+
+    steps_per_offset > 0 || error("steps_per_offset must be positive, got $steps_per_offset")
+
+    total_states = length(rIC_validation_offsets) * steps_per_offset
+    rIC_eval_states = zeros(Float32, size(env.state)[1], size(env.state)[2], total_states)
+
+    idx = 1
+    for offset in rIC_validation_offsets
+        println("Generating rIC evaluation data with offset $offset")
+        RL.reset!(env)
+        generate_random_init(offset)
+
+        for _ in 1:steps_per_offset
+            rIC_eval_states[:, :, idx] .= env.state
+
+            action = prob(agent.policy, env.state, nothing).μ
+            env(action)
+
+            idx += 1
+        end
+    end
+
+    rIC_eval_expert_actions = prob(agent.policy, rIC_eval_states, nothing).μ
+    rIC_eval_offsets = copy(rIC_validation_offsets)
+    rIC_eval_steps_per_offset = steps_per_offset
+
+    println("Prepared rIC evaluation cache: $(total_states) states ($(length(rIC_validation_offsets)) offsets x $(steps_per_offset) steps).")
+end
+
+function ensure_rIC_evaluation_cache(; steps_per_offset = 200)
+    has_cache = @isdefined(rIC_eval_states) &&
+                @isdefined(rIC_eval_expert_actions) &&
+                @isdefined(rIC_eval_offsets) &&
+                @isdefined(rIC_eval_steps_per_offset)
+
+    expected_total_states = length(rIC_validation_offsets) * steps_per_offset
+    cache_matches = has_cache &&
+                    size(rIC_eval_states) == (size(env.state)[1], size(env.state)[2], expected_total_states) &&
+                    size(rIC_eval_expert_actions, ndims(rIC_eval_expert_actions)) == expected_total_states &&
+                    rIC_eval_offsets == rIC_validation_offsets &&
+                    rIC_eval_steps_per_offset == steps_per_offset
+
+    if cache_matches
+        return
+    end
+
+    build_rIC_evaluation_cache(; steps_per_offset = steps_per_offset)
 end
 
 
