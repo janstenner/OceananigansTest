@@ -197,8 +197,8 @@ function plot_comparison(mat_stats, ppo_stats)
 
     layout = Layout(
         title="Reward comparison (available MAT/PPO runs)",
-        xaxis_title="Step",
-        yaxis_title="Reward",
+        xaxis_title="Episodes",
+        yaxis_title="Return",
         template="plotly_white",
     )
 

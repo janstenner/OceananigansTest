@@ -147,8 +147,8 @@ function plot_comparison(mat_mean, mat_std, ppo_mean, ppo_std)
 
     layout = Layout(
         title="RandomIC reward comparison (MAT vs PPO)",
-        xaxis_title="Step",
-        yaxis_title="Reward",
+        xaxis_title="Episodes",
+        yaxis_title="Return",
         template="plotly_white",
     )
 

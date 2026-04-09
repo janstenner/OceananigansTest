@@ -254,8 +254,8 @@ function plot_comparison(
 
     layout = Layout(
         title = title,
-        xaxis_title = "Step",
-        yaxis_title = "Reward",
+        xaxis_title = "Episodes",
+        yaxis_title = "Return",
         template = "plotly_white",
     )
 
@@ -301,8 +301,8 @@ function plot_all(run_rewards_by_algorithm::AbstractDict; title::String = "All r
 
     layout = Layout(
         title = title,
-        xaxis_title = "Step",
-        yaxis_title = "Reward",
+        xaxis_title = "Episodes",
+        yaxis_title = "Return",
         template = "plotly_white",
     )
 
