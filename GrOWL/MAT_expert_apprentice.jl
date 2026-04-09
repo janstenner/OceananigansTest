@@ -255,6 +255,103 @@ function plot_masked_input()
     println("Total Sparsity combined channels: $(100*length(indexes_zero_total_combined)/length(combined))%")
 end
 
+function report_masked_input(; rIC = randomIC)
+    global mask
+
+    rIC_label = rIC ? "Variying IC" : "Fixed IC"
+    kind_label = apprentice_training_kind == :growl ? "Group Ordered" : "Group Reweighted"
+    channels_label = group_channels ? "Grouped Channels" : "Separate Channels"
+    trace_name = "Apprentice ($(kind_label), $(channels_label), $(rIC_label))"
+
+    if new_pe
+        channel_size = sensors[2] + 1
+    else
+        channel_size = sensors[2]
+    end
+
+    sensor_window = reshape(mask, 3, window_size, channel_size)
+    total_sensors = zeros(3, sensors[1], channel_size)
+    window_half_size = Int(floor(window_size / 2))
+
+    for i in actuators_to_sensors
+        temp_indexes = [(i + j + sensors[1] - 1) % sensors[1] + 1 for j in 0-window_half_size:0+window_half_size]
+        total_sensors[:, temp_indexes, :] .+= sensor_window
+    end
+
+    total_sensors = clamp.(total_sensors, 0.0f0, 1.0f0)
+    total_sensors_combined = total_sensors[1, :, :] + total_sensors[2, :, :] + total_sensors[3, :, :]
+
+    println("--- $trace_name ---")
+
+    indexes_zero = findall(x -> x == 0.0, mask)
+    println("Window Sparsity: $(100 * length(indexes_zero) / length(mask))%")
+
+    window_sensors_combined = sensor_window[1, :, :] + sensor_window[2, :, :] + sensor_window[3, :, :]
+    window_combined = window_sensors_combined[:]
+    indexes_zero_combined = findall(x -> x == 0.0, window_combined)
+    println("Window Sparsity combined channels: $(100 * length(indexes_zero_combined) / length(window_combined))%")
+
+    combined = total_sensors_combined[:]
+    indexes_zero_total_combined = findall(x -> x == 0.0, combined)
+    println("Total Sparsity combined channels: $(100 * length(indexes_zero_total_combined) / length(combined))%")
+
+    if rIC
+        if !(@isdefined states_rIC)
+            grab_states_rIC()
+        end
+        state_set = states_rIC
+    else
+        if !(@isdefined states)
+            generate_states()
+        end
+        state_set = states
+    end
+
+    expert_actions = prob(agent.policy, state_set, nothing).μ
+    apprentice_actions = prob(apprentice, state_set .* mask, nothing).μ
+    action_diff = apprentice_actions .- expert_actions
+
+    mean_l1_error = mean(abs, action_diff)
+    println("Mean L1 error ($(rIC ? "rIC" : "fixedIC") state set): $(mean_l1_error)")
+
+    return mean_l1_error
+end
+
+function report_masked_input_all_combinations(; rIC = randomIC, number = nothing)
+    global apprentice_training_kind
+    global group_channels
+    global row_groups
+
+    original_kind = apprentice_training_kind
+    original_group_channels = group_channels
+
+    kinds = (:growl, :weighted)
+    channel_options = (true, false)
+    first_block = true
+
+    try
+        for kind in kinds
+            for group_channels_value in channel_options
+                first_block || println("")
+                first_block = false
+
+                apprentice_training_kind = kind
+                group_channels = group_channels_value
+                row_groups = get_row_groups(group_channels = group_channels)
+
+                load_apprentice(number)
+                report_masked_input(rIC = rIC)
+            end
+        end
+    finally
+        apprentice_training_kind = original_kind
+        group_channels = original_group_channels
+        row_groups = get_row_groups(group_channels = group_channels)
+    end
+
+    return nothing
+end
+
 
 function generate_states()
     global states
