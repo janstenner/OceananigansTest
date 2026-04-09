@@ -372,7 +372,7 @@ function reward_function(env; returnGlobalNu = false)
         localNu = (q_1_mean - q_2) / den
 
         # rewards[1,i] = 2.89 - (0.995 * globalNu + 0.005 * localNu)
-        rewards[i] = - (0.9985*globalNu + 0.0015*localNu)
+        rewards[i] = - globalNu
         if square_rewards
             rewards[i] = sign(rewards[i]) * rewards[i]^2
         end
