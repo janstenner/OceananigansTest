@@ -28,12 +28,6 @@ num_states = 200
 num_states_rIC = 4_000
 
 
-growl_power = 0.09
-reweight_power = 0.00004
-
-growl_power_rIC = 0.025
-reweight_power_rIC = 0.0001
-
 loss_stop_threshold = 0.001
 loss_stop_threshold_rIC = 0.03
 
@@ -110,32 +104,32 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
     :gro_asc => (
         label = "Group Ordered",
         regularizer = :group_owl,
-        power_fixed = growl_power,
-        power_rIC = growl_power_rIC,
+        power_fixed = 0.09,
+        power_rIC = 0.025,
         uses_operator_weights = false,
         theta_mode = :gro_asc,
     ),
     :lasso => (
         label = "Lasso",
         regularizer = :group_owl,
-        power_fixed = growl_power,
-        power_rIC = growl_power_rIC,
+        power_fixed = 0.09,
+        power_rIC = 0.025,
         uses_operator_weights = false,
         theta_mode = :lasso,
     ),
     :growl => (
         label = "Growl",
         regularizer = :group_owl,
-        power_fixed = growl_power,
-        power_rIC = growl_power_rIC,
+        power_fixed = 0.09,
+        power_rIC = 0.025,
         uses_operator_weights = false,
         theta_mode = :growl,
     ),
     :weighted => (
         label = "Group Reweighted",
         regularizer = :weighted_l1,
-        power_fixed = reweight_power,
-        power_rIC = reweight_power_rIC,
+        power_fixed = 0.00004,
+        power_rIC = 0.0001,
         uses_operator_weights = true,
         theta_mode = nothing,
     ),
@@ -969,7 +963,7 @@ end
 
 
 
-function apply_growl(model_weights; group_rows_by_overlap = true, growl_power_used = growl_power, theta_mode::Symbol = :gro_asc)
+function apply_growl(model_weights; group_rows_by_overlap = true, growl_power_used = 0.0, theta_mode::Symbol = :gro_asc)
 
     pl_srate = growl_srate
 
@@ -1056,7 +1050,7 @@ end
 
 
 
-function apply_weighted(model_weights; group_rows_by_overlap = true, operator_weights::Vector, reweight_power_used = reweight_power)
+function apply_weighted(model_weights; group_rows_by_overlap = true, operator_weights::Vector, reweight_power_used = 0.0)
 
     pl_srate = growl_srate
 
