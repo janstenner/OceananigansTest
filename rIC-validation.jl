@@ -7,7 +7,7 @@ rIC_validation_offsets = [73, 28, 47, 90, 30, 42, 5, 53, 35, 65, 17, 22, 26, 40,
 
 function normalize_validation_apprentice_kind(kind)::Symbol
     kind_sym = kind isa Symbol ? kind : Symbol(lowercase(string(kind)))
-    return kind_sym == :growl ? :gro_asc : kind_sym
+    return kind_sym
 end
 
 function validation_apprentice_kind_sort_key(kind)::Tuple{Int, String}
@@ -103,6 +103,7 @@ function validate_agent(; use_apprentice = false)
         global reward_sums_apprentice = reward_sums_target
         if apprentice_kind == :gro_asc && group_channels_value
             global reward_sums_apprentice_gro_asc = reward_sums_target
+        elseif apprentice_kind == :growl && group_channels_value
             global reward_sums_apprentice_growl = reward_sums_target
         elseif apprentice_kind == :weighted && group_channels_value
             global reward_sums_apprentice_weighted = reward_sums_target
@@ -345,7 +346,9 @@ function load_rIC_scores(filepath = rIC_scores_save_default_path)
     # Backward-compatible aliases for grouped-channel apprentice scores.
     if haskey(reward_sums_apprentice_by_config, (:gro_asc, true))
         global reward_sums_apprentice_gro_asc = reward_sums_apprentice_by_config[(:gro_asc, true)]
-        global reward_sums_apprentice_growl = reward_sums_apprentice_by_config[(:gro_asc, true)]
+    end
+    if haskey(reward_sums_apprentice_by_config, (:growl, true))
+        global reward_sums_apprentice_growl = reward_sums_apprentice_by_config[(:growl, true)]
     end
     if haskey(reward_sums_apprentice_by_config, (:weighted, true))
         global reward_sums_apprentice_weighted = reward_sums_apprentice_by_config[(:weighted, true)]

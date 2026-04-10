@@ -92,23 +92,44 @@ end
 betas = (0.9, 0.999)
 
 # Tracks which apprentice variant should be persisted/loaded.
-apprentice_training_kind = :gro_asc
+#apprentice_training_kind = :gro_asc
+apprentice_training_kind = :growl
+#apprentice_training_kind = :lasso
 #apprentice_training_kind = :weighted
 apprentice_training_rIC = randomIC
 
 const APPRENTICE_KIND_ALIASES = Dict{Symbol, Symbol}(
-    :growl => :gro_asc,
     :gro_asc => :gro_asc,
+    :growl => :growl,
+    :lasso => :lasso,
     :weighted => :weighted,
+    :growl_legacy => :gro_asc,
 )
 
-const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :power_fixed, :power_rIC, :uses_operator_weights), Tuple{String, Symbol, Float64, Float64, Bool}}}(
+const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :power_fixed, :power_rIC, :uses_operator_weights, :theta_mode), Tuple{String, Symbol, Float64, Float64, Bool, Union{Nothing, Symbol}}}}(
     :gro_asc => (
         label = "Group Ordered",
         regularizer = :group_owl,
         power_fixed = growl_power,
         power_rIC = growl_power_rIC,
         uses_operator_weights = false,
+        theta_mode = :gro_asc,
+    ),
+    :lasso => (
+        label = "Lasso",
+        regularizer = :group_owl,
+        power_fixed = growl_power,
+        power_rIC = growl_power_rIC,
+        uses_operator_weights = false,
+        theta_mode = :lasso,
+    ),
+    :growl => (
+        label = "Growl",
+        regularizer = :group_owl,
+        power_fixed = growl_power,
+        power_rIC = growl_power_rIC,
+        uses_operator_weights = false,
+        theta_mode = :growl,
     ),
     :weighted => (
         label = "Group Reweighted",
@@ -116,6 +137,7 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
         power_fixed = reweight_power,
         power_rIC = reweight_power_rIC,
         uses_operator_weights = true,
+        theta_mode = nothing,
     ),
 )
 
@@ -126,13 +148,8 @@ end
 
 function apprentice_kind_sort_key(kind)::Tuple{Int, String}
     normalized = normalize_apprentice_kind(kind)
-    if normalized == :gro_asc
-        return (0, string(normalized))
-    elseif normalized == :weighted
-        return (1, string(normalized))
-    else
-        return (2, string(normalized))
-    end
+    priority = Dict(:gro_asc => 0, :lasso => 1, :growl => 2, :weighted => 3)
+    return (get(priority, normalized, 100), string(normalized))
 end
 
 function available_apprentice_kinds()
@@ -167,14 +184,20 @@ function register_apprentice_kind!(
     power_fixed::Real = 0.0,
     power_rIC::Real = 0.0,
     uses_operator_weights::Bool = false,
+    theta_mode::Union{Nothing, Symbol} = nothing,
     aliases::AbstractVector{Symbol} = Symbol[],
 )
+    if regularizer == :group_owl && theta_mode === nothing
+        theta_mode = :gro_asc
+    end
+
     APPRENTICE_KIND_CONFIG[kind] = (
         label = label,
         regularizer = regularizer,
         power_fixed = Float64(power_fixed),
         power_rIC = Float64(power_rIC),
         uses_operator_weights = uses_operator_weights,
+        theta_mode = theta_mode,
     )
 
     APPRENTICE_KIND_ALIASES[kind] = kind
@@ -594,6 +617,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
     kind_sym, kind_config = apprentice_kind_config(mode)
     uses_operator_weights = kind_config.uses_operator_weights
     regularizer = kind_config.regularizer
+    theta_mode = kind_config.theta_mode
 
     global states
     global states_rIC
@@ -718,6 +742,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
                         apprentice.encoder.embedding.weight;
                         group_rows_by_overlap = group_rows_by_overlap,
                         growl_power_used = current_power,
+                        theta_mode = theta_mode,
                     )
                 elseif regularizer == :none
                     nothing
@@ -795,11 +820,11 @@ end
 
 
 function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
-    @warn "growl_train is deprecated, use gro_asc_train instead."
-    return gro_asc_train(
+    return train_apprentice(
+        mode = :growl,
         training_steps = training_steps,
         extra_steps = extra_steps,
-        gro_asc = growl,
+        prune = growl,
         group_rows_by_overlap = group_rows_by_overlap,
         group_channels = group_channels,
         rIC = rIC,
@@ -812,6 +837,18 @@ function gro_asc_train(;training_steps = training_steps, extra_steps = extra_ste
         training_steps = training_steps,
         extra_steps = extra_steps,
         prune = gro_asc,
+        group_rows_by_overlap = group_rows_by_overlap,
+        group_channels = group_channels,
+        rIC = rIC,
+    )
+end
+
+function lasso_train(;training_steps = training_steps, extra_steps = extra_steps, lasso = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
+    return train_apprentice(
+        mode = :lasso,
+        training_steps = training_steps,
+        extra_steps = extra_steps,
+        prune = lasso,
         group_rows_by_overlap = group_rows_by_overlap,
         group_channels = group_channels,
         rIC = rIC,
@@ -915,10 +952,24 @@ function any_shared(c)
     return false                        # no element was seen twice
 end
 
+function build_theta_is(n_groups::Int, theta_mode::Symbol)
+    n_groups > 0 || error("n_groups must be positive, got $n_groups")
+
+    if theta_mode == :gro_asc
+        return Float64[(i - 1) / n_groups for i in 1:n_groups]
+    elseif theta_mode == :lasso
+        return ones(Float64, n_groups)
+    elseif theta_mode == :growl
+        return Float64[(i - 1) / n_groups for i in n_groups:-1:1]
+    else
+        error("Unsupported theta_mode '$theta_mode'. Use :gro_asc, :lasso, or :growl.")
+    end
+end
 
 
 
-function apply_growl(model_weights; group_rows_by_overlap = true, growl_power_used = growl_power)
+
+function apply_growl(model_weights; group_rows_by_overlap = true, growl_power_used = growl_power, theta_mode::Symbol = :gro_asc)
 
     pl_srate = growl_srate
 
@@ -945,7 +996,7 @@ function apply_growl(model_weights; group_rows_by_overlap = true, growl_power_us
     # theta_is = ones(n_groups) * 0.2
     # theta_is[Int(floor((1-theta_rate) * n_groups)):end] .= 1.0
 
-    theta_is = [(i-1)/n_groups for i in 1:n_groups]
+    theta_is = build_theta_is(n_groups, theta_mode)
 
     # make the parameters smaller in general
     theta_is .*= growl_power_used

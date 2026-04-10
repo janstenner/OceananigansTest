@@ -5,7 +5,7 @@ fixedIC_scores_save_default_path = joinpath(@__DIR__, "GrOWL", "saves", "fixedIC
 if !@isdefined(normalize_validation_apprentice_kind)
     function normalize_validation_apprentice_kind(kind)::Symbol
         kind_sym = kind isa Symbol ? kind : Symbol(lowercase(string(kind)))
-        return kind_sym == :growl ? :gro_asc : kind_sym
+        return kind_sym
     end
 end
 
