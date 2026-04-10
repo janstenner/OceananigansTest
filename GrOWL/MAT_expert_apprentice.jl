@@ -13,7 +13,7 @@ include("../fixedIC-validation.jl")
 
 # rIC scores
 #reward_sums = [554.6305286939099, 560.2386884968918, 565.4618377650218, 557.434398548902, 561.6262672069304, 557.466004557712, 555.4317062304078, 555.4464920992392, 572.1192004805054, 548.639008840305, 548.6114441745203, 550.9900855238976, 556.3108301071123, 585.3668568567299, 552.5313324045303]
-#reward_sums_apprentice_growl = [553.6471336620853, 559.751815049584, 566.2764691470024, 556.4568649930598, 563.2828020581873, 556.4910212653255, 555.1814424620101, 555.1843951026261, 575.2583532783839, 549.4435999495879, 549.4232846558572, 552.0851559461055, 555.9527187866161, 566.501420245082, 552.6937315511888]
+#reward_sums_apprentice_gro_asc = [553.6471336620853, 559.751815049584, 566.2764691470024, 556.4568649930598, 563.2828020581873, 556.4910212653255, 555.1814424620101, 555.1843951026261, 575.2583532783839, 549.4435999495879, 549.4232846558572, 552.0851559461055, 555.9527187866161, 566.501420245082, 552.6937315511888]
 #reward_sums_apprentice_weighted = [555.5770322738642, 561.3015369017154, 567.318438725923, 558.8736695183811, 565.0696314231911, 558.9010305657155, 556.3769813340348, 556.3772801885348, 580.7108541831584, 551.5193677556914, 551.5014181811501, 552.9761762643988, 556.9237503040824, 579.3869118654817, 553.5396500447647]
 
 
@@ -92,9 +92,98 @@ end
 betas = (0.9, 0.999)
 
 # Tracks which apprentice variant should be persisted/loaded.
-apprentice_training_kind = :growl
+apprentice_training_kind = :gro_asc
 #apprentice_training_kind = :weighted
 apprentice_training_rIC = randomIC
+
+const APPRENTICE_KIND_ALIASES = Dict{Symbol, Symbol}(
+    :growl => :gro_asc,
+    :gro_asc => :gro_asc,
+    :weighted => :weighted,
+)
+
+const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :power_fixed, :power_rIC, :uses_operator_weights), Tuple{String, Symbol, Float64, Float64, Bool}}}(
+    :gro_asc => (
+        label = "Group Ordered",
+        regularizer = :group_owl,
+        power_fixed = growl_power,
+        power_rIC = growl_power_rIC,
+        uses_operator_weights = false,
+    ),
+    :weighted => (
+        label = "Group Reweighted",
+        regularizer = :weighted_l1,
+        power_fixed = reweight_power,
+        power_rIC = reweight_power_rIC,
+        uses_operator_weights = true,
+    ),
+)
+
+function normalize_apprentice_kind(kind)::Symbol
+    kind_sym = kind isa Symbol ? kind : Symbol(lowercase(string(kind)))
+    return get(APPRENTICE_KIND_ALIASES, kind_sym, kind_sym)
+end
+
+function apprentice_kind_sort_key(kind)::Tuple{Int, String}
+    normalized = normalize_apprentice_kind(kind)
+    if normalized == :gro_asc
+        return (0, string(normalized))
+    elseif normalized == :weighted
+        return (1, string(normalized))
+    else
+        return (2, string(normalized))
+    end
+end
+
+function available_apprentice_kinds()
+    kinds = collect(keys(APPRENTICE_KIND_CONFIG))
+    sort!(kinds, by = apprentice_kind_sort_key)
+    return kinds
+end
+
+function apprentice_kind_label(kind)::String
+    normalized = normalize_apprentice_kind(kind)
+    config = get(APPRENTICE_KIND_CONFIG, normalized, nothing)
+    if config === nothing
+        return replace(string(normalized), "_" => " ")
+    end
+    return config.label
+end
+
+function apprentice_kind_config(kind)
+    normalized = normalize_apprentice_kind(kind)
+    config = get(APPRENTICE_KIND_CONFIG, normalized, nothing)
+    config === nothing && error(
+        "Unknown apprentice kind '$normalized'. Add it to APPRENTICE_KIND_CONFIG. " *
+        "Available kinds: $(join(string.(available_apprentice_kinds()), ", "))."
+    )
+    return normalized, config
+end
+
+function register_apprentice_kind!(
+    kind::Symbol;
+    label::String,
+    regularizer::Symbol = :none,
+    power_fixed::Real = 0.0,
+    power_rIC::Real = 0.0,
+    uses_operator_weights::Bool = false,
+    aliases::AbstractVector{Symbol} = Symbol[],
+)
+    APPRENTICE_KIND_CONFIG[kind] = (
+        label = label,
+        regularizer = regularizer,
+        power_fixed = Float64(power_fixed),
+        power_rIC = Float64(power_rIC),
+        uses_operator_weights = uses_operator_weights,
+    )
+
+    APPRENTICE_KIND_ALIASES[kind] = kind
+    for alias in aliases
+        APPRENTICE_KIND_ALIASES[alias] = kind
+    end
+
+    return kind
+end
 
 apprentice_agent = create_agent_mat(n_actors = actuators,
                     action_space = actionspace,
@@ -179,7 +268,7 @@ function plot_masked_input()
     global mask
 
     rIC_label = randomIC ? "Variying IC" : "Fixed IC"
-    kind_label = apprentice_training_kind == :growl ? "Group Ordered" : "Group Reweighted"
+    kind_label = apprentice_kind_label(apprentice_training_kind)
     channels_label = group_channels ? "Grouped Channels" : "Separate Channels"
     trace_name = "Apprentice ($(kind_label), $(channels_label), $(rIC_label))"
 
@@ -259,7 +348,7 @@ function report_masked_input(; rIC = randomIC, use_evaluation_set::Bool = false)
     global mask
 
     rIC_label = rIC ? "Variying IC" : "Fixed IC"
-    kind_label = apprentice_training_kind == :growl ? "Group Ordered" : "Group Reweighted"
+    kind_label = apprentice_kind_label(apprentice_training_kind)
     channels_label = group_channels ? "Grouped Channels" : "Separate Channels"
     trace_name = "Apprentice ($(kind_label), $(channels_label), $(rIC_label))"
 
@@ -335,7 +424,7 @@ function report_masked_input_all_combinations(; rIC = randomIC, number = nothing
     original_kind = apprentice_training_kind
     original_group_channels = group_channels
 
-    kinds = (:growl, :weighted)
+    kinds = available_apprentice_kinds()
     channel_options = (true, false)
     first_block = true
 
@@ -349,7 +438,7 @@ function report_masked_input_all_combinations(; rIC = randomIC, number = nothing
                 first_block || println("")
                 first_block = false
 
-                apprentice_training_kind = kind
+                apprentice_training_kind = normalize_apprentice_kind(kind)
                 group_channels = group_channels_value
                 row_groups = get_row_groups(group_channels = group_channels)
 
@@ -502,9 +591,9 @@ end
 
 function train_apprentice(;mode = apprentice_training_kind, training_steps = training_steps, extra_steps = extra_steps, prune = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 10)
 
-    kind_sym = mode isa Symbol ? mode : Symbol(lowercase(string(mode)))
-    kind_sym in (:growl, :weighted) || error("mode must be :growl or :weighted")
-    use_weighted = kind_sym == :weighted
+    kind_sym, kind_config = apprentice_kind_config(mode)
+    uses_operator_weights = kind_config.uses_operator_weights
+    regularizer = kind_config.regularizer
 
     global states
     global states_rIC
@@ -525,7 +614,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
     global apprentice_training_kind = kind_sym
     global apprentice_training_rIC = rIC
 
-    if use_weighted
+    if uses_operator_weights
         if group_rows_by_overlap
             groups = deepcopy(row_groups)
         else
@@ -556,11 +645,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
         current_batch_size = rIC ? batch_size_rIC : batch_size
         num_batches = rIC ? cld(200, current_batch_size) : div(num_states, current_batch_size)
 
-        if use_weighted
-            current_power = rIC ? reweight_power_rIC : reweight_power
-        else
-            current_power = rIC ? growl_power_rIC : growl_power
-        end
+        current_power = rIC ? kind_config.power_rIC : kind_config.power_fixed
 
         if rIC
             rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
@@ -621,25 +706,29 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
             Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
 
             if i%growl_freq == 0 && prune && i <= training_steps
-                if use_weighted
+                if regularizer == :weighted_l1
                     apply_weighted(
                         apprentice.encoder.embedding.weight;
                         group_rows_by_overlap = group_rows_by_overlap,
                         operator_weights = operator_weights,
                         reweight_power_used = current_power,
                     )
-                else
+                elseif regularizer == :group_owl
                     apply_growl(
                         apprentice.encoder.embedding.weight;
                         group_rows_by_overlap = group_rows_by_overlap,
                         growl_power_used = current_power,
                     )
+                elseif regularizer == :none
+                    nothing
+                else
+                    error("Unsupported regularizer '$regularizer' for apprentice kind '$kind_sym'.")
                 end
             end
 
         end
 
-        if use_weighted && i%weight_update == 0 && prune && i <= training_steps
+        if uses_operator_weights && i%weight_update == 0 && prune && i <= training_steps
             reshaped_weight = transpose(apprentice.encoder.embedding.weight)
 
             if group_rows_by_overlap
@@ -706,11 +795,23 @@ end
 
 
 function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
-    return train_apprentice(
-        mode = :growl,
+    @warn "growl_train is deprecated, use gro_asc_train instead."
+    return gro_asc_train(
         training_steps = training_steps,
         extra_steps = extra_steps,
-        prune = growl,
+        gro_asc = growl,
+        group_rows_by_overlap = group_rows_by_overlap,
+        group_channels = group_channels,
+        rIC = rIC,
+    )
+end
+
+function gro_asc_train(;training_steps = training_steps, extra_steps = extra_steps, gro_asc = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
+    return train_apprentice(
+        mode = :gro_asc,
+        training_steps = training_steps,
+        extra_steps = extra_steps,
+        prune = gro_asc,
         group_rows_by_overlap = group_rows_by_overlap,
         group_channels = group_channels,
         rIC = rIC,
@@ -1175,9 +1276,7 @@ function apprentice_save_stem(; group_channels_value = group_channels)
     global apprentice_training_kind
     global apprentice_training_rIC
 
-    method_tag = apprentice_training_kind == :growl ? "growl" :
-                 apprentice_training_kind == :weighted ? "weighted" :
-                 string(apprentice_training_kind)
+    method_tag = string(normalize_apprentice_kind(apprentice_training_kind))
     ric_tag = apprentice_training_rIC ? "rIC_true" : "rIC_false"
     group_channels_suffix = group_channels_value ? "" : "_group_channels_false"
 
@@ -1190,8 +1289,49 @@ function apprentice_save_path(number = nothing; group_channels_value = group_cha
     return dirpath * "/saves/" * filename
 end
 
+function legacy_growl_save_path(number = nothing; group_channels_value = group_channels)
+    ric_tag = apprentice_training_rIC ? "rIC_true" : "rIC_false"
+    group_channels_suffix = group_channels_value ? "" : "_group_channels_false"
+    stem = "MAT_Apprentice_growl_$(ric_tag)$(group_channels_suffix)"
+    filename = isnothing(number) ? "$(stem).jld2" : "$(stem)_$(number).jld2"
+    return dirpath * "/saves/" * filename
+end
+
+function rename_growl_saves_to_gro_asc!()
+    saves_dir = dirpath * "/saves"
+    if !isdir(saves_dir)
+        println("No saves directory found at: $(saves_dir)")
+        return
+    end
+
+    renamed = 0
+    for filename in readdir(saves_dir)
+        startswith(filename, "MAT_Apprentice_growl_") || continue
+        new_filename = replace(filename, "MAT_Apprentice_growl_" => "MAT_Apprentice_gro_asc_")
+        old_path = joinpath(saves_dir, filename)
+        new_path = joinpath(saves_dir, new_filename)
+
+        if isfile(new_path)
+            @warn "Skipping rename because target already exists." old_path new_path
+            continue
+        end
+
+        mv(old_path, new_path)
+        renamed += 1
+    end
+
+    println("Renamed $(renamed) growl save(s) to gro_asc naming.")
+end
+
 function load_apprentice(number = nothing; group_channels_value = group_channels)
     filepath = apprentice_save_path(number; group_channels_value = group_channels_value)
+    if !isfile(filepath) && normalize_apprentice_kind(apprentice_training_kind) == :gro_asc
+        legacy_filepath = legacy_growl_save_path(number; group_channels_value = group_channels_value)
+        if isfile(legacy_filepath)
+            @warn "Using legacy growl save filename. Consider renaming with rename_growl_saves_to_gro_asc!()." legacy_filepath
+            filepath = legacy_filepath
+        end
+    end
     global apprentice = FileIO.load(filepath, "apprentice")
 
     try

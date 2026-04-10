@@ -2,6 +2,43 @@ using FileIO
 
 fixedIC_scores_save_default_path = joinpath(@__DIR__, "GrOWL", "saves", "fixedIC_validation_scores.jld2")
 
+if !@isdefined(normalize_validation_apprentice_kind)
+    function normalize_validation_apprentice_kind(kind)::Symbol
+        kind_sym = kind isa Symbol ? kind : Symbol(lowercase(string(kind)))
+        return kind_sym == :growl ? :gro_asc : kind_sym
+    end
+end
+
+if !@isdefined(validation_apprentice_kind_sort_key)
+    function validation_apprentice_kind_sort_key(kind)::Tuple{Int, String}
+        normalized = normalize_validation_apprentice_kind(kind)
+        if normalized == :gro_asc
+            return (0, string(normalized))
+        elseif normalized == :weighted
+            return (1, string(normalized))
+        else
+            return (2, string(normalized))
+        end
+    end
+end
+
+if !@isdefined(validation_apprentice_kind_label)
+    function validation_apprentice_kind_label(kind)::String
+        normalized = normalize_validation_apprentice_kind(kind)
+        if @isdefined(apprentice_kind_label)
+            return apprentice_kind_label(normalized)
+        end
+
+        if normalized == :gro_asc
+            return "Group Ordered"
+        elseif normalized == :weighted
+            return "Group Reweighted"
+        else
+            return replace(string(normalized), "_" => " ")
+        end
+    end
+end
+
 
 
 function generate_random_init()
@@ -47,26 +84,15 @@ end
 
 function same_day_fixed(; use_apprentice = false)
 
-    apprentice_kind = :growl
+    apprentice_kind = :gro_asc
     group_channels_value = @isdefined(group_channels) ? group_channels : true
     same_day_sum_target = Float64[]
 
     if use_apprentice
-        if @isdefined(apprentice_training_kind)
-            if apprentice_training_kind isa Symbol
-                apprentice_kind = apprentice_training_kind
-            elseif apprentice_training_kind isa AbstractString
-                apprentice_kind = Symbol(lowercase(apprentice_training_kind))
-            end
-        end
+        apprentice_kind = @isdefined(apprentice_training_kind) ? normalize_validation_apprentice_kind(apprentice_training_kind) : :gro_asc
 
         if !@isdefined(same_day_rewards_apprentice_by_config_fixedIC)
             global same_day_rewards_apprentice_by_config_fixedIC = Dict{Tuple{Symbol,Bool}, Vector{Float64}}()
-        end
-
-        if apprentice_kind != :weighted
-            # Default to growl for backward compatibility.
-            apprentice_kind = :growl
         end
 
         key = (apprentice_kind, group_channels_value)
@@ -115,15 +141,13 @@ function plot_same_day_fixed()
 
     if @isdefined(same_day_rewards_apprentice_by_config_fixedIC)
         config_keys = collect(keys(same_day_rewards_apprentice_by_config_fixedIC))
-        sort!(config_keys, by = x -> (x[1] == :growl ? 0 : 1, x[2] ? 0 : 1))
+        sort!(config_keys, by = x -> (validation_apprentice_kind_sort_key(x[1]), x[2] ? 0 : 1))
 
         for (kind, grouped_channels) in config_keys
             y = same_day_rewards_apprentice_by_config_fixedIC[(kind, grouped_channels)]
             isempty(y) && continue
 
-            kind_label = kind == :growl ? "Growl" :
-                         kind == :weighted ? "Weighted" :
-                         string(kind)
+            kind_label = validation_apprentice_kind_label(kind)
             channels_label = grouped_channels ? "GroupedChannels" : "SeparateChannels"
             trace_name = "Apprentice ($(kind_label), $(channels_label))"
 
@@ -167,6 +191,13 @@ function load_fixedIC_scores(filepath = fixedIC_scores_save_default_path)
 
     global same_day_sum_expert_fixedIC = FileIO.load(filepath, "same_day_sum_expert_fixedIC")
     global same_day_rewards_apprentice_by_config_fixedIC = FileIO.load(filepath, "same_day_rewards_apprentice_by_config_fixedIC")
+
+    normalized_scores = Dict{Tuple{Symbol,Bool}, Vector{Float64}}()
+    for (key, value) in same_day_rewards_apprentice_by_config_fixedIC
+        normalized_key = (normalize_validation_apprentice_kind(key[1]), key[2])
+        normalized_scores[normalized_key] = value
+    end
+    same_day_rewards_apprentice_by_config_fixedIC = normalized_scores
 
 
     println("Loaded fixedIC scores from: $(filepath)")
