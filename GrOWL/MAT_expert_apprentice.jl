@@ -5,8 +5,20 @@ using Flux
 
 
 
+randomIC = true
+group_channels = true
+
+
 include("../rIC-validation.jl")
 include("../fixedIC-validation.jl")
+
+if randomIC
+    include("../randomIC/randomIC.jl")
+    Base.@invokelatest load(9001)
+else
+    include("../RB_Joon/RB_Joon_PE_fixed_ic_MAT.jl")
+    Base.@invokelatest load()
+end
 
 
 
@@ -39,7 +51,7 @@ growl_srate = 0.999
 
 
 group_rows_by_overlap = true
-group_channels = true
+
 
 training_steps = 8_000
 extra_steps = 0
@@ -57,7 +69,7 @@ positional_encoding = 3 #ZeroEncoding
 joon_pe = true
 new_pe = false
 square_rewards = false
-randomIC = true
+
 
 
 if randomIC
@@ -1384,6 +1396,32 @@ function load_apprentice(number = nothing; group_channels_value = group_channels
     catch
         @warn "No mask found in apprentice save. Keeping current mask." filepath
     end
+end
+
+function load_apprentice_kind(kind::Symbol, number = nothing; group_channels_value = group_channels, rIC = randomIC)
+    global apprentice_training_kind = normalize_apprentice_kind(kind)
+    global apprentice_training_rIC = rIC
+    return load_apprentice(number; group_channels_value = group_channels_value)
+end
+
+function gro_asc_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
+    return load_apprentice_kind(:gro_asc, number; group_channels_value = group_channels_value, rIC = rIC)
+end
+
+function growl_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
+    return load_apprentice_kind(:growl, number; group_channels_value = group_channels_value, rIC = rIC)
+end
+
+function lasso_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
+    return load_apprentice_kind(:lasso, number; group_channels_value = group_channels_value, rIC = rIC)
+end
+
+function reweight_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
+    return load_apprentice_kind(:weighted, number; group_channels_value = group_channels_value, rIC = rIC)
+end
+
+function weighted_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
+    return reweight_load(number; group_channels_value = group_channels_value, rIC = rIC)
 end
 
 function save_apprentice(number = nothing; group_channels_value = group_channels)
