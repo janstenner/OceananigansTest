@@ -83,6 +83,7 @@ end
 
 
 function validate_agent(; use_apprentice = false)
+    global mask
 
     apprentice_kind = :gro_asc
     group_channels_value = @isdefined(group_channels) ? group_channels : true
@@ -124,7 +125,8 @@ function validate_agent(; use_apprentice = false)
         for i in 1:200
 
             if use_apprentice
-                action = RL.prob(apprentice, env).μ
+                #action = RL.prob(apprentice, env).μ
+                action = prob(apprentice, env.state .* mask, nothing).μ[:,:,1]
             else
                 action = RL.prob(agent.policy, env).μ
             end
@@ -213,6 +215,7 @@ end
 
 
 function same_day(; use_apprentice = false)
+    global mask
 
     apprentice_kind = :gro_asc
     group_channels_value = @isdefined(group_channels) ? group_channels : true
@@ -243,7 +246,8 @@ function same_day(; use_apprentice = false)
     for i in 1:200
 
         if use_apprentice
-            action = RL.prob(apprentice, env).μ
+            #action = RL.prob(apprentice, env).μ
+            action = prob(apprentice, env.state .* mask, nothing).μ[:,:,1]
         else
             action = RL.prob(agent.policy, env).μ
         end
@@ -357,6 +361,7 @@ function load_rIC_scores(filepath = rIC_scores_save_default_path)
     println("Loaded rIC scores from: $(filepath)")
 end
 
+load_rIC_scores()
 
 # @show reward_sums
 # @show reward_sums_apprentice_growl

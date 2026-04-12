@@ -5,8 +5,8 @@ using Flux
 
 
 
-randomIC = true
-group_channels = true
+randomIC = false
+group_channels = false
 
 
 include("../rIC-validation.jl")
@@ -124,15 +124,15 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
     :lasso => (
         label = "Lasso",
         regularizer = :group_owl,
-        power_fixed = 0.09,
-        power_rIC = 0.025,
+        power_fixed = 0.0001,
+        power_rIC = 0.00038,
         uses_operator_weights = false,
         theta_mode = :lasso,
     ),
     :growl => (
         label = "Growl",
         regularizer = :group_owl,
-        power_fixed = 0.09,
+        power_fixed = 0.0001,
         power_rIC = 0.025,
         uses_operator_weights = false,
         theta_mode = :growl,

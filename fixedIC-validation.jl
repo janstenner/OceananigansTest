@@ -112,7 +112,8 @@ function same_day_fixed(; use_apprentice = false)
     for i in 1:200
 
         if use_apprentice
-            action = RL.prob(apprentice, env).μ
+            #action = RL.prob(apprentice, env).μ
+            action = prob(apprentice, env.state .* mask, nothing).μ[:,:,1]
         else
             action = RL.prob(agent.policy, env).μ
         end
@@ -203,6 +204,7 @@ function load_fixedIC_scores(filepath = fixedIC_scores_save_default_path)
     println("Loaded fixedIC scores from: $(filepath)")
 end
 
+load_fixedIC_scores()
 
 # @show reward_sums
 # @show reward_sums_apprentice_growl
