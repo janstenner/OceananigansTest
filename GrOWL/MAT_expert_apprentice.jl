@@ -5,8 +5,8 @@ using Flux
 
 
 
-randomIC = false
-group_channels = false
+randomIC = true
+group_channels = true
 
 
 include("../rIC-validation.jl")
@@ -40,8 +40,8 @@ num_states = 200
 num_states_rIC = 4_000
 
 
-loss_stop_threshold = 0.001
-loss_stop_threshold_rIC = 0.03
+loss_stop_threshold = Inf
+loss_stop_threshold_rIC = Inf
 
 
 growl_freq = 1
@@ -125,7 +125,7 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
         label = "Lasso",
         regularizer = :group_owl,
         power_fixed = 0.0001,
-        power_rIC = 0.00038,
+        power_rIC = 0.0002,
         uses_operator_weights = false,
         theta_mode = :lasso,
     ),
@@ -625,6 +625,9 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
     regularizer = kind_config.regularizer
     theta_mode = kind_config.theta_mode
 
+    global apprentice_save
+    last_loss_mean = 10000.0
+
     global states
     global states_rIC
 
@@ -807,7 +810,15 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
             println("weight factor: $(weight_factor)")
 
             loss_mean = mean(losses[max(1, end-99):end])
+            last_loss_mean = loss_mean
             println("mean squared error over last 100 steps: $(loss_mean)")
+        end
+
+        if last_loss_mean < 0.001 && last_loss_mean - mean(losses[max(1, end-29):end]) < -0.001
+            stop_training = true
+            println("Loss increased significantly from $(last_loss_mean) to $(losses[end]) at step $(i), stopping training.")
+        else
+            apprentice_save = deepcopy(apprentice)
         end
 
         #keep the zeros if this is the last pruning step
