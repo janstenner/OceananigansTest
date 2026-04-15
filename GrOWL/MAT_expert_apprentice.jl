@@ -112,12 +112,14 @@ const APPRENTICE_KIND_ALIASES = Dict{Symbol, Symbol}(
     :growl_legacy => :gro_asc,
 )
 
-const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :power_fixed, :power_rIC, :uses_operator_weights, :theta_mode), Tuple{String, Symbol, Float64, Float64, Bool, Union{Nothing, Symbol}}}}(
+const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :power_fixed, :power_rIC, :weight_factor_target, :weight_factor_target_rIC, :uses_operator_weights, :theta_mode), Tuple{String, Symbol, Float64, Float64, Float64, Float64, Bool, Union{Nothing, Symbol}}}}(
     :gro_asc => (
         label = "Group Ordered",
         regularizer = :group_owl,
         power_fixed = 0.09,
         power_rIC = 0.025,
+        weight_factor_target = 5.0,
+        weight_factor_target_rIC = 5.0,
         uses_operator_weights = false,
         theta_mode = :gro_asc,
     ),
@@ -126,6 +128,8 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
         regularizer = :group_owl,
         power_fixed = 0.0001,
         power_rIC = 0.0002,
+        weight_factor_target = 6.0,
+        weight_factor_target_rIC = 6.0,
         uses_operator_weights = false,
         theta_mode = :lasso,
     ),
@@ -134,6 +138,8 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
         regularizer = :group_owl,
         power_fixed = 0.0001,
         power_rIC = 0.025,
+        weight_factor_target = 5.0,
+        weight_factor_target_rIC = 5.0,
         uses_operator_weights = false,
         theta_mode = :growl,
     ),
@@ -142,6 +148,8 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
         regularizer = :weighted_l1,
         power_fixed = 0.00004,
         power_rIC = 0.0001,
+        weight_factor_target = 5.0,
+        weight_factor_target_rIC = 5.0,
         uses_operator_weights = true,
         theta_mode = nothing,
     ),
@@ -189,6 +197,8 @@ function register_apprentice_kind!(
     regularizer::Symbol = :none,
     power_fixed::Real = 0.0,
     power_rIC::Real = 0.0,
+    weight_factor_target::Real = 5.0,
+    weight_factor_target_rIC::Real = 5.0,
     uses_operator_weights::Bool = false,
     theta_mode::Union{Nothing, Symbol} = nothing,
     aliases::AbstractVector{Symbol} = Symbol[],
@@ -202,6 +212,8 @@ function register_apprentice_kind!(
         regularizer = regularizer,
         power_fixed = Float64(power_fixed),
         power_rIC = Float64(power_rIC),
+        weight_factor_target = Float64(weight_factor_target),
+        weight_factor_target_rIC = Float64(weight_factor_target_rIC),
         uses_operator_weights = uses_operator_weights,
         theta_mode = theta_mode,
     )
@@ -662,6 +674,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
 
     report_every = 10
     stop_threshold = rIC ? loss_stop_threshold_rIC : loss_stop_threshold
+    weight_factor_target = rIC ? kind_config.weight_factor_target_rIC : kind_config.weight_factor_target
     threshold_reached_once = false
     stop_training = false
 
@@ -819,6 +832,12 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
             println("Loss increased significantly from $(last_loss_mean) to $(losses[end]) at step $(i), stopping training.")
         else
             apprentice_save = deepcopy(apprentice)
+        end
+
+        weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
+        if weight_factor < weight_factor_target
+            stop_training = true
+            println("Weight factor dropped below target ($(weight_factor_target)) at step $(i): $(weight_factor). Stopping training.")
         end
 
         #keep the zeros if this is the last pruning step
