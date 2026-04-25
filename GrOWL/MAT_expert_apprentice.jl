@@ -5,8 +5,8 @@ using Flux
 
 
 
-randomIC = true
-group_channels = true
+randomIC = false
+group_channels = false
 
 
 include("../rIC-validation.jl")
@@ -127,9 +127,9 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
         label = "Lasso",
         regularizer = :group_owl,
         power_fixed = 0.0001,
-        power_rIC = 0.0002,
+        power_rIC = 0.00012,
         weight_factor_target = 6.0,
-        weight_factor_target_rIC = 6.0,
+        weight_factor_target_rIC = 8.0,
         uses_operator_weights = false,
         theta_mode = :lasso,
     ),
@@ -827,7 +827,7 @@ function train_apprentice(;mode = apprentice_training_kind, training_steps = tra
             println("mean squared error over last 100 steps: $(loss_mean)")
         end
 
-        if last_loss_mean < 0.001 && last_loss_mean - mean(losses[max(1, end-29):end]) < -0.001
+        if last_loss_mean < 0.002 && last_loss_mean - mean(losses[max(1, end-29):end]) < -0.001
             stop_training = true
             println("Loss increased significantly from $(last_loss_mean) to $(losses[end]) at step $(i), stopping training.")
         else

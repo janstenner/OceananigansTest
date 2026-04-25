@@ -1,23 +1,36 @@
 reset!(env)
 
-colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
+colorscale = [[0, "rgb(41, 100, 189)"], [0.19, "rgb(33, 166, 196)"], [0.33, "rgb(246, 230, 170)"], [0.5, "rgb(220, 140, 49)"], [0.62, "rgb(227, 67, 18)"], [1, "rgb(252, 96, 255)"], ]
 layout = Layout(
-    plot_bgcolor="#f1f3f7",
-    coloraxis = attr(cmin = 1, cmid = 2.5, cmax = 3, colorscale = colorscale),
+    plot_bgcolor="#FFFFFF",
+    coloraxis = attr(cmin = 1, cmax = 2.5, colorscale = colorscale),
 )
 
 result = env.y[1,:,:]
 
-heat = heatmap(z=result', coloraxis="coloraxis")
+Nx = 96
+Nz = 64
+Lx = 2*pi
+Lz = 2
+
+xx = range(0, stop=Lx, length=Nx)
+zz = range(0, stop=Lz, length=Nz)
+
+heat = heatmap(x=xx, y=zz, z=result', coloraxis="coloraxis")
+
+plot(heat, layout)
 
 
 grid = [(x,z) for x in sensor_positions[1] for z in sensor_positions[2]]
-X  = getindex.(grid, 1)   # extract all x’s
-Y  = getindex.(grid, 2)   # extract all z’s
+X  = getindex.(grid, 1)    # extract all x’s
+Y  = getindex.(grid, 2)    # extract all z’s
+
+X = Float32.(X) ./ Nx * Lx
+Y = Float32.(Y) ./ Nz * Lz
 
 sensors_scatter = scatter(
-  x      = X .-1,
-  y      = Y .-1,
+  x      = X,
+  y      = Y,
   mode   = "markers",
   marker = attr(
     symbol   = "circle",
