@@ -164,6 +164,7 @@ function plot_scores_boxes()
 
     traces = AbstractTrace[]
     if @isdefined(reward_sums) && !isempty(reward_sums)
+        reward_sums .*= -1.0
         push!(traces, box(y=reward_sums, name="Expert", boxpoints="all", quartilemethod="linear", boxmean=true))
     end
 
@@ -179,17 +180,21 @@ function plot_scores_boxes()
             channels_label = grouped_channels ? "GroupedChannels" : "SeparateChannels"
             trace_name = "Apprentice ($(kind_label), $(channels_label))"
 
+            y .*= -1.0
             push!(traces, box(y=y, name=trace_name, boxpoints="all", quartilemethod="linear", boxmean=true))
         end
     else
         # Backward-compatible fallback for older in-memory state.
         if @isdefined(reward_sums_apprentice_gro_asc) && !isempty(reward_sums_apprentice_gro_asc)
+            reward_sums_apprentice_gro_asc .*= -1.0
             push!(traces, box(y=reward_sums_apprentice_gro_asc, name="Apprentice (Group Ordered)", boxpoints="all", quartilemethod="linear", boxmean=true))
         end
         if @isdefined(reward_sums_apprentice_growl) && !isempty(reward_sums_apprentice_growl)
+            reward_sums_apprentice_growl .*= -1.0
             push!(traces, box(y=reward_sums_apprentice_growl, name="Apprentice (Group Ordered)", boxpoints="all", quartilemethod="linear", boxmean=true))
         end
         if @isdefined(reward_sums_apprentice_weighted) && !isempty(reward_sums_apprentice_weighted)
+            reward_sums_apprentice_weighted .*= -1.0
             push!(traces, box(y=reward_sums_apprentice_weighted, name="Apprentice (Group Reweighted)", boxpoints="all", quartilemethod="linear", boxmean=true))
         end
     end

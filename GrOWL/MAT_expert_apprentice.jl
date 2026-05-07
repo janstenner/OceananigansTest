@@ -5,7 +5,7 @@ using Flux
 
 
 
-randomIC = false
+randomIC = true
 group_channels = false
 
 
@@ -136,9 +136,9 @@ const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :p
     :growl => (
         label = "Growl",
         regularizer = :group_owl,
-        power_fixed = 0.0001,
-        power_rIC = 0.025,
-        weight_factor_target = 5.0,
+        power_fixed = 0.00006,
+        power_rIC = 0.0004,
+        weight_factor_target = 1.0,
         weight_factor_target_rIC = 5.0,
         uses_operator_weights = false,
         theta_mode = :growl,
@@ -305,7 +305,7 @@ function update_mask(threshold = 0.1)
 end
 
 
-function plot_masked_input()
+function plot_masked_input(; binary = true)
     global mask
 
     rIC_label = randomIC ? "Variying IC" : "Fixed IC"
@@ -337,7 +337,11 @@ function plot_masked_input()
     add_trace!(p, heatmap(z=temp_y[2,:,:]', coloraxis="coloraxis"), col = 2)
     add_trace!(p, heatmap(z=temp_y[3,:,:]', coloraxis="coloraxis"), col = 3)
 
-    colorscale = [[0, "rgb(0, 0, 0)"], [0.01, "rgb(59, 24, 124)"], [1, "rgb(195, 131, 255)"], ]
+    if binary
+        colorscale = [[0, "rgb(0, 0, 0)"], [0.001, "rgb(195, 131, 255)"], [1, "rgb(195, 131, 255)"], ]
+    else
+        colorscale = [[0, "rgb(0, 0, 0)"], [0.01, "rgb(59, 24, 124)"], [1, "rgb(195, 131, 255)"], ]
+    end
 
     layout = Layout(
             plot_bgcolor="#f1f3f7",
