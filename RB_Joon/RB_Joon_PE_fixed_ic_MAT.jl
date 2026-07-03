@@ -126,6 +126,7 @@ jointPPO = false
 one_by_one_training = false
 positional_encoding = 3 #ZeroEncoding
 useSeparateValueChain = true
+use_mus = true
 
 
 joon_pe = true
@@ -550,6 +551,7 @@ function initialize_setup(;use_random_init = false)
                 tanh_end = tanh_end,
                 positional_encoding = positional_encoding,
                 useSeparateValueChain = useSeparateValueChain,
+                use_mus = use_mus,
                 )
 
     global hook = GeneralHook(min_best_episode = min_best_episode,
