@@ -1,5 +1,3 @@
-module VaryingICCorpus
-
 using Dates
 using JLD2
 using Oceananigans
@@ -7,20 +5,6 @@ using Printf
 using Random
 using StableRNGs
 import Plots
-
-export CORPUS,
-       CORPUS_PATH,
-       DEFAULT_SPLIT_SIZES,
-       add_basis_snapshot!,
-       delete_basis_snapshot!,
-       generate_basis_snapshot,
-       generate_default_corpus!,
-       generate_to_size!,
-       load_corpus,
-       plot_corpus_overviews,
-       reload_corpus!,
-       sample_initial_condition,
-       save_corpus!
 
 const SCHEMA_VERSION = 1
 const VALID_SPLITS = (:train, :validation, :test)
@@ -561,6 +545,4 @@ function plot_corpus_overviews(
         )
         for split in VALID_SPLITS
     )
-end
-
 end

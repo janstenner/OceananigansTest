@@ -17,18 +17,20 @@ Sparse Sensing paper.
 
 ## Varying-IC Corpus Design
 
-The corpus module is self-contained and is intended to be included by later
-revision runners:
+The corpus implementation is a directly included Julia file rather than a
+module.
+It is intended to be included by later revision runners:
 
 ```julia
 include("Revision/VaryingIC_Corpus/VaryingICCorpus.jl")
-using .VaryingICCorpus
 ```
 
-Including the module loads `varying_ic_corpus.jld2` into the global mutable
+Including the file defines its constants and functions directly in the
+including namespace.
+It loads `varying_ic_corpus.jld2` into the global mutable
 `CORPUS` dictionary when the file exists, or initializes empty `:train`,
 `:validation`, and `:test` dictionaries otherwise.
-Including the module must never start a simulation or generate new data.
+Including the file must never start a simulation or generate new data.
 
 The default corpus targets are:
 
@@ -114,6 +116,8 @@ All panels use common color limits for the selected field.
 
 - Keep generation explicit. Never add a top-level call that fills or mutates the
   corpus.
+- Keep the corpus implementation directly includable without wrapping it in a
+  Julia module or requiring a subsequent `using` statement.
 - Preserve split isolation at the basis-seed level.
 - Preserve seeded behavior by routing all random selection through caller
   supplied RNG objects.
