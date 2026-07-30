@@ -8,6 +8,8 @@ Sparse Sensing paper.
 
 ## Directory Structure
 
+- `Implementation_Plan.md`: Ordered implementation and experiment checklist for
+  the paper revision.
 - `VaryingIC_Corpus/VaryingICCorpus.jl`: Persistent generation, visualization,
   and sampling of independently seeded Rayleigh--Bénard basis snapshots for
   varying-initial-condition experiments.
@@ -114,6 +116,8 @@ All panels use common color limits for the selected field.
 
 ## Maintenance Rules
 
+- Keep `Implementation_Plan.md` synchronized with revision-scope decisions and
+  newly completed implementation work.
 - Keep generation explicit. Never add a top-level call that fills or mutates the
   corpus.
 - Keep the corpus implementation directly includable without wrapping it in a
