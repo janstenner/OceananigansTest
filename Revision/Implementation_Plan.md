@@ -24,21 +24,21 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   - Corpus-Erzeugung, Transformationen, JLD2-Persistenz, Plotting und Wiedereinsetzen der Felder in Oceananigans sind geprüft.
 
-- [ ] **Paket 2 — Generelle Fixed-IC- und Varying-IC-Run-Files für MAT und IPPO**
+- [x] **Paket 2 — Generelle Fixed-IC- und Varying-IC-Run-Files für MAT und IPPO**
 
   Umfang:
 
-  - Einheitliche Run-Files für MAT und IPPO unter Fixed IC.
-  - Einheitliche Run-Files für MAT und IPPO unter Varying IC.
-  - Gemeinsame physikalische, numerische und RL-Konfigurationen.
-  - Reproduzierbare Seeds und benannte Run-Konfigurationen.
-  - Speicherung aller benötigten Checkpoints, Trainingsverläufe, Laufzeiten und Metadaten.
-  - Korrekte Verwendung des Training-, Validation- und Test-Splits im Varying-IC-Fall.
-  - Eindeutige Dokumentation der tatsächlich implementierten parameter-sharing IPPO-Semantik.
+  - Vier eigenständige Run-Files unter `Revision/Run_Files` für MAT und parameter-sharing IPPO unter Fixed IC und Varying IC.
+  - Gemeinsame physikalische und numerische Konfiguration; protokollspezifische Modellgrößen aus den jeweiligen Fixed-IC- und Varying-IC-Ausgangsdateien bleiben erhalten.
+  - Reproduzierbare, von übergeordneten Runnern über `REVISION_RUN_SEED` gesetzte Seeds; manuelle Läufe behalten einen zufälligen Fallback sowie benannte, getrennte Standard-Ausgabeverzeichnisse.
+  - JLD2-Speicher- und Laderoutinen für Agent und Hook nach dem Muster der Originaldateien.
+  - Trainingsverläufe, Laufzeiten, zusätzliche Metadaten und die konkrete Experiment-Checkpointplanung werden von späteren übergeordneten Experimentdateien organisiert.
+  - Die Varying-IC-Run-Files inkludieren `VaryingICCorpus.jl`; `generate_random_init` unterstützt Split, RNG, Basis-Seed, Spiegelung und Offset und gibt `(result, split, base_seed, mirror, offset)` zurück.
+  - Die konkrete Verwendung von Training-, Validation- und Test-Split wird von den späteren übergeordneten Experimentdateien festgelegt.
 
   Abschluss:
 
-  - Alle vier Kombinationen aus Algorithmus und IC-Protokoll lassen sich reproduzierbar starten, fortsetzen und auswerten.
+  - Alle vier Kombinationen lassen sich laden und initialisieren; Fixed-IC-Reset, Corpus-basierter Varying-IC-Reset sowie nummeriertes Speichern und Laden von Agent und Hook sind geprüft.
 
 - [ ] **Paket 3 — MAT-Stabilitätsstudie**
 
@@ -47,6 +47,7 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Vergleich eines möglichst originalgetreuen MAT.
   - Vergleich der revidierten MAT-Konfiguration ohne Mean-Token-Änderung.
   - Vergleich der vollständigen revidierten MAT-Konfiguration mit Mean-Token-Änderung.
+  - Revidierte MAT-Defaults mit separater Value-Chain und autoregressiver Rückführung vorhergesagter Mittelwerte; LayerNorm und Self-Attention vor Cross-Attention sind standardmäßig deaktivierte, konfigurierbare Varianten, und sämtliche Legacy-Dropout-Defaults stehen auf `0.0`.
   - Fünf Runs pro Konfiguration unter identischen Fixed-IC-Bedingungen.
   - Auswertung von Trainingsstabilität, Fehlläufen, Lernkurven, finaler Performance, Streuung und Laufzeit.
   - Keine gesonderte Dropout-Behauptung oder Dropout-Ablation.

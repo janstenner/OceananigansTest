@@ -10,12 +10,46 @@ Sparse Sensing paper.
 
 - `Implementation_Plan.md`: Ordered implementation and experiment checklist for
   the paper revision.
+- `Run_Files/FixedIC_MAT.jl` and `Run_Files/FixedIC_IPPO.jl`: Standalone
+  fixed-initial-condition entry points.
+- `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone
+  varying-initial-condition entry points backed by the corpus.
+- `Run_Files/README.md`: Public run-file configuration and orchestration notes.
 - `VaryingIC_Corpus/VaryingICCorpus.jl`: Persistent generation, visualization,
   and sampling of independently seeded Rayleigh--Bénard basis snapshots for
   varying-initial-condition experiments.
 - `VaryingIC_Corpus/varying_ic_corpus.jld2`: Generated corpus data.
   This file is created only by explicit generation or save calls.
 - `VaryingIC_Corpus/plots/`: Generated split overview images.
+
+## Revision Run Files
+
+The four package-2 entry points initialize their environment, policy, and hook
+when included. They never start training automatically; callers invoke
+`train(...)` explicitly.
+
+The run seed is read from `REVISION_RUN_SEED` when set; otherwise manual runs
+draw a random seed from `0:99_999`, matching the source scripts. Output goes to
+a run-specific directory under `Run_Files/outputs` unless
+`REVISION_RUN_DIRECTORY` is set before inclusion.
+The retained JLD2 `save` and `load` functions persist the agent and hook in the
+same style as the source run files. Higher-level experiment files own extended
+checkpoint schedules, training-curve export, runtime measurement, and metadata
+aggregation.
+
+Both IPPO entry points use one shared actor/critic pair across all actuator
+columns. This is parameter-sharing IPPO, not one independently parameterized
+policy per actuator.
+
+The Varying-IC entry points include `VaryingICCorpus.jl` directly and must use
+`sample_initial_condition` in `generate_random_init`. The hook-compatible
+zero-argument call samples from the mutable `initial_condition_split`, which
+defaults to `:train`. Higher-level experiment files may change that global or
+pass an explicit split, RNG, basis seed, mirror choice, and offset.
+`generate_random_init` returns
+`(result, split, base_seed, mirror, offset)`; the hook adapter consumes only
+`result`.
+Run files must never generate or mutate corpus entries.
 
 ## Varying-IC Corpus Design
 

@@ -397,6 +397,7 @@ end
     sample_initial_condition(
         split;
         rng=Random.default_rng(),
+        base_seed=nothing,
         mirror=nothing,
         offset=nothing,
         corpus=CORPUS,
@@ -404,7 +405,8 @@ end
 
 Randomly choose a basis snapshot from a split, optionally mirror it horizontally,
 and apply a periodic horizontal offset.
-If `mirror` or `offset` is `nothing`, that choice is sampled from `rng`.
+If `base_seed`, `mirror`, or `offset` is `nothing`, that choice is sampled from
+`rng`.
 Offsets are normalized to `0:NX-1`.
 
 Horizontal reflection reverses the first array dimension.
@@ -415,6 +417,7 @@ the velocity sign.
 function sample_initial_condition(
     split;
     rng::AbstractRNG = Random.default_rng(),
+    base_seed::Union{Nothing, Integer} = nothing,
     mirror::Union{Nothing, Bool} = nothing,
     offset::Union{Nothing, Integer} = nothing,
     corpus = CORPUS,
@@ -424,17 +427,28 @@ function sample_initial_condition(
     isempty(split_corpus) && error("Split :$split_symbol contains no basis snapshots.")
 
     available_seeds = sort!(collect(keys(split_corpus)))
-    base_seed = rand(rng, available_seeds)
+    base_seed_used = if isnothing(base_seed)
+        rand(rng, available_seeds)
+    else
+        requested_seed = Int(base_seed)
+        haskey(split_corpus, requested_seed) || throw(
+            ArgumentError(
+                "Base seed $requested_seed is not available in split :$split_symbol. " *
+                "Available seeds: $available_seeds.",
+            ),
+        )
+        requested_seed
+    end
     mirror_used = isnothing(mirror) ? rand(rng, Bool) : mirror
     offset_used = isnothing(offset) ? rand(rng, 0:(NX - 1)) : mod(Int(offset), NX)
-    snapshot = split_corpus[base_seed]
+    snapshot = split_corpus[base_seed_used]
 
     return (
         u = transformed_field(snapshot, :u, mirror_used, offset_used),
         w = transformed_field(snapshot, :w, mirror_used, offset_used),
         b = transformed_field(snapshot, :b, mirror_used, offset_used),
         split = split_symbol,
-        base_seed = base_seed,
+        base_seed = base_seed_used,
         mirror = mirror_used,
         offset = offset_used,
     )
