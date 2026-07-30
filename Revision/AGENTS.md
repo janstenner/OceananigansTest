@@ -15,6 +15,10 @@ Sparse Sensing paper.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone
   varying-initial-condition entry points backed by the corpus.
 - `Run_Files/README.md`: Public run-file configuration and orchestration notes.
+- `MAT_Stability/`: Paired package-3 MAT workers, detached tmux launcher,
+  atomic JLD2 results, and strict result collector.
+- `MAT_Stability/README.md`: Server launch, restart, result, and collection
+  instructions for package 3.
 - `VaryingIC_Corpus/VaryingICCorpus.jl`: Persistent generation, visualization,
   and sampling of independently seeded Rayleigh--Bénard basis snapshots for
   varying-initial-condition experiments.
@@ -50,6 +54,32 @@ pass an explicit split, RNG, basis seed, mirror choice, and offset.
 `(result, split, base_seed, mirror, offset)`; the hook adapter consumes only
 `result`.
 Run files must never generate or mutate corpus entries.
+
+## MAT Stability Experiment
+
+`MAT_Stability/run_worker.jl` owns one protocol/replicate and initializes the
+three MAT configurations `python_like`, `modified_half`, and `modified_full`
+sequentially. A deterministic seed plan supplies the same policy seed and, for
+Varying IC, the same IC-sampling seed to all three configurations in a
+replicate. The fixed and varying budgets are exactly 2,000 and 4,000 completed
+episodes per configuration, respectively.
+
+The worker must preserve the paired-design checks: common parameter arrays,
+policy RNG probes, and IC probes are equal across all three configurations;
+the complete initial networks of `modified_half` and `modified_full` are
+byte-identical; Varying-IC selection traces are equal within a replicate.
+Separate value-chain parameters must match the main chain initially without
+sharing mutable arrays.
+
+Each completed configuration is written atomically to a descriptive JLD2 path.
+Per-replicate lock directories prevent duplicate workers, and matching complete
+files are skipped on restart. Failed configurations retain their error and
+partial histories. Production launch uses detached tmux sessions so workers
+survive SSH disconnects.
+
+`MAT_Stability/collect_results.jl` must reject missing, failed, mismatched, or
+unpaired production results by default. Provisional partial collection must
+remain an explicit option. Generated result trees are ignored by Git.
 
 ## Varying-IC Corpus Design
 
@@ -159,6 +189,8 @@ All panels use common color limits for the selected field.
 - Preserve split isolation at the basis-seed level.
 - Preserve seeded behavior by routing all random selection through caller
   supplied RNG objects.
+- Preserve the package-3 configuration names, flags, paired seed plan, exact
+  episode budgets, atomic per-configuration saves, and restart-safe paths.
 - Do not treat offsets or reflections of one basis snapshot as independent
   basis snapshots.
 - Keep the stored field orientation compatible with `set!(model, u=..., w=...,

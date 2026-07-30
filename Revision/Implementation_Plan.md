@@ -44,13 +44,38 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   Umfang:
 
-  - Vergleich eines möglichst originalgetreuen MAT.
-  - Vergleich der revidierten MAT-Konfiguration ohne Mean-Token-Änderung.
-  - Vergleich der vollständigen revidierten MAT-Konfiguration mit Mean-Token-Änderung.
+  - Vergleich von `python_like` mit gemeinsamer Value-Chain, LayerNorm,
+    Self-Attention vor Cross-Attention und autoregressiver Rückführung der
+    Actions.
+  - Vergleich von `modified_half` mit separater Value-Chain, ohne LayerNorm,
+    Cross-Attention vor Self-Attention und weiterhin autoregressiver
+    Rückführung der Actions.
+  - Vergleich von `modified_full` mit den Änderungen aus `modified_half` und
+    zusätzlicher autoregressiver Rückführung der vorhergesagten Mittelwerte.
   - Revidierte MAT-Defaults mit separater Value-Chain und autoregressiver Rückführung vorhergesagter Mittelwerte; LayerNorm und Self-Attention vor Cross-Attention sind standardmäßig deaktivierte, konfigurierbare Varianten, und sämtliche Legacy-Dropout-Defaults stehen auf `0.0`.
-  - Fünf Runs pro Konfiguration unter identischen Fixed-IC-Bedingungen.
+  - Fünf gepaarte Runs pro Konfiguration unter Fixed IC mit jeweils exakt
+    2.000 Episoden sowie fünf gepaarte Runs pro Konfiguration unter Varying IC
+    mit jeweils exakt 4.000 Episoden.
+  - Identische Netzinitialisierung der jeweils vergleichbaren Komponenten und
+    identische IC-Auswahlfolgen innerhalb jedes Replikats.
+  - Automatischer Start von zehn detached tmux-Workern, atomare
+    JLD2-Speicherung nach jeder Konfiguration und restart-sichere,
+    beschreibende Ergebnispfade ohne manuelle Laufnummern.
+  - Strikte Sammlung und Paarungsprüfung aller 30 Ergebnisdateien mit
+    maschinenlesbaren Kennzahlen sowie Lernkurven-, Performance- und
+    Laufzeitplots.
   - Auswertung von Trainingsstabilität, Fehlläufen, Lernkurven, finaler Performance, Streuung und Laufzeit.
   - Keine gesonderte Dropout-Behauptung oder Dropout-Ablation.
+
+  Implementierungsstand:
+
+  - Worker, Seedplan, Initialisierungs- und IC-Paarungsprüfungen,
+    tmux-Launcher, JLD2-Schema und Collector liegen unter
+    `Revision/MAT_Stability`.
+  - Null-Episoden-Prüfungen für Fixed IC und Varying IC sowie kurze echte
+    Episodenläufe prüfen die technische Pipeline vor dem Serverlauf.
+  - Das Paket bleibt bis zur Erzeugung und Auswertung aller 30 Produktionsruns
+    offen.
 
   Abschluss:
 
