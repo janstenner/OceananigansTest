@@ -23,8 +23,10 @@ function usage(io::IO = stdout)
         Options:
           --results-dir DIR  Result root (default: Revision/MAT_Stability/results).
           --output-dir DIR   Collector output directory (default: <results>/collected).
-          --allow-partial    Collect available complete runs instead of requiring all 30.
           --help             Show this message.
+
+        Missing protocols, replicates, and configurations are ignored. Every
+        complete, valid result file that is present is collected.
         """,
     )
 end
@@ -33,7 +35,6 @@ function parse_arguments(arguments)
     options = Dict{String, Any}(
         "results_dir" => joinpath(@__DIR__, "results"),
         "output_dir" => nothing,
-        "allow_partial" => false,
     )
 
     index = 1
@@ -42,8 +43,6 @@ function parse_arguments(arguments)
         if argument == "--help"
             usage()
             return nothing
-        elseif argument == "--allow-partial"
-            options["allow_partial"] = true
         elseif argument in ("--results-dir", "--output-dir")
             index == length(arguments) && error("Missing value after $argument.")
             options[replace(argument[3:end], "-" => "_")] = arguments[index + 1]
@@ -166,16 +165,13 @@ function validate_pairing(records, protocol, replicate)
     return
 end
 
-function collect_records(results_directory; allow_partial = false)
+function collect_records(results_directory)
     records = Dict{Tuple{Symbol, Int, Symbol}, Any}()
     problems = String[]
 
     for protocol in PROTOCOLS, replicate in 1:5, config_name in CONFIG_NAMES
         path = result_path(results_directory, protocol, replicate, config_name)
-        if !isfile(path)
-            push!(problems, "missing: $path")
-            continue
-        end
+        isfile(path) || continue
 
         record = try
             load_record(path)
@@ -198,10 +194,7 @@ function collect_records(results_directory; allow_partial = false)
 
     if !isempty(problems)
         println(stderr, join(problems, "\n"))
-        allow_partial || error(
-            "Result set is incomplete or invalid ($(length(problems)) problems). " *
-            "Use --allow-partial only for provisional inspection.",
-        )
+        println(stderr, "Ignored $(length(problems)) present but unusable result file(s).")
     end
 
     for protocol in PROTOCOLS, replicate in 1:5
@@ -415,12 +408,16 @@ function main(arguments = ARGS)
     output_directory = options["output_dir"]
     mkpath(output_directory)
 
-    records, problems = collect_records(
-        results_directory;
-        allow_partial = options["allow_partial"],
-    )
+    records, problems = collect_records(results_directory)
     rows = metric_rows(records)
     csv_path = write_csv(joinpath(output_directory, "metrics.csv"), rows)
+
+    for protocol in PROTOCOLS
+        for prefix in ("learning_curves", "final_performance", "runtimes")
+            rm(joinpath(output_directory, "$(prefix)_$(protocol).png"); force = true)
+        end
+    end
+
     plot_paths = vcat(
         plot_learning_curves(records, output_directory),
         plot_final_performance(rows, output_directory),
@@ -433,13 +430,13 @@ function main(arguments = ARGS)
         collected_at = string(now()),
         results_directory = results_directory,
         complete_result_count = length(records),
-        expected_result_count = 30,
+        maximum_design_result_count = 30,
         problems = problems,
         metrics = rows,
         generated_plots = plot_paths,
     )
 
-    println("Collected $(length(records))/30 complete results.")
+    println("Collected $(length(records)) complete result file(s).")
     println("Metrics: $csv_path")
     println("Summary: $summary_path")
     for path in plot_paths

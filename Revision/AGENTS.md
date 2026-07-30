@@ -77,9 +77,12 @@ files are skipped on restart. Failed configurations retain their error and
 partial histories. Production launch uses detached tmux sessions so workers
 survive SSH disconnects.
 
-`MAT_Stability/collect_results.jl` must reject missing, failed, mismatched, or
-unpaired production results by default. Provisional partial collection must
-remain an explicit option. Generated result trees are ignored by Git.
+`MAT_Stability/launch_tmux.sh` must support selecting all workers, only Fixed
+IC, or only Varying IC. `MAT_Stability/collect_results.jl` collects whichever
+complete, valid files are present; missing protocols, replicates, and
+configurations are normal. Present failed or invalid files are reported and
+ignored, while pairing mismatches among collected files remain errors.
+Generated result trees are ignored by Git.
 
 ## Varying-IC Corpus Design
 

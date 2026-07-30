@@ -57,7 +57,19 @@ Preview all planned sessions:
 bash Revision/MAT_Stability/launch_tmux.sh --preview
 ```
 
-Start five Fixed-IC and five Varying-IC workers:
+Start only the five Fixed-IC workers:
+
+```bash
+bash Revision/MAT_Stability/launch_tmux.sh --protocol fixed
+```
+
+Start only the five Varying-IC workers:
+
+```bash
+bash Revision/MAT_Stability/launch_tmux.sh --protocol varying
+```
+
+Start both protocols, for ten workers in total:
 
 ```bash
 bash Revision/MAT_Stability/launch_tmux.sh
@@ -77,8 +89,8 @@ tail -f Revision/MAT_Stability/results/logs/mat_fixed_01.log
 
 Set `JULIA_BIN=/path/to/julia` if `julia` is not on `PATH`. Set
 `MAT_STABILITY_RESULTS_DIR=/path/to/results` to store the result tree
-elsewhere. `--dry-run-workers` launches ten zero-episode workers; `--overwrite`
-explicitly replaces matching completed results.
+elsewhere. `--dry-run-workers` launches zero-episode workers for the selected
+protocols; `--overwrite` explicitly replaces matching completed results.
 
 Workers create a lock per protocol/replicate. A restart skips complete,
 matching result files and resumes at the first missing or failed
@@ -110,15 +122,16 @@ selection trace, relevant run parameters, source-file hashes, Julia version,
 host, timestamps, and Git states. A failed configuration is recorded with its
 error and partial reward history.
 
-Once all workers are finished:
+The collector can be run at any time:
 
 ```bash
 julia --startup-file=no --project=. \
   Revision/MAT_Stability/collect_results.jl
 ```
 
-The collector requires all 30 valid files by default, rechecks seed,
-initialization, and IC pairing, then writes `metrics.csv`, `summary.jld2`,
-learning curves, final-performance plots, and runtime plots below
-`results/collected`. `--allow-partial` is available only for provisional
-inspection.
+Missing protocols, replicates, and configurations are ignored. The collector
+processes every complete, valid result file that is currently present and
+rechecks pairing wherever multiple configurations of one replicate are
+available. It writes `metrics.csv`, `summary.jld2`, and the currently possible
+learning-curve, final-performance, and runtime plots below
+`results/collected`.

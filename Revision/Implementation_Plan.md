@@ -58,12 +58,13 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     mit jeweils exakt 4.000 Episoden.
   - Identische Netzinitialisierung der jeweils vergleichbaren Komponenten und
     identische IC-Auswahlfolgen innerhalb jedes Replikats.
-  - Automatischer Start von zehn detached tmux-Workern, atomare
-    JLD2-Speicherung nach jeder Konfiguration und restart-sichere,
-    beschreibende Ergebnispfade ohne manuelle Laufnummern.
-  - Strikte Sammlung und Paarungsprüfung aller 30 Ergebnisdateien mit
-    maschinenlesbaren Kennzahlen sowie Lernkurven-, Performance- und
-    Laufzeitplots.
+  - Selektiver automatischer Start der Fixed-IC-, Varying-IC- oder aller zehn
+    detached tmux-Worker, atomare JLD2-Speicherung nach jeder Konfiguration und
+    restart-sichere, beschreibende Ergebnispfade ohne manuelle Laufnummern.
+  - Inkrementelle Sammlung aller jeweils vorhandenen gültigen Ergebnisdateien
+    mit Paarungsprüfung, maschinenlesbaren Kennzahlen sowie den aus dem
+    aktuellen Datenstand möglichen Lernkurven-, Performance- und
+    Laufzeitplots; fehlende Protokolle oder Runs sind dabei zulässig.
   - Auswertung von Trainingsstabilität, Fehlläufen, Lernkurven, finaler Performance, Streuung und Laufzeit.
   - Keine gesonderte Dropout-Behauptung oder Dropout-Ablation.
 

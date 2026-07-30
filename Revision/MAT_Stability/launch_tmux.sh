@@ -10,16 +10,19 @@ julia_binary="${JULIA_BIN:-julia}"
 preview=false
 worker_dry_run=false
 overwrite=false
+protocol_selection=all
 
 usage() {
     cat <<'EOF'
-Usage: launch_tmux.sh [--preview] [--dry-run-workers] [--overwrite]
+Usage: launch_tmux.sh [--protocol all|fixed|varying] [options]
 
-Starts ten detached tmux sessions:
+Starts five detached tmux sessions per selected protocol.
+The default selection "all" starts:
   mat_fixed_01 ... mat_fixed_05
   mat_varying_01 ... mat_varying_05
 
 Options:
+  --protocol VALUE   Select all, fixed, or varying workers (default: all).
   --preview          Print the planned sessions without starting them.
   --dry-run-workers  Start zero-episode verification workers in separate sessions.
   --overwrite        Pass --overwrite to every worker.
@@ -42,6 +45,14 @@ while (($#)); do
         --overwrite)
             overwrite=true
             ;;
+        --protocol)
+            (($# >= 2)) || {
+                echo "Missing value after --protocol." >&2
+                exit 2
+            }
+            protocol_selection="$2"
+            shift
+            ;;
         --help)
             usage
             exit 0
@@ -55,6 +66,22 @@ while (($#)); do
     shift
 done
 
+case "${protocol_selection}" in
+    all)
+        protocols=(fixed varying)
+        ;;
+    fixed)
+        protocols=(fixed)
+        ;;
+    varying)
+        protocols=(varying)
+        ;;
+    *)
+        echo "Invalid protocol '${protocol_selection}'; use all, fixed, or varying." >&2
+        exit 2
+        ;;
+esac
+
 command -v tmux >/dev/null 2>&1 || {
     echo "tmux was not found in PATH." >&2
     exit 1
@@ -66,8 +93,9 @@ command -v "${julia_binary}" >/dev/null 2>&1 || {
 
 log_directory="${results_directory}/logs"
 mkdir -p "${log_directory}"
+first_session=""
 
-for protocol in fixed varying; do
+for protocol in "${protocols[@]}"; do
     for replicate in 1 2 3 4 5; do
         printf -v replicate_padded "%02d" "${replicate}"
         if [[ "${worker_dry_run}" == true ]]; then
@@ -75,6 +103,7 @@ for protocol in fixed varying; do
         else
             session="mat_${protocol}_${replicate_padded}"
         fi
+        [[ -z "${first_session}" ]] && first_session="${session}"
         logfile="${log_directory}/${session}.log"
 
         command_parts=(
@@ -113,5 +142,5 @@ if [[ "${preview}" == false ]]; then
     echo
     echo "All requested workers were submitted."
     echo "Inspect sessions with: tmux ls"
-    echo "Attach with:          tmux attach -t mat_fixed_01"
+    echo "Attach with:          tmux attach -t ${first_session}"
 fi
