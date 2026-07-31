@@ -26,6 +26,11 @@ Sparse Sensing paper.
   atomic JLD2 results, and strict result collector.
 - `MAT_Stability/README.md`: Server launch, restart, result, and collection
   instructions for package 3.
+- `MAT_IPPO_Comparison/`: Dynamic seed/IC planning, Package-3 import, paired
+  MAT/IPPO workers, persistent tmux launch, deterministic validation, and
+  incremental collection for package 4.
+- `MAT_IPPO_Comparison/README.md`: Server workflow, restart, import,
+  validation, storage, and collection instructions for package 4.
 - `VaryingIC_Corpus/VaryingICCorpus.jl`: Persistent generation, visualization,
   and sampling of independently seeded Rayleigh--Bénard basis snapshots for
   varying-initial-condition experiments.

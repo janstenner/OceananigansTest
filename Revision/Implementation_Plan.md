@@ -94,6 +94,15 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Checkpointauswahl ohne Zugriff auf die finalen Varying-IC-Testbasen.
   - Aggregierte Lernkurven, finale Performance, Streuung, Fehlläufe und Laufzeiten.
 
+  Implementierungsstand:
+
+  - Seed-/IC-Plan, atomare Worker, Paket-3-Importer, begrenzter persistenter
+    tmux-Launcher, deterministische Validation und inkrementeller Collector
+    liegen unter `Revision/MAT_IPPO_Comparison`.
+  - Null-Episoden-Initialisierungen und vollständige Validation-Rollouts prüfen
+    alle vier Fixed/Varying- und MAT/IPPO-Kombinationen vor dem Serverlauf.
+  - Das Paket bleibt bis zur Erzeugung und Auswertung der Produktionsruns offen.
+
   Abschluss:
 
   - Beide im Paper verwendeten MAT-IPPO-Vergleiche sind mit den neuen Run-Files vollständig reproduziert.

@@ -2,8 +2,17 @@
 
 Stand: 2026-07-31
 
+## Implementierungsstand
+
+Die Pipeline liegt unter `Revision/MAT_IPPO_Comparison`: persistenter Seed- und
+IC-Plan, atomare MAT/IPPO-Worker, validierender Paket-3-Importer, begrenzter
+persistenter tmux-Slot-Pool und inkrementeller Collector. Null-Episoden-
+Initialisierungen und vollständige deterministische Rollouts sind für alle vier
+Protokoll-/Algorithmus-Kombinationen geprüft. Das Paket bleibt bis zur
+Durchführung und Auswertung der Produktionsruns offen.
+
 Dieses Dokument legt die vollständige technische und experimentelle Planung
-für Paket 4 fest. Es beschreibt noch keine Implementierung.
+für Paket 4 fest.
 
 ## Ziel
 
@@ -60,11 +69,12 @@ Seeds beziehungsweise einer stabilen ID abgeleitete Run-ID und mindestens:
 - `run_id`,
 - `run_seed`,
 - `ic_seed`,
+- eine Batch-ID des erzeugenden oder importierenden Aufrufs,
 - Entstehungsart `generated` oder `imported_package3`,
 - Erstellungszeit,
 - für Varying IC die vorab festgelegte IC-Folge,
-- Status der vier möglichen Jobs Fixed-MAT, Fixed-IPPO, Varying-MAT und
-  Varying-IPPO.
+- aus den kanonischen Ergebnis- und Validation-Dateien ableitbarer Status der
+  vier möglichen Jobs Fixed-MAT, Fixed-IPPO, Varying-MAT und Varying-IPPO.
 
 Der Plan wird vor dem Start von Workern atomar geschrieben. Worker dürfen
 keine Seeds erzeugen oder auswählen. MAT und IPPO desselben Planeintrags
@@ -124,7 +134,8 @@ Nach Abschluss der Paket-3-Runs lautet der zweite geplante Start:
 launch_tmux.sh --n_runs 5 --look_for_imports true
 ```
 
-Dieser Aufruf ruft zunächst das eigenständige Importer-Skript auf. Es sucht
+Dieser Aufruf verwendet zunächst dieselbe validierte Importlogik wie das
+eigenständig ausführbare Importer-Skript. Sie sucht
 nach noch nicht importierten, vollständigen `modified_full`-Ergebnissen aus
 Paket 3 und übernimmt bis zu der mit `--n_runs` angeforderten Zahl von
 Seedpaaren. Es werden keine Ersatz-Seeds generiert, wenn zu wenige
@@ -146,16 +157,16 @@ Der Default für `--max-workers` ist 20. Ein Worker bearbeitet genau einen Job,
 also genau eine Kombination aus Seedpaar, Protokoll und Algorithmus.
 
 Wenn MAT und IPPO für dasselbe Seedpaar beide fehlen, werden sie als Paar
-eingeplant und möglichst unmittelbar nacheinander als zwei getrennte tmux-
-Sessions gestartet. Sie trainieren parallel, nicht sequenziell in einem
-gemeinsamen Prozess. Bei einem ungeraden oder zu kleinen Workerlimit darf ein
-Slot ungenutzt bleiben, wenn dies nötig ist, um ein noch vollständig fehlendes
-MAT-IPPO-Paar gemeinsam zu starten.
+benachbart eingeplant und bei ausreichender Kapazität in zwei getrennten tmux-
+Slots gestartet. Sie trainieren parallel, nicht sequenziell in einem
+gemeinsamen Julia-Prozess. Liegen mehr Jobs als Slots vor, arbeitet jeder Slot
+seine Queue nacheinander ab.
 
-Alle tmux-Sessions sind detached, schreiben getrennte Logs und enden nach dem
-Abschluss ihres Julia-Workers automatisch. Die Parallelitätsgrenze muss vom
-Benutzer kleiner gesetzt werden können, wenn RAM oder CPU des Servers nicht
-für 20 gleichzeitige Prozesse reichen.
+Alle tmux-Slots sind detached, schreiben getrennte Logs, überleben die SSH-
+Trennung und bleiben auch nach Abschluss ihrer Queue als interaktive Shell
+offen. Die Parallelitätsgrenze muss vom Benutzer kleiner gesetzt werden
+können, wenn RAM oder CPU des Servers nicht für 20 gleichzeitige Prozesse
+reichen.
 
 ## Varying-IC-Paarung
 
@@ -356,8 +367,10 @@ das Paper übernommen werden, wird später entschieden.
 12. Maschinenlesbare Paarungstabelle mit Run-ID, Seeds, Quelldateien,
     Importstatus und Validierungsfällen.
 
-Statische PNG- beziehungsweise PDF-Abbildungen und interaktive HTML-Plots
-sollen aus denselben gespeicherten Zusammenfassungen erzeugt werden.
+Statische PNG- beziehungsweise PDF-Abbildungen werden aus denselben
+gespeicherten Zusammenfassungen erzeugt; interaktive HTML-Plots kommen hinzu,
+wenn dies mit dem installierten Plot-Backend ohne eine zweite Auswertungslogik
+praktikabel ist.
 
 ## Kompakte Implementierungsstruktur
 
