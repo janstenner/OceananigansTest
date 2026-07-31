@@ -96,17 +96,24 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   - Beide im Paper verwendeten MAT-IPPO-Vergleiche sind mit den neuen Run-Files vollständig reproduziert.
 
-- [ ] **Paket 5 — Window-Size-Experiment**
+- [x] **Paket 5 — Window-Size-Experiment — GESTRICHEN**
 
-  Umfang:
+  Status:
 
-  - Neudurchführung aller Window-Size-Konfigurationen, die im Paper verbleiben.
-  - Einheitliche Trainings- und Auswertungsbedingungen über alle Fenstergrößen.
-  - Speicherung der Performance-, Stabilitäts- und Laufzeitergebnisse.
+  - Dieses Experiment wurde bewusst aus dem Revisionsumfang entfernt und wird
+    nicht durchgeführt. Die Paketnummer und der ursprünglich vorgesehene
+    Umfang bleiben zur Dokumentation der Scope-Entscheidung erhalten.
 
-  Abschluss:
+  Ursprünglich vorgesehener Umfang — entfällt:
 
-  - Das Window-Size-Experiment ist entweder vollständig neu erzeugt und auswertbar oder anhand der Ergebnisse bewusst aus dem Experimentumfang entfernt.
+  - ~~Neudurchführung aller Window-Size-Konfigurationen, die im Paper verbleiben.~~
+  - ~~Einheitliche Trainings- und Auswertungsbedingungen über alle Fenstergrößen.~~
+  - ~~Speicherung der Performance-, Stabilitäts- und Laufzeitergebnisse.~~
+
+  Entscheidung:
+
+  - Es sind keine Implementierung, Produktionsruns oder Auswertung für das
+    Window-Size-Experiment mehr erforderlich.
 
 - [ ] **Paket 6 — Minimale GO-Sensitivitätsstudie auf RBC-Daten**
 
