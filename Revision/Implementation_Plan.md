@@ -84,6 +84,8 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
 - [ ] **Paket 4 — MAT versus IPPO unter Fixed IC und Varying IC**
 
+  Detailplanung: `Revision/package4.md`
+
   Umfang:
 
   - Neudurchführung des MAT-IPPO-Vergleichs unter Fixed IC.

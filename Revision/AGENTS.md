@@ -10,8 +10,13 @@ Sparse Sensing paper.
 
 - `Implementation_Plan.md`: Ordered implementation and experiment checklist for
   the paper revision.
+- `package4.md`: Detailed agreed design for the dynamic, paired MAT-versus-IPPO
+  experiment, Paket-3 import, validation, and result collection.
 - `package6.md`: Detailed agreed workflow for the minimal GO sensitivity study
   on RBC teacher-rollout data.
+- `package7_8.md`: Shared detailed workflow for the Fixed-IC and Varying-IC
+  apprentice Pareto selection, threshold expansion, closed-loop validation,
+  and final evaluation packages.
 - `Run_Files/FixedIC_MAT.jl` and `Run_Files/FixedIC_IPPO.jl`: Standalone
   fixed-initial-condition entry points.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone
