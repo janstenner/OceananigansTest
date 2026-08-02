@@ -686,14 +686,14 @@ end
 function parameter_count(algorithm)
     models = algorithm === :mat ?
         (agent.policy.encoder, agent.policy.decoder) :
-        agent.policy.approximator
+        (agent.policy.approximator.actor, agent.policy.approximator.critic)
     return sum(length, Flux.trainables(models))
 end
 
 function parameter_hash(algorithm)
     models = algorithm === :mat ?
         (agent.policy.encoder, agent.policy.decoder) :
-        agent.policy.approximator
+        (agent.policy.approximator.actor, agent.policy.approximator.critic)
     io = IOBuffer()
     for parameter in Flux.trainables(models)
         array = Array(parameter)
@@ -767,6 +767,7 @@ end
 
 function save_failure(path, entry, protocol, algorithm, episode_target, started_at, error_message)
     active_hook = isdefined(@__MODULE__, :hook) ? hook : nothing
+    active_agent = isdefined(@__MODULE__, :agent) ? agent : nothing
     rewards = !isnothing(active_hook) && hasproperty(active_hook, :rewards) ?
         copy(active_hook.rewards) : Float64[]
     atomic_jldsave(
@@ -788,6 +789,7 @@ function save_failure(path, entry, protocol, algorithm, episode_target, started_
         julia_version = string(VERSION),
         error_message = error_message,
         rewards = rewards,
+        agent = active_agent,
     )
 end
 
@@ -912,10 +914,16 @@ function run_worker(;
         if task === :train
             if !overwrite && complete_result(training_path, entry, protocol, algorithm)
                 @printf("Skipping complete training result %s\n", training_path)
+                global agent = JLD2.load(training_path, "agent")
             else
                 started_at = now()
                 observed_trace = NamedTuple[]
                 try
+                    count = parameter_count(algorithm)
+                    expected = EXPECTED_PARAMETERS[(protocol, algorithm)]
+                    count == expected || error(
+                        "Parameter count $count does not match expected $expected before training.",
+                    )
                     initial_parameter_hash = parameter_hash(algorithm)
                     configure_training_initializers!(protocol, entry, observed_trace)
                     progress_every = episode_target == 0 ? 0 : max(1, episode_target ÷ 20)

@@ -57,8 +57,8 @@ plan, copies no imports, and starts no tmux sessions.
 `--max-workers N` defaults to 20. At most that many detached tmux slots process
 all jobs in queues. MAT and IPPO for a seed pair are adjacent in the manifest
 and occupy different slots when capacity permits. Sessions survive SSH
-disconnects and deliberately remain open after finishing. Their logs and job
-manifest are under `results/launches/`.
+disconnects and close automatically after finishing. Their logs and job
+manifest remain under `results/launches/`.
 
 `--overwrite` reruns the most recent `--n-runs` entries of the selected origin.
 Ordinary restarts skip compatible complete files and resume only missing work.

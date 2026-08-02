@@ -132,8 +132,8 @@ for ((slot=0; slot<WORKER_COUNT; slot++)); do
             printf 'echo %q\n' "Starting $task $run_id/$protocol/$algorithm"
             printf '%s 2>&1 | tee %q || slot_failed=1\n' "$command" "$LOG_PATH"
         done
-        echo 'echo "Worker queue finished with status $slot_failed. This tmux shell remains open."'
-        echo 'exec "${SHELL:-/bin/bash}" -i'
+        echo 'echo "Worker queue finished with status $slot_failed."'
+        echo 'exit "$slot_failed"'
     } > "$SLOT_SCRIPT"
     chmod u+x "$SLOT_SCRIPT"
     session="${SESSION_PREFIX}_$((slot + 1))"
@@ -143,6 +143,6 @@ done
 
 echo
 echo "Started ${WORKER_COUNT} persistent tmux slots for ${#JOBS[@]} jobs."
-echo "They survive SSH disconnects and remain open after their queues finish."
+echo "They survive SSH disconnects and close automatically after their queues finish."
 echo "Attach with: tmux attach -t ${SESSION_PREFIX}_1"
 echo "Logs and manifest: $LAUNCH_DIR"

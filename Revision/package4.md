@@ -163,10 +163,9 @@ gemeinsamen Julia-Prozess. Liegen mehr Jobs als Slots vor, arbeitet jeder Slot
 seine Queue nacheinander ab.
 
 Alle tmux-Slots sind detached, schreiben getrennte Logs, überleben die SSH-
-Trennung und bleiben auch nach Abschluss ihrer Queue als interaktive Shell
-offen. Die Parallelitätsgrenze muss vom Benutzer kleiner gesetzt werden
-können, wenn RAM oder CPU des Servers nicht für 20 gleichzeitige Prozesse
-reichen.
+Trennung und schließen sich nach Abschluss ihrer Queue automatisch. Die
+Parallelitätsgrenze muss vom Benutzer kleiner gesetzt werden können, wenn RAM
+oder CPU des Servers nicht für 20 gleichzeitige Prozesse reichen.
 
 ## Varying-IC-Paarung
 
