@@ -60,6 +60,11 @@ and occupy different slots when capacity permits. Sessions survive SSH
 disconnects and close automatically after finishing. Their logs and job
 manifest remain under `results/launches/`.
 
+Session names identify the active job directly. For example,
+`p4_ippo_fixed_seed_41296dceb8db78ce_train` contains algorithm, protocol,
+stable seed-derived run ID, and task. If a constrained slot processes more
+than one queued job, it is renamed before the next job starts.
+
 `--overwrite` reruns the most recent `--n-runs` entries of the selected origin.
 Ordinary restarts skip compatible complete files and resume only missing work.
 

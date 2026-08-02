@@ -166,6 +166,9 @@ Alle tmux-Slots sind detached, schreiben getrennte Logs, überleben die SSH-
 Trennung und schließen sich nach Abschluss ihrer Queue automatisch. Die
 Parallelitätsgrenze muss vom Benutzer kleiner gesetzt werden können, wenn RAM
 oder CPU des Servers nicht für 20 gleichzeitige Prozesse reichen.
+Der jeweils sichtbare Sessionname enthält Algorithmus, Protokoll, stabile
+Seed-/Run-ID und Task und wird beim Wechsel zum nächsten Queue-Eintrag
+aktualisiert.
 
 ## Varying-IC-Paarung
 

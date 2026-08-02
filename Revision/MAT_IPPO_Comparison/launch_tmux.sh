@@ -103,10 +103,17 @@ worker_command() {
     printf '%s' "$command"
 }
 
+session_name() {
+    local row="$1" task run_id protocol algorithm result_path
+    IFS=$'\t' read -r task run_id protocol algorithm result_path <<<"$row"
+    printf 'p4_%s_%s_%s_%s' "$algorithm" "$protocol" "$run_id" "$task"
+}
+
 if [[ "$PREVIEW" == true ]]; then
     echo
     echo "Preview only; no plan was persisted and no tmux session was started."
     for row in "${JOBS[@]}"; do
+        printf '%s: ' "$(session_name "$row")"
         worker_command "$row"
         echo
     done
@@ -116,10 +123,12 @@ fi
 command -v tmux >/dev/null || { echo "tmux is required to launch workers." >&2; exit 1; }
 WORKER_COUNT=${#JOBS[@]}
 ((WORKER_COUNT > MAX_WORKERS)) && WORKER_COUNT=$MAX_WORKERS
-SESSION_PREFIX="p4_${LAUNCH_ID}"
+FIRST_SESSION=""
+STARTED_COUNT=0
 
 for ((slot=0; slot<WORKER_COUNT; slot++)); do
     SLOT_SCRIPT="$LAUNCH_DIR/slot_$((slot + 1)).sh"
+    session="$(session_name "${JOBS[slot]}")"
     {
         echo '#!/usr/bin/env bash'
         echo 'set -uo pipefail'
@@ -127,8 +136,12 @@ for ((slot=0; slot<WORKER_COUNT; slot++)); do
         for ((index=slot; index<${#JOBS[@]}; index+=WORKER_COUNT)); do
             row="${JOBS[index]}"
             IFS=$'\t' read -r task run_id protocol algorithm result_path <<<"$row"
+            job_session="$(session_name "$row")"
             LOG_PATH="$LAUNCH_DIR/${run_id}_${protocol}_${algorithm}_${task}.log"
             command="$(worker_command "$row")"
+            printf 'current_session=$(tmux display-message -p -t "$TMUX_PANE" "#S")\n'
+            printf 'if [[ "$current_session" != %q ]]; then tmux rename-session -t "$current_session" %q; fi\n' \
+                "$job_session" "$job_session"
             printf 'echo %q\n' "Starting $task $run_id/$protocol/$algorithm"
             printf '%s 2>&1 | tee %q || slot_failed=1\n' "$command" "$LOG_PATH"
         done
@@ -136,13 +149,18 @@ for ((slot=0; slot<WORKER_COUNT; slot++)); do
         echo 'exit "$slot_failed"'
     } > "$SLOT_SCRIPT"
     chmod u+x "$SLOT_SCRIPT"
-    session="${SESSION_PREFIX}_$((slot + 1))"
+    if tmux has-session -t "=$session" 2>/dev/null; then
+        echo "Skipping active tmux session $session"
+        continue
+    fi
     tmux new-session -d -s "$session" "bash '$SLOT_SCRIPT'"
+    [[ -z "$FIRST_SESSION" ]] && FIRST_SESSION="$session"
+    STARTED_COUNT=$((STARTED_COUNT + 1))
     echo "Started $session"
 done
 
 echo
-echo "Started ${WORKER_COUNT} persistent tmux slots for ${#JOBS[@]} jobs."
+echo "Started ${STARTED_COUNT} persistent tmux slots for ${#JOBS[@]} jobs."
 echo "They survive SSH disconnects and close automatically after their queues finish."
-echo "Attach with: tmux attach -t ${SESSION_PREFIX}_1"
+[[ -n "$FIRST_SESSION" ]] && echo "Attach with: tmux attach -t $FIRST_SESSION"
 echo "Logs and manifest: $LAUNCH_DIR"
