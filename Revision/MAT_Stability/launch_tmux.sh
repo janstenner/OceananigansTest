@@ -6,10 +6,13 @@ project_root="$(cd "${script_directory}/../.." && pwd)"
 runner="${script_directory}/run_worker.jl"
 results_directory="${MAT_STABILITY_RESULTS_DIR:-${script_directory}/results}"
 julia_binary="${JULIA_BIN:-julia}"
+systemd_inhibit_binary="${SYSTEMD_INHIBIT_BIN:-systemd-inhibit}"
+systemd_inhibit_what="${SYSTEMD_INHIBIT_WHAT:-sleep:idle:shutdown}"
 
 preview=false
 worker_dry_run=false
 overwrite=false
+use_systemd_inhibit=true
 protocol_selection=all
 
 usage() {
@@ -26,11 +29,15 @@ Options:
   --preview          Print the planned sessions without starting them.
   --dry-run-workers  Start zero-episode verification workers in separate sessions.
   --overwrite        Pass --overwrite to every worker.
+  --no-systemd-inhibit
+                     Start workers without a systemd inhibitor (local/debug only).
   --help             Show this message.
 
 Environment:
   JULIA_BIN                 Julia executable (default: julia)
   MAT_STABILITY_RESULTS_DIR Result root
+  SYSTEMD_INHIBIT_BIN       systemd-inhibit executable (default: systemd-inhibit)
+  SYSTEMD_INHIBIT_WHAT      Locks to request (default: sleep:idle:shutdown)
 EOF
 }
 
@@ -44,6 +51,9 @@ while (($#)); do
             ;;
         --overwrite)
             overwrite=true
+            ;;
+        --no-systemd-inhibit|--no-inhibit)
+            use_systemd_inhibit=false
             ;;
         --protocol)
             (($# >= 2)) || {
@@ -90,6 +100,13 @@ command -v "${julia_binary}" >/dev/null 2>&1 || {
     echo "Julia executable '${julia_binary}' was not found." >&2
     exit 1
 }
+if [[ "${use_systemd_inhibit}" == true && "${preview}" == false ]]; then
+    command -v "${systemd_inhibit_binary}" >/dev/null 2>&1 || {
+        echo "systemd-inhibit executable '${systemd_inhibit_binary}' was not found." >&2
+        echo "Use --no-systemd-inhibit only if inhibition is intentionally unnecessary." >&2
+        exit 1
+    }
+fi
 
 log_directory="${results_directory}/logs"
 mkdir -p "${log_directory}"
@@ -117,6 +134,16 @@ for protocol in "${protocols[@]}"; do
         )
         [[ "${worker_dry_run}" == true ]] && command_parts+=("--dry-run")
         [[ "${overwrite}" == true ]] && command_parts+=("--overwrite")
+        if [[ "${use_systemd_inhibit}" == true ]]; then
+            command_parts=(
+                "${systemd_inhibit_binary}"
+                "--what=${systemd_inhibit_what}"
+                "--who=Oceananigans P3 ${session}"
+                "--why=Paper revision Package 3 MAT stability worker"
+                "--mode=block"
+                "${command_parts[@]}"
+            )
+        fi
 
         printf -v worker_command "%q " "${command_parts[@]}"
         printf -v quoted_logfile "%q" "${logfile}"

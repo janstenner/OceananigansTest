@@ -54,6 +54,12 @@ project is activated automatically. Set `JULIA_BIN` if Julia is not on `PATH`.
 `--preview` prints the proposed plan and exact worker commands but persists no
 plan, copies no imports, and starts no tmux sessions.
 
+Every Julia worker is wrapped in `systemd-inhibit` and holds a blocking
+`sleep:idle:shutdown` inhibitor exactly while it runs. The locks are visible
+with `systemd-inhibit --list` and disappear automatically with the worker.
+`SYSTEMD_INHIBIT_WHAT` changes the inhibited operations; local systems without
+systemd can opt out explicitly with `--no-systemd-inhibit`.
+
 `--max-workers N` defaults to 20. At most that many detached tmux slots process
 all jobs in queues. MAT and IPPO for a seed pair are adjacent in the manifest
 and occupy different slots when capacity permits. Sessions survive SSH
