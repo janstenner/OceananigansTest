@@ -12,6 +12,17 @@ using .MATStabilityExperiment
 const CONFIG_NAMES = Tuple(config.name for config in MAT_CONFIGS)
 const PROTOCOLS = (:fixed, :varying)
 const FINAL_WINDOW = 100
+const CONFIG_DISPLAY_NAMES = Dict(
+    :python_like => "non-modified",
+    :modified_half => "modified 1",
+    :modified_full => "modified 2",
+)
+const CONFIG_COLORS = Dict(
+    :python_like => "#4C78A8",
+    :modified_half => "#F58518",
+    :modified_full => "#54A24B",
+)
+const PROTOCOL_DISPLAY_NAMES = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
 
 function usage(io::IO = stdout)
     println(
@@ -271,19 +282,19 @@ function write_csv(path, rows)
 end
 
 function plot_learning_curves(records, output_directory)
-    colors = Dict(
-        :python_like => :black,
-        :modified_half => :darkorange,
-        :modified_full => :royalblue,
-    )
     outputs = String[]
 
     for protocol in PROTOCOLS
         plot_handle = plot(
-            title = "MAT stability — $(protocol)",
+            title = "MAT stability - $(PROTOCOL_DISPLAY_NAMES[protocol])",
             xlabel = "Episode",
             ylabel = "Episode reward",
             legend = :bottomright,
+            framestyle = :box,
+            gridalpha = 0.18,
+            size = (850, 520),
+            legend_background_color = :transparent,
+            legend_foreground_color = :transparent,
         )
         plotted = false
         for config_name in CONFIG_NAMES
@@ -303,14 +314,15 @@ function plot_learning_curves(records, output_directory)
                 1:episode_count,
                 means;
                 ribbon = deviations,
-                label = "$(config_name) (n=$(length(series)))",
-                color = colors[config_name],
-                linewidth = 2,
+                label = "$(CONFIG_DISPLAY_NAMES[config_name]) (n=$(length(series)))",
+                color = CONFIG_COLORS[config_name],
+                fillalpha = 0.18,
+                linewidth = 2.5,
             )
             plotted = true
         end
         plotted || continue
-        output = joinpath(output_directory, "learning_curves_$(protocol).png")
+        output = joinpath(output_directory, "learning_curves_$(protocol).svg")
         savefig(plot_handle, output)
         push!(outputs, output)
     end
@@ -323,11 +335,20 @@ function plot_final_performance(rows, output_directory)
         protocol_rows = filter(row -> row.protocol === protocol, rows)
         isempty(protocol_rows) && continue
         plot_handle = plot(
-            title = "Final reward (last $FINAL_WINDOW episodes) — $(protocol)",
+            title = "Final reward (last $FINAL_WINDOW episodes) - " *
+                    PROTOCOL_DISPLAY_NAMES[protocol],
             xlabel = "Configuration",
             ylabel = "Mean episode reward",
-            legend = false,
-            xticks = (1:length(CONFIG_NAMES), string.(CONFIG_NAMES)),
+            legend = :bottomright,
+            xticks = (
+                1:length(CONFIG_NAMES),
+                [CONFIG_DISPLAY_NAMES[name] for name in CONFIG_NAMES],
+            ),
+            framestyle = :box,
+            gridalpha = 0.18,
+            size = (850, 520),
+            legend_background_color = :transparent,
+            legend_foreground_color = :transparent,
         )
         for (index, config_name) in enumerate(CONFIG_NAMES)
             values = [
@@ -336,23 +357,30 @@ function plot_final_performance(rows, output_directory)
                 if row.config === config_name
             ]
             isempty(values) && continue
+            positions = index .+ collect(range(-0.07, 0.07; length = length(values)))
             scatter!(
                 plot_handle,
-                fill(index, length(values)),
+                positions,
                 values;
-                color = :gray35,
-                markersize = 5,
+                color = CONFIG_COLORS[config_name],
+                label = index == 1 ? "Individual runs" : "",
+                markerstrokecolor = :white,
+                markerstrokewidth = 0.6,
+                markersize = 6,
             )
             scatter!(
                 plot_handle,
                 [index],
                 [mean(values)];
-                color = :red,
+                color = CONFIG_COLORS[config_name],
+                label = index == 1 ? "Arithmetic mean" : "",
                 marker = :diamond,
-                markersize = 8,
+                markerstrokecolor = :black,
+                markerstrokewidth = 1.0,
+                markersize = 9,
             )
         end
-        output = joinpath(output_directory, "final_performance_$(protocol).png")
+        output = joinpath(output_directory, "final_performance_$(protocol).svg")
         savefig(plot_handle, output)
         push!(outputs, output)
     end
@@ -365,11 +393,19 @@ function plot_runtimes(rows, output_directory)
         protocol_rows = filter(row -> row.protocol === protocol, rows)
         isempty(protocol_rows) && continue
         plot_handle = plot(
-            title = "Training runtime — $(protocol)",
+            title = "Training runtime - $(PROTOCOL_DISPLAY_NAMES[protocol])",
             xlabel = "Configuration",
             ylabel = "Hours",
-            legend = false,
-            xticks = (1:length(CONFIG_NAMES), string.(CONFIG_NAMES)),
+            legend = :bottomright,
+            xticks = (
+                1:length(CONFIG_NAMES),
+                [CONFIG_DISPLAY_NAMES[name] for name in CONFIG_NAMES],
+            ),
+            framestyle = :box,
+            gridalpha = 0.18,
+            size = (850, 520),
+            legend_background_color = :transparent,
+            legend_foreground_color = :transparent,
         )
         for (index, config_name) in enumerate(CONFIG_NAMES)
             values = [
@@ -378,23 +414,30 @@ function plot_runtimes(rows, output_directory)
                 if row.config === config_name
             ]
             isempty(values) && continue
+            positions = index .+ collect(range(-0.07, 0.07; length = length(values)))
             scatter!(
                 plot_handle,
-                fill(index, length(values)),
+                positions,
                 values;
-                color = :gray35,
-                markersize = 5,
+                color = CONFIG_COLORS[config_name],
+                label = index == 1 ? "Individual runs" : "",
+                markerstrokecolor = :white,
+                markerstrokewidth = 0.6,
+                markersize = 6,
             )
             scatter!(
                 plot_handle,
                 [index],
                 [mean(values)];
-                color = :red,
+                color = CONFIG_COLORS[config_name],
+                label = index == 1 ? "Arithmetic mean" : "",
                 marker = :diamond,
-                markersize = 8,
+                markerstrokecolor = :black,
+                markerstrokewidth = 1.0,
+                markersize = 9,
             )
         end
-        output = joinpath(output_directory, "runtimes_$(protocol).png")
+        output = joinpath(output_directory, "runtimes_$(protocol).svg")
         savefig(plot_handle, output)
         push!(outputs, output)
     end
@@ -414,7 +457,9 @@ function main(arguments = ARGS)
 
     for protocol in PROTOCOLS
         for prefix in ("learning_curves", "final_performance", "runtimes")
-            rm(joinpath(output_directory, "$(prefix)_$(protocol).png"); force = true)
+            for extension in ("png", "svg")
+                rm(joinpath(output_directory, "$(prefix)_$(protocol).$(extension)"); force = true)
+            end
         end
     end
 
