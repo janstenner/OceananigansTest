@@ -2,14 +2,22 @@ ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
 
 using Dates
 using JLD2
-using Plots
+using PlotlyJS
 using Printf
 using Statistics
 
 include(joinpath(@__DIR__, "MATIPPOExperiment.jl"))
 using .MATIPPOExperiment
 
-const COLORS = Dict(:mat => :royalblue3, :ippo => :darkorange2)
+const COLORS = Dict(:mat => "#277DA1", :ippo => "#F2A13A")
+const RUN_COLORS = Dict(
+    :mat => "rgba(39, 125, 161, 0.22)",
+    :ippo => "rgba(242, 161, 58, 0.22)",
+)
+const RIBBON_COLORS = Dict(
+    :mat => "rgba(39, 125, 161, 0.18)",
+    :ippo => "rgba(242, 161, 58, 0.18)",
+)
 const LABELS = Dict(:mat => "MAT", :ippo => "IPPO")
 const WINDOW = 50
 
@@ -231,33 +239,93 @@ function paired_curve_data(records)
     return curves, statistics
 end
 
-function save_both(plot, stem)
-    savefig(plot, stem * ".png")
-    savefig(plot, stem * ".pdf")
+function plot_layout(title, xlabel, ylabel; tickvals = nothing, ticktext = nothing,
+                     showlegend = true)
+    xaxis_options = Dict{Symbol, Any}(
+        :title => attr(text = xlabel, standoff = 12),
+        :showline => true,
+        :mirror => true,
+        :linecolor => "#3A3A3A",
+        :linewidth => 1,
+        :ticks => "outside",
+        :gridcolor => "#E6E6E6",
+        :zeroline => false,
+    )
+    if !isnothing(tickvals)
+        xaxis_options[:tickmode] = "array"
+        xaxis_options[:tickvals] = tickvals
+        xaxis_options[:ticktext] = ticktext
+        xaxis_options[:range] = [minimum(tickvals) - 0.45, maximum(tickvals) + 0.45]
+        xaxis_options[:showgrid] = false
+    end
+    return Layout(
+        template = "plotly_white",
+        title = attr(
+            text = title,
+            x = 0.5,
+            xanchor = "center",
+            font = attr(size = 22, color = "#252525"),
+        ),
+        paper_bgcolor = "white",
+        plot_bgcolor = "white",
+        width = 900,
+        height = 560,
+        margin = attr(l = 100, r = 30, t = 80, b = 85),
+        font = attr(family = "Arial, sans-serif", size = 15, color = "#303030"),
+        xaxis = attr(; xaxis_options...),
+        yaxis = attr(
+            title = attr(text = ylabel, standoff = 12),
+            showline = true,
+            mirror = true,
+            linecolor = "#3A3A3A",
+            linewidth = 1,
+            ticks = "outside",
+            gridcolor = "#E6E6E6",
+            zeroline = false,
+        ),
+        showlegend = showlegend,
+        legend = attr(
+            x = 0.985,
+            y = 0.02,
+            xanchor = "right",
+            yanchor = "bottom",
+            traceorder = "normal",
+            bgcolor = "rgba(255, 255, 255, 0.92)",
+            bordercolor = "#CFCFCF",
+            borderwidth = 1,
+            font = attr(size = 13),
+        ),
+    )
+end
+
+function save_svg(plot, stem)
+    output = stem * ".svg"
+    PlotlyJS.savefig(plot, output; width = 900, height = 560)
+    return output
 end
 
 function plot_learning_curves(records, stats, plot_directory)
     for protocol in (:fixed, :varying)
         available = [record for record in records if record.protocol == protocol && length(record.rewards) >= WINDOW]
         isempty(available) && continue
-        plot_object = plot(
-            xlabel = "Episode",
-            ylabel = "Score (rolling mean, window=$WINDOW)",
-            title = "$(uppercasefirst(string(protocol))) IC learning curves",
-            legend = :bottomright,
-        )
-        for algorithm in (:mat, :ippo)
+        traces = PlotlyJS.GenericTrace[]
+        for (algorithm_index, algorithm) in enumerate((:mat, :ippo))
             subset = [record for record in available if record.algorithm == algorithm]
             for (index, record) in enumerate(subset)
                 curve = rolling_mean(record.rewards)
-                plot!(
-                    plot_object,
-                    WINDOW:(WINDOW + length(curve) - 1),
-                    curve;
-                    color = COLORS[algorithm],
-                    alpha = 0.16,
-                    linewidth = 1,
-                    label = index == 1 ? "$(LABELS[algorithm]) runs (n=$(length(subset)))" : "",
+                push!(
+                    traces,
+                    scatter(
+                        x = collect(WINDOW:(WINDOW + length(curve) - 1)),
+                        y = curve,
+                        mode = "lines",
+                        name = "$(LABELS[algorithm]) runs (n=$(length(subset)))",
+                        legendgroup = "$(algorithm)_runs",
+                        legendrank = 10 * algorithm_index,
+                        showlegend = index == 1,
+                        line = attr(color = RUN_COLORS[algorithm], width = 1),
+                        hoverinfo = "skip",
+                    ),
                 )
             end
             aggregate = [row for row in stats if row.protocol == protocol && row.algorithm == algorithm]
@@ -267,44 +335,96 @@ function plot_learning_curves(records, stats, plot_directory)
             q25 = getproperty.(aggregate, :q25)
             q75 = getproperty.(aggregate, :q75)
             means = getproperty.(aggregate, :mean)
-            plot!(
-                plot_object,
-                episodes,
-                medians;
-                ribbon = (medians .- q25, q75 .- medians),
-                fillalpha = 0.20,
-                color = COLORS[algorithm],
-                linewidth = 3,
-                label = "$(LABELS[algorithm]) median + IQR",
+            push!(
+                traces,
+                scatter(
+                    x = episodes,
+                    y = q25,
+                    mode = "lines",
+                    line = attr(width = 0),
+                    hoverinfo = "skip",
+                    showlegend = false,
+                ),
             )
-            plot!(
-                plot_object,
-                episodes,
-                means;
-                color = COLORS[algorithm],
-                linestyle = :dash,
-                linewidth = 2,
-                label = "$(LABELS[algorithm]) mean",
+            push!(
+                traces,
+                scatter(
+                    x = episodes,
+                    y = q75,
+                    mode = "lines",
+                    line = attr(width = 0),
+                    fill = "tonexty",
+                    fillcolor = RIBBON_COLORS[algorithm],
+                    hoverinfo = "skip",
+                    showlegend = false,
+                ),
+            )
+            push!(
+                traces,
+                scatter(
+                    x = episodes,
+                    y = medians,
+                    mode = "lines",
+                    name = "$(LABELS[algorithm]) median + IQR",
+                    legendrank = 10 * algorithm_index + 1,
+                    line = attr(color = COLORS[algorithm], width = 3),
+                    hovertemplate = "Episode %{x}<br>Median %{y:.2f}<extra>%{fullData.name}</extra>",
+                ),
+            )
+            push!(
+                traces,
+                scatter(
+                    x = episodes,
+                    y = means,
+                    mode = "lines",
+                    name = "$(LABELS[algorithm]) mean",
+                    legendrank = 10 * algorithm_index + 2,
+                    line = attr(color = COLORS[algorithm], width = 2, dash = "dash"),
+                    hovertemplate = "Episode %{x}<br>Mean %{y:.2f}<extra>%{fullData.name}</extra>",
+                ),
             )
         end
-        save_both(plot_object, joinpath(plot_directory, "$(protocol)_learning_curves"))
-
-        individual = plot(
-            xlabel = "Episode",
-            ylabel = "Score (rolling mean, window=$WINDOW)",
-            title = "$(uppercasefirst(string(protocol))) IC individual runs",
-            legend = :bottomright,
+        plot_object = Plot(
+            traces,
+            plot_layout(
+                "$(uppercasefirst(string(protocol))) IC learning curves",
+                "Episode",
+                "Score (rolling mean, window=$WINDOW)",
+            ),
         )
-        for algorithm in (:mat, :ippo)
+        save_svg(plot_object, joinpath(plot_directory, "$(protocol)_learning_curves"))
+
+        individual_traces = PlotlyJS.GenericTrace[]
+        for (algorithm_index, algorithm) in enumerate((:mat, :ippo))
             subset = [record for record in available if record.algorithm == algorithm]
             for (index, record) in enumerate(subset)
                 curve = rolling_mean(record.rewards)
-                plot!(individual, WINDOW:(WINDOW + length(curve) - 1), curve;
-                      color = COLORS[algorithm], alpha = 0.55, linewidth = 1.4,
-                      label = index == 1 ? LABELS[algorithm] : "")
+                push!(
+                    individual_traces,
+                    scatter(
+                        x = collect(WINDOW:(WINDOW + length(curve) - 1)),
+                        y = curve,
+                        mode = "lines",
+                        name = "$(LABELS[algorithm]) (n=$(length(subset)))",
+                        legendgroup = string(algorithm),
+                        legendrank = algorithm_index,
+                        showlegend = index == 1,
+                        line = attr(color = COLORS[algorithm], width = 1.5),
+                        opacity = 0.55,
+                        hovertemplate = "Episode %{x}<br>Score %{y:.2f}<extra>$(LABELS[algorithm])</extra>",
+                    ),
+                )
             end
         end
-        save_both(individual, joinpath(plot_directory, "$(protocol)_individual_curves"))
+        individual = Plot(
+            individual_traces,
+            plot_layout(
+                "$(uppercasefirst(string(protocol))) IC individual runs",
+                "Episode",
+                "Score (rolling mean, window=$WINDOW)",
+            ),
+        )
+        save_svg(individual, joinpath(plot_directory, "$(protocol)_individual_curves"))
     end
 end
 
@@ -313,27 +433,95 @@ function plot_paired_curves(curves, stats, plot_directory)
         subset = [curve for curve in curves if curve.protocol == protocol]
         aggregate = [row for row in stats if row.protocol == protocol]
         isempty(subset) && continue
-        plot_object = plot(
-            xlabel = "Episode",
-            ylabel = "MAT - IPPO rolling-50 score",
-            title = "$(uppercasefirst(string(protocol))) IC paired learning differences (n=$(length(subset)))",
-            legend = :bottomright,
-        )
-        hline!(plot_object, [0.0]; color = :black, linestyle = :dash, label = "zero")
+        traces = PlotlyJS.GenericTrace[
+            scatter(
+                x = [WINDOW, WINDOW + maximum(length(curve.values) for curve in subset) - 1],
+                y = [0.0, 0.0],
+                mode = "lines",
+                name = "zero",
+                legendrank = 1,
+                line = attr(color = "#303030", width = 1.5, dash = "dash"),
+                hoverinfo = "skip",
+            ),
+        ]
         for curve in subset
-            plot!(plot_object, WINDOW:(WINDOW + length(curve.values) - 1), curve.values;
-                  color = :purple3, alpha = 0.18, linewidth = 1, label = "")
+            push!(
+                traces,
+                scatter(
+                    x = collect(WINDOW:(WINDOW + length(curve.values) - 1)),
+                    y = curve.values,
+                    mode = "lines",
+                    line = attr(color = RUN_COLORS[:mat], width = 1),
+                    hoverinfo = "skip",
+                    showlegend = false,
+                ),
+            )
         end
         episodes = getproperty.(aggregate, :episode)
         medians = getproperty.(aggregate, :median)
         q25 = getproperty.(aggregate, :q25)
         q75 = getproperty.(aggregate, :q75)
-        plot!(plot_object, episodes, medians;
-              ribbon = (medians .- q25, q75 .- medians), fillalpha = 0.22,
-              color = :purple3, linewidth = 3, label = "median + IQR")
-        plot!(plot_object, episodes, getproperty.(aggregate, :mean);
-              color = :purple3, linestyle = :dot, linewidth = 2, label = "mean")
-        save_both(plot_object, joinpath(plot_directory, "$(protocol)_paired_learning_differences"))
+        push!(
+            traces,
+            scatter(
+                x = episodes,
+                y = q25,
+                mode = "lines",
+                line = attr(width = 0),
+                hoverinfo = "skip",
+                showlegend = false,
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x = episodes,
+                y = q75,
+                mode = "lines",
+                line = attr(width = 0),
+                fill = "tonexty",
+                fillcolor = RIBBON_COLORS[:mat],
+                hoverinfo = "skip",
+                showlegend = false,
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x = episodes,
+                y = medians,
+                mode = "lines",
+                name = "median + IQR",
+                legendrank = 2,
+                line = attr(color = COLORS[:mat], width = 3),
+                hovertemplate = "Episode %{x}<br>Median difference %{y:.2f}<extra></extra>",
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x = episodes,
+                y = getproperty.(aggregate, :mean),
+                mode = "lines",
+                name = "mean",
+                legendrank = 3,
+                line = attr(color = COLORS[:mat], width = 2, dash = "dot"),
+                hovertemplate = "Episode %{x}<br>Mean difference %{y:.2f}<extra></extra>",
+            ),
+        )
+        plot_object = Plot(
+            traces,
+            plot_layout(
+                "$(uppercasefirst(string(protocol))) IC paired learning differences " *
+                "(n=$(length(subset)))",
+                "Episode",
+                "MAT - IPPO rolling-50 score",
+            ),
+        )
+        save_svg(
+            plot_object,
+            joinpath(plot_directory, "$(protocol)_paired_learning_differences"),
+        )
     end
 end
 
@@ -413,25 +601,65 @@ function scatter_summary(rows, value_name, title, ylabel, stem; paired = false)
             isfinite(getproperty(row, value_name)) for row in rows)
         for algorithm in (:mat, :ippo)
     ]
-    plot_object = plot(
-        title = title,
-        ylabel = ylabel,
-        legend = false,
-        xticks = ([1, 2], ["MAT (n=$(counts[1]))", "IPPO (n=$(counts[2]))"]),
-    )
+    traces = PlotlyJS.GenericTrace[]
     for (position, algorithm) in enumerate((:mat, :ippo))
         values = Float64[getproperty(row, value_name) for row in rows if
                          row.algorithm == algorithm && !ismissing(getproperty(row, value_name)) &&
                          isfinite(getproperty(row, value_name))]
         isempty(values) && continue
         jitter = length(values) == 1 ? [0.0] : collect(range(-0.08, 0.08; length = length(values)))
-        scatter!(plot_object, position .+ jitter, values; color = COLORS[algorithm], alpha = 0.8, markersize = 5)
-        plot!(plot_object, [position - 0.16, position + 0.16], fill(median(values), 2);
-              color = :black, linewidth = 3)
-        plot!(plot_object, [position, position], [quantile(values, 0.25), quantile(values, 0.75)];
-              color = :black, linewidth = 2)
+        push!(
+            traces,
+            scatter(
+                x = position .+ jitter,
+                y = values,
+                mode = "markers",
+                marker = attr(
+                    color = COLORS[algorithm],
+                    size = 10,
+                    opacity = 0.85,
+                    line = attr(color = "white", width = 1),
+                ),
+                text = ["run $index" for index in 1:length(values)],
+                hovertemplate = "%{text}<br>Value %{y:.2f}<extra>$(LABELS[algorithm])</extra>",
+                showlegend = false,
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x = [position - 0.16, position + 0.16],
+                y = fill(median(values), 2),
+                mode = "lines",
+                line = attr(color = "#202020", width = 4),
+                hovertemplate = "Median %{y:.2f}<extra></extra>",
+                showlegend = false,
+            ),
+        )
+        push!(
+            traces,
+            scatter(
+                x = [position, position],
+                y = [quantile(values, 0.25), quantile(values, 0.75)],
+                mode = "lines",
+                line = attr(color = "#202020", width = 2),
+                hoverinfo = "skip",
+                showlegend = false,
+            ),
+        )
     end
-    save_both(plot_object, stem)
+    plot_object = Plot(
+        traces,
+        plot_layout(
+            title,
+            "Algorithm",
+            ylabel;
+            tickvals = [1, 2],
+            ticktext = ["MAT (n=$(counts[1]))", "IPPO (n=$(counts[2]))"],
+            showlegend = false,
+        ),
+    )
+    save_svg(plot_object, stem)
 end
 
 function plot_summaries(final, paired, plot_directory)
@@ -447,19 +675,42 @@ function plot_summaries(final, paired, plot_directory)
         paired_complete = [row for row in paired if row.protocol == protocol &&
                            !ismissing(row.mat_final_last100) && !ismissing(row.ippo_final_last100)]
         if !isempty(paired_complete)
-            paired_plot = plot(
-                title = "$(uppercasefirst(string(protocol))) IC paired final performance (n=$(length(paired_complete)))",
-                ylabel = "Mean score over last 100 training episodes",
-                xticks = ([1, 2], ["MAT", "IPPO"]),
-                legend = false,
-            )
+            paired_traces = PlotlyJS.GenericTrace[]
             for row in paired_complete
-                plot!(paired_plot, [1, 2], [row.mat_final_last100, row.ippo_final_last100];
-                      color = :gray45, alpha = 0.45, linewidth = 1.4)
-                scatter!(paired_plot, [1, 2], [row.mat_final_last100, row.ippo_final_last100];
-                         color = [COLORS[:mat], COLORS[:ippo]], markersize = 5)
+                push!(
+                    paired_traces,
+                    scatter(
+                        x = [1, 2],
+                        y = [row.mat_final_last100, row.ippo_final_last100],
+                        mode = "lines+markers",
+                        line = attr(color = "rgba(90, 90, 90, 0.45)", width = 1.5),
+                        marker = attr(
+                            color = [COLORS[:mat], COLORS[:ippo]],
+                            size = 10,
+                            line = attr(color = "white", width = 1),
+                        ),
+                        text = [row.run_id, row.run_id],
+                        hovertemplate = "%{text}<br>Final-100 mean %{y:.2f}<extra></extra>",
+                        showlegend = false,
+                    ),
+                )
             end
-            save_both(paired_plot, joinpath(plot_directory, "$(protocol)_final_last100_paired"))
+            paired_plot = Plot(
+                paired_traces,
+                plot_layout(
+                    "$(uppercasefirst(string(protocol))) IC paired final performance " *
+                    "(n=$(length(paired_complete)))",
+                    "Algorithm",
+                    "Mean score over last 100 training episodes";
+                    tickvals = [1, 2],
+                    ticktext = ["MAT", "IPPO"],
+                    showlegend = false,
+                ),
+            )
+            save_svg(
+                paired_plot,
+                joinpath(plot_directory, "$(protocol)_final_last100_paired"),
+            )
         end
         validation = [row for row in subset if !ismissing(row.validation_mean)]
         isempty(validation) || scatter_summary(
@@ -485,18 +736,47 @@ function plot_summaries(final, paired, plot_directory)
         differences = Float64[row.difference_mat_minus_ippo for row in paired if
                               row.protocol == protocol && !ismissing(row.difference_mat_minus_ippo)]
         isempty(differences) && continue
-        paired_plot = scatter(
-            1:length(differences), differences;
-            xlabel = "Paired seed index",
-            ylabel = "MAT - IPPO last-100 score",
-            title = "$(uppercasefirst(string(protocol))) IC paired differences",
-            color = :purple3,
-            markersize = 6,
-            legend = false,
+        indices = collect(1:length(differences))
+        paired_traces = PlotlyJS.GenericTrace[
+            scatter(
+                x = [first(indices), last(indices)],
+                y = [0.0, 0.0],
+                mode = "lines",
+                line = attr(color = "#303030", width = 1.5, dash = "dash"),
+                hoverinfo = "skip",
+                showlegend = false,
+            ),
+            scatter(
+                x = indices,
+                y = differences,
+                mode = "markers",
+                marker = attr(
+                    color = COLORS[:mat],
+                    size = 11,
+                    line = attr(color = "white", width = 1),
+                ),
+                hovertemplate = "Pair %{x}<br>MAT - IPPO %{y:.2f}<extra></extra>",
+                showlegend = false,
+            ),
+            scatter(
+                x = [first(indices), last(indices)],
+                y = fill(median(differences), 2),
+                mode = "lines",
+                line = attr(color = COLORS[:mat], width = 2.5),
+                hovertemplate = "Median %{y:.2f}<extra></extra>",
+                showlegend = false,
+            ),
+        ]
+        paired_plot = Plot(
+            paired_traces,
+            plot_layout(
+                "$(uppercasefirst(string(protocol))) IC paired differences",
+                "Paired seed index",
+                "MAT - IPPO last-100 score";
+                showlegend = false,
+            ),
         )
-        hline!(paired_plot, [0.0]; color = :black, linestyle = :dash)
-        hline!(paired_plot, [median(differences)]; color = :purple3, linewidth = 2)
-        save_both(paired_plot, joinpath(plot_directory, "$(protocol)_paired_differences"))
+        save_svg(paired_plot, joinpath(plot_directory, "$(protocol)_paired_differences"))
     end
 end
 

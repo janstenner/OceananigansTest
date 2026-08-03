@@ -114,8 +114,9 @@ The collector uses every valid complete result currently present. It assumes
 neither ten runs nor complete protocols/algorithm pairs and combines imported
 and new results. It regenerates known plots to remove stale output.
 
-`results/analysis/` contains PNG/PDF learning curves (individual runs,
-rolling-50 median with 25/75-percentile ribbon, and dashed mean), individual
+`results/analysis/` contains PlotlyJS-generated SVG learning curves with white
+backgrounds (individual runs, rolling-50 median with 25/75-percentile ribbon,
+and dashed mean), individual
 curve plots, final-last-100 performance, paired differences, validation and
 runtime plots. CSV files contain run diagnostics, pairing, failures, MAT expert
 ranking, and curve statistics including mean, standard deviation, median,

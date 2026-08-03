@@ -2,7 +2,7 @@ ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
 
 using Dates
 using JLD2
-using Plots
+using PlotlyJS
 using Printf
 using Statistics
 
@@ -18,9 +18,14 @@ const CONFIG_DISPLAY_NAMES = Dict(
     :modified_full => "modified 2",
 )
 const CONFIG_COLORS = Dict(
-    :python_like => "#4C78A8",
-    :modified_half => "#F58518",
-    :modified_full => "#54A24B",
+    :python_like => "#277DA1",
+    :modified_half => "#F2A13A",
+    :modified_full => "#B41A5C",
+)
+const CONFIG_RIBBON_COLORS = Dict(
+    :python_like => "rgba(39, 125, 161, 0.18)",
+    :modified_half => "rgba(242, 161, 58, 0.18)",
+    :modified_full => "rgba(180, 35, 97, 0.18)",
 )
 const PROTOCOL_DISPLAY_NAMES = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
 
@@ -285,19 +290,8 @@ function plot_learning_curves(records, output_directory)
     outputs = String[]
 
     for protocol in PROTOCOLS
-        plot_handle = plot(
-            title = "MAT stability - $(PROTOCOL_DISPLAY_NAMES[protocol])",
-            xlabel = "Episode",
-            ylabel = "Episode reward",
-            legend = :bottomright,
-            framestyle = :box,
-            gridalpha = 0.18,
-            size = (850, 520),
-            legend_background_color = :transparent,
-            legend_foreground_color = :transparent,
-        )
-        plotted = false
-        for config_name in CONFIG_NAMES
+        traces = PlotlyJS.GenericTrace[]
+        for (config_index, config_name) in enumerate(CONFIG_NAMES)
             series = [
                 records[(protocol, replicate, config_name)].rewards
                 for replicate in 1:5
@@ -309,21 +303,97 @@ function plot_learning_curves(records, output_directory)
             values = reduce(hcat, [run[1:episode_count] for run in series])
             means = vec(mean(values; dims = 2))
             deviations = vec(std(values; dims = 2, corrected = false))
-            plot!(
-                plot_handle,
-                1:episode_count,
-                means;
-                ribbon = deviations,
-                label = "$(CONFIG_DISPLAY_NAMES[config_name]) (n=$(length(series)))",
-                color = CONFIG_COLORS[config_name],
-                fillalpha = 0.18,
-                linewidth = 2.5,
+            episodes = collect(1:episode_count)
+            push!(
+                traces,
+                scatter(
+                    x = episodes,
+                    y = means .- deviations,
+                    mode = "lines",
+                    line = attr(width = 0),
+                    hoverinfo = "skip",
+                    showlegend = false,
+                ),
             )
-            plotted = true
+            push!(
+                traces,
+                scatter(
+                    x = episodes,
+                    y = means .+ deviations,
+                    mode = "lines",
+                    line = attr(width = 0),
+                    fill = "tonexty",
+                    fillcolor = CONFIG_RIBBON_COLORS[config_name],
+                    hoverinfo = "skip",
+                    showlegend = false,
+                ),
+            )
+            push!(
+                traces,
+                scatter(
+                    x = episodes,
+                    y = means,
+                    mode = "lines",
+                    name = "$(CONFIG_DISPLAY_NAMES[config_name]) (n=$(length(series)))",
+                    legendrank = config_index,
+                    line = attr(color = CONFIG_COLORS[config_name], width = 3),
+                    hovertemplate = "Episode %{x}<br>Mean reward %{y:.2f}<extra>%{fullData.name}</extra>",
+                ),
+            )
         end
-        plotted || continue
+        isempty(traces) && continue
+        plot_handle = Plot(
+            traces,
+            Layout(
+                template = "plotly_white",
+                title = attr(
+                    text = "MAT stability - $(PROTOCOL_DISPLAY_NAMES[protocol])",
+                    x = 0.5,
+                    xanchor = "center",
+                    font = attr(size = 22, color = "#252525"),
+                ),
+                paper_bgcolor = "white",
+                plot_bgcolor = "white",
+                width = 900,
+                height = 560,
+                margin = attr(l = 90, r = 30, t = 80, b = 75),
+                font = attr(family = "Arial, sans-serif", size = 15, color = "#303030"),
+                xaxis = attr(
+                    title = attr(text = "Episode", standoff = 12),
+                    showline = true,
+                    mirror = true,
+                    linecolor = "#3A3A3A",
+                    linewidth = 1,
+                    ticks = "outside",
+                    gridcolor = "#E6E6E6",
+                    zeroline = false,
+                ),
+                yaxis = attr(
+                    title = attr(text = "Episode reward", standoff = 12),
+                    showline = true,
+                    mirror = true,
+                    linecolor = "#3A3A3A",
+                    linewidth = 1,
+                    ticks = "outside",
+                    gridcolor = "#E6E6E6",
+                    zeroline = false,
+                ),
+                legend = attr(
+                    x = 0.985,
+                    y = 0.02,
+                    xanchor = "right",
+                    yanchor = "bottom",
+                    traceorder = "normal",
+                    bgcolor = "rgba(255, 255, 255, 0.92)",
+                    bordercolor = "#CFCFCF",
+                    borderwidth = 1,
+                    font = attr(size = 13),
+                ),
+                hovermode = "x unified",
+            ),
+        )
         output = joinpath(output_directory, "learning_curves_$(protocol).svg")
-        savefig(plot_handle, output)
+        PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
         push!(outputs, output)
     end
     return outputs
@@ -334,22 +404,7 @@ function plot_final_performance(rows, output_directory)
     for protocol in PROTOCOLS
         protocol_rows = filter(row -> row.protocol === protocol, rows)
         isempty(protocol_rows) && continue
-        plot_handle = plot(
-            title = "Final reward (last $FINAL_WINDOW episodes) - " *
-                    PROTOCOL_DISPLAY_NAMES[protocol],
-            xlabel = "Configuration",
-            ylabel = "Mean episode reward",
-            legend = :bottomright,
-            xticks = (
-                1:length(CONFIG_NAMES),
-                [CONFIG_DISPLAY_NAMES[name] for name in CONFIG_NAMES],
-            ),
-            framestyle = :box,
-            gridalpha = 0.18,
-            size = (850, 520),
-            legend_background_color = :transparent,
-            legend_foreground_color = :transparent,
-        )
+        traces = PlotlyJS.GenericTrace[]
         for (index, config_name) in enumerate(CONFIG_NAMES)
             values = [
                 row.final_reward_mean
@@ -358,30 +413,97 @@ function plot_final_performance(rows, output_directory)
             ]
             isempty(values) && continue
             positions = index .+ collect(range(-0.07, 0.07; length = length(values)))
-            scatter!(
-                plot_handle,
-                positions,
-                values;
-                color = CONFIG_COLORS[config_name],
-                label = index == 1 ? "Individual runs" : "",
-                markerstrokecolor = :white,
-                markerstrokewidth = 0.6,
-                markersize = 6,
+            push!(
+                traces,
+                scatter(
+                    x = positions,
+                    y = values,
+                    mode = "markers",
+                    name = "Individual runs",
+                    legendgroup = "individual",
+                    showlegend = index == 1,
+                    marker = attr(
+                        color = CONFIG_COLORS[config_name],
+                        size = 10,
+                        opacity = 0.85,
+                        line = attr(color = "white", width = 1),
+                    ),
+                    text = ["run $replicate" for replicate in 1:length(values)],
+                    hovertemplate = "%{text}<br>Final-100 mean %{y:.2f}<extra></extra>",
+                ),
             )
-            scatter!(
-                plot_handle,
-                [index],
-                [mean(values)];
-                color = CONFIG_COLORS[config_name],
-                label = index == 1 ? "Arithmetic mean" : "",
-                marker = :diamond,
-                markerstrokecolor = :black,
-                markerstrokewidth = 1.0,
-                markersize = 9,
+            push!(
+                traces,
+                scatter(
+                    x = [index],
+                    y = [mean(values)],
+                    mode = "markers",
+                    name = "Arithmetic mean",
+                    legendgroup = "mean",
+                    showlegend = index == 1,
+                    marker = attr(
+                        color = CONFIG_COLORS[config_name],
+                        symbol = "diamond",
+                        size = 15,
+                        line = attr(color = "#202020", width = 1.5),
+                    ),
+                    hovertemplate = "Arithmetic mean %{y:.2f}<extra></extra>",
+                ),
             )
         end
+        plot_handle = Plot(
+            traces,
+            Layout(
+                template = "plotly_white",
+                title = attr(
+                    text = "Final reward (last $FINAL_WINDOW episodes) - " *
+                           PROTOCOL_DISPLAY_NAMES[protocol],
+                    x = 0.5,
+                    xanchor = "center",
+                    font = attr(size = 22, color = "#252525"),
+                ),
+                paper_bgcolor = "white",
+                plot_bgcolor = "white",
+                width = 900,
+                height = 560,
+                margin = attr(l = 100, r = 30, t = 80, b = 85),
+                font = attr(family = "Arial, sans-serif", size = 15, color = "#303030"),
+                xaxis = attr(
+                    title = attr(text = "Configuration", standoff = 14),
+                    tickmode = "array",
+                    tickvals = collect(1:length(CONFIG_NAMES)),
+                    ticktext = [CONFIG_DISPLAY_NAMES[name] for name in CONFIG_NAMES],
+                    range = [0.55, length(CONFIG_NAMES) + 0.45],
+                    showline = true,
+                    mirror = true,
+                    linecolor = "#3A3A3A",
+                    ticks = "outside",
+                    showgrid = false,
+                    zeroline = false,
+                ),
+                yaxis = attr(
+                    title = attr(text = "Mean episode reward", standoff = 12),
+                    showline = true,
+                    mirror = true,
+                    linecolor = "#3A3A3A",
+                    ticks = "outside",
+                    gridcolor = "#E6E6E6",
+                    zeroline = false,
+                ),
+                legend = attr(
+                    x = 0.80,
+                    y = 0.02,
+                    xanchor = "right",
+                    yanchor = "bottom",
+                    bgcolor = "rgba(255, 255, 255, 0.92)",
+                    bordercolor = "#CFCFCF",
+                    borderwidth = 1,
+                    font = attr(size = 13),
+                ),
+            ),
+        )
         output = joinpath(output_directory, "final_performance_$(protocol).svg")
-        savefig(plot_handle, output)
+        PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
         push!(outputs, output)
     end
     return outputs
@@ -392,21 +514,7 @@ function plot_runtimes(rows, output_directory)
     for protocol in PROTOCOLS
         protocol_rows = filter(row -> row.protocol === protocol, rows)
         isempty(protocol_rows) && continue
-        plot_handle = plot(
-            title = "Training runtime - $(PROTOCOL_DISPLAY_NAMES[protocol])",
-            xlabel = "Configuration",
-            ylabel = "Hours",
-            legend = :bottomright,
-            xticks = (
-                1:length(CONFIG_NAMES),
-                [CONFIG_DISPLAY_NAMES[name] for name in CONFIG_NAMES],
-            ),
-            framestyle = :box,
-            gridalpha = 0.18,
-            size = (850, 520),
-            legend_background_color = :transparent,
-            legend_foreground_color = :transparent,
-        )
+        traces = PlotlyJS.GenericTrace[]
         for (index, config_name) in enumerate(CONFIG_NAMES)
             values = [
                 row.elapsed_seconds / 3600
@@ -415,30 +523,96 @@ function plot_runtimes(rows, output_directory)
             ]
             isempty(values) && continue
             positions = index .+ collect(range(-0.07, 0.07; length = length(values)))
-            scatter!(
-                plot_handle,
-                positions,
-                values;
-                color = CONFIG_COLORS[config_name],
-                label = index == 1 ? "Individual runs" : "",
-                markerstrokecolor = :white,
-                markerstrokewidth = 0.6,
-                markersize = 6,
+            push!(
+                traces,
+                scatter(
+                    x = positions,
+                    y = values,
+                    mode = "markers",
+                    name = "Individual runs",
+                    legendgroup = "individual",
+                    showlegend = index == 1,
+                    marker = attr(
+                        color = CONFIG_COLORS[config_name],
+                        size = 10,
+                        opacity = 0.85,
+                        line = attr(color = "white", width = 1),
+                    ),
+                    text = ["run $replicate" for replicate in 1:length(values)],
+                    hovertemplate = "%{text}<br>Runtime %{y:.2f} h<extra></extra>",
+                ),
             )
-            scatter!(
-                plot_handle,
-                [index],
-                [mean(values)];
-                color = CONFIG_COLORS[config_name],
-                label = index == 1 ? "Arithmetic mean" : "",
-                marker = :diamond,
-                markerstrokecolor = :black,
-                markerstrokewidth = 1.0,
-                markersize = 9,
+            push!(
+                traces,
+                scatter(
+                    x = [index],
+                    y = [mean(values)],
+                    mode = "markers",
+                    name = "Arithmetic mean",
+                    legendgroup = "mean",
+                    showlegend = index == 1,
+                    marker = attr(
+                        color = CONFIG_COLORS[config_name],
+                        symbol = "diamond",
+                        size = 15,
+                        line = attr(color = "#202020", width = 1.5),
+                    ),
+                    hovertemplate = "Arithmetic mean %{y:.2f} h<extra></extra>",
+                ),
             )
         end
+        plot_handle = Plot(
+            traces,
+            Layout(
+                template = "plotly_white",
+                title = attr(
+                    text = "Training runtime - $(PROTOCOL_DISPLAY_NAMES[protocol])",
+                    x = 0.5,
+                    xanchor = "center",
+                    font = attr(size = 22, color = "#252525"),
+                ),
+                paper_bgcolor = "white",
+                plot_bgcolor = "white",
+                width = 900,
+                height = 560,
+                margin = attr(l = 90, r = 30, t = 80, b = 85),
+                font = attr(family = "Arial, sans-serif", size = 15, color = "#303030"),
+                xaxis = attr(
+                    title = attr(text = "Configuration", standoff = 14),
+                    tickmode = "array",
+                    tickvals = collect(1:length(CONFIG_NAMES)),
+                    ticktext = [CONFIG_DISPLAY_NAMES[name] for name in CONFIG_NAMES],
+                    range = [0.55, length(CONFIG_NAMES) + 0.45],
+                    showline = true,
+                    mirror = true,
+                    linecolor = "#3A3A3A",
+                    ticks = "outside",
+                    showgrid = false,
+                    zeroline = false,
+                ),
+                yaxis = attr(
+                    title = attr(text = "Hours", standoff = 12),
+                    showline = true,
+                    mirror = true,
+                    linecolor = "#3A3A3A",
+                    ticks = "outside",
+                    gridcolor = "#E6E6E6",
+                    zeroline = false,
+                ),
+                legend = attr(
+                    x = 0.985,
+                    y = 0.02,
+                    xanchor = "right",
+                    yanchor = "bottom",
+                    bgcolor = "rgba(255, 255, 255, 0.92)",
+                    bordercolor = "#CFCFCF",
+                    borderwidth = 1,
+                    font = attr(size = 13),
+                ),
+            ),
+        )
         output = joinpath(output_directory, "runtimes_$(protocol).svg")
-        savefig(plot_handle, output)
+        PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
         push!(outputs, output)
     end
     return outputs
