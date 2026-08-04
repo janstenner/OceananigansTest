@@ -137,6 +137,23 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Vergleich mit GR unter demselben Auswertungsprotokoll.
   - Prüfung der GO-Gruppensortierung, Rückzuordnung und channel-coupled Gruppierung als Teil der Studie.
 
+  Implementierungsstand:
+
+  - Die gemeinsame Paket-6/7/8-Infrastruktur unter
+    `Revision/Expert_Apprentice_Distillation` enthält die Revision-Kopie des
+    Expert-Apprentice-Codes, direkt inkludbares Corpus-Laden, atomare
+    Fixed-/Varying-IC-Worker, deterministische Expertauflösung und einen
+    persistenten tmux-Launcher.
+  - Der Varying-IC-Plan erzeugt 40 Training-Worker aus 20 Basiszuständen und
+    zwei Spiegelungen; jeder Worker besitzt alle 96 Offsets. Fixed IC verwendet
+    einen Worker und eine Episode.
+  - Die Worker speichern globale `3 × 48 × 8`-Sensortensoren statt mehrfach
+    überlappender lokaler Fenster. Callback- und echte Ein-Schritt-Tests prüfen
+    atomare Speicherung, Split-Merge und bitgenaue Rekonstruktion der
+    `360 × 12` MAT-Observation.
+  - Produktionscorpus, finale Experts, Apprentice-Budgets, Pareto-Auswertung
+    und die übrigen vorab zu schließenden Planungspunkte stehen noch aus.
+
   Abschluss:
 
   - Es liegt genügend RBC-basierte Evidenz vor, um GO entweder mit einer begründeten Konfiguration im Paper zu behalten oder als sekundär einzustufen.

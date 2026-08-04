@@ -37,6 +37,18 @@ Sparse Sensing paper.
 - `VaryingIC_Corpus/varying_ic_corpus.jld2`: Generated corpus data.
   This file is created only by explicit generation or save calls.
 - `VaryingIC_Corpus/plots/`: Generated split overview images.
+- `Expert_Apprentice_Distillation/Expert_Apprentice.jl`: Shared revision copy
+  of the MAT expert-apprentice implementation used as the Package-6/7/8
+  training starting point.
+- `Expert_Apprentice_Distillation/DistillationCorpus.jl`: Directly includable
+  Fixed-/Varying-IC teacher-rollout shard generation, atomic persistence,
+  expert discovery, in-memory split merge, and lossless global-to-local MAT
+  observation reconstruction.
+- `Expert_Apprentice_Distillation/run_corpus_worker.jl` and
+  `launch_tmux.sh`: One-shard worker and persistent parallel launcher for the
+  shared distillation corpus.
+- `Expert_Apprentice_Distillation/README.md`: Corpus layout, expert resolution,
+  worker counts, launch, restart, and storage notes.
 
 ## Revision Run Files
 
@@ -193,6 +205,33 @@ At most five snapshots are placed in each row, so the default 20-snapshot
 training overview uses a `4 × 5` layout.
 All panels use common color limits for the selected field.
 
+## Expert–Apprentice Distillation Corpus
+
+The Package-6/7/8 distillation corpus is stored as independent atomic worker
+JLD2 files. A Varying-IC worker owns exactly one
+`(split, basis seed, mirror)` combination and evaluates all 96 horizontal
+offsets for 200 deterministic expert control steps. The default training plan
+therefore has 40 workers. Validation has two workers and test has four. Fixed
+IC uses one worker and one 200-step episode, exposed as the same in-memory
+training, validation, and test dataset.
+
+Worker files store the unique `3 × 48 × 8` global sensor tensor and `1 × 12`
+expert action means as `Float32`. They do not persist the twelve overlapping
+local MAT windows. `local_mat_observation` reconstructs the exact `360 × 12`
+input and every production worker must pass the bit-exact reconstruction check
+against the corresponding Revision MAT run file before writing data.
+
+Including `DistillationCorpus.jl` normally scans all available complete worker
+JLD2 files and merges them by protocol and split into
+`DISTILLATION_CORPUS`. Generation workers explicitly disable this top-level
+autoload so a new shard does not load the already generated multi-gigabyte
+training set.
+
+Production generation requires a persisted Fixed-IC or Varying-IC expert.
+Every shard stores the checkpoint SHA-256 identifier, and the loader rejects
+shards from different experts within one dataset. A freshly initialized MAT is
+permitted only behind an explicit smoke-test flag.
+
 ## Maintenance Rules
 
 - Keep `Implementation_Plan.md` synchronized with revision-scope decisions and
@@ -204,6 +243,12 @@ All panels use common color limits for the selected field.
 - Preserve split isolation at the basis-seed level.
 - Preserve seeded behavior by routing all random selection through caller
   supplied RNG objects.
+- Preserve the one-worker-per-`(split, basis seed, mirror)` distillation
+  ownership, all-96-offset production coverage, deterministic expert means,
+  atomic worker paths, and strict expert-identity checks.
+- Keep compact distillation observations losslessly reconstructable as the
+  exact local MAT inputs; any featurization or positional-encoding change must
+  update and re-run the reconstruction audit.
 - Preserve the package-3 configuration names, flags, paired seed plan, exact
   episode budgets, atomic per-configuration saves, and restart-safe paths.
 - Do not treat offsets or reflections of one basis snapshot as independent

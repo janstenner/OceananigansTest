@@ -403,3 +403,82 @@ Die teuren Closed-Loop-Auswertungen folgen erst in Paket 7 und 8 für wenige Par
 
 Empfohlen wird, die Gesamtzahl aktiver Inputs als Anzahl der global eindeutigen, beibehaltenen Sensor-Kanal-Paare nach Auflösung der überlappenden Fenster zu definieren.
 Diese Größe ist für die spätere Deploymentaussage aussagekräftiger als die Anzahl mehrfach vorkommender lokaler Inputzeilen.
+
+## Offene Punkte für die Implementierungsplanung
+
+Die folgenden acht Punkte werden vor den Produktionsruns gemeinsam festgelegt.
+Punkt 1 blockiert nicht die vorbereitende Implementierung; bis die finalen
+Experts vorliegen, dürfen ausschließlich technische Smoke-Tests einen frisch
+initialisierten MAT als Test-Expert verwenden.
+
+1. **Experts und Apprentice-Architektur einfrieren.**
+   Für Fixed IC und Varying IC werden die finalen Expert-Checkpointpfade,
+   Checkpoint-IDs und die vollständige MAT-Apprentice-Konfiguration in einem
+   reproduzierbaren Manifest festgehalten.
+2. **RBC-Datenprotokoll vollständig spezifizieren.**
+   Festzulegen sind Rolloutanzahl und -länge, IC-Transformationen, Splitregeln,
+   Datenformat, Metadaten, Normalisierung sowie Speicherung oder Berechnung der
+   Teacher-Aktionsmittel. Fixed IC verwendet dieselbe einzelne Episode für
+   Training, Validation und Test. Varying IC verwendet strikt getrennte
+   Corpus-Basen für Training, Validation und Test.
+3. **Trainingsbudget und Bedeutung eines Trainingsschritts definieren.**
+   Gradient-Updates, Batchgröße, verarbeitete Beispiele, Proximalanwendungen
+   sowie Checkpoint- und Validationintervalle werden explizit angegeben. Ein
+   äußerer Schleifenschritt darf nicht stillschweigend je nach IC-Protokoll
+   unterschiedlich viele Optimizer- oder Proximalupdates bezeichnen.
+4. **Methodennamen eindeutig auf den Code abbilden.**
+   GO entspricht `:gro_asc`, GR entspricht `:weighted`, und Standard-GrOWL
+   entspricht `:growl`. Neue Runner verwenden eine explizite Methodentabelle,
+   damit Legacy-Namen keine falsche Konfiguration auswählen.
+5. **Gesamtzahl aktiver Inputs endgültig definieren.**
+   Zu entscheiden sind die Zusammenführung mehrfach vorkommender lokaler
+   Fensterzeilen, die Zählung von Sensor-Kanal-Paaren gegenüber physischen
+   Sensororten sowie die Behandlung möglicher Positionsinformationen.
+6. **Nullgruppen-Wiederherstellung endgültig behandeln.**
+   Die bisherige zufällige Wiederherstellung in `apply_growl` wird bevorzugt
+   entfernt; alternativ müsste sie vollständig deterministisch und über den
+   Run-RNG kontrolliert erfolgen. Degenerierte Läufe werden als Ergebnis
+   gespeichert und nicht durch unkontrollierte Zufälligkeit repariert.
+7. **Expert-Matching mathematisch vollständig definieren.**
+   Festzulegen sind normalisierte oder physikalische Actions, die Gewichtung
+   über Zustände, Aktuatoren und Komponenten, der Umgang mit Rolloutlängen
+   sowie Teacher-forced gegenüber autoregressiver Apprentice-Auswertung.
+8. **Inputbereiche und numerische Akzeptanzkriterien vorab festlegen.**
+   Konservative, mittlere und aggressive Inputbereiche sowie die Begriffe
+   brauchbares Matching, wiederholte Erreichbarkeit und gegenüber GR nicht
+   fundamental schlechtere Stabilität erhalten vor Einsicht in die
+   Produktionsresultate numerische Definitionen.
+
+## Festlegung zum gemeinsamen Distillation-Corpus
+
+Die Teacher-Rollouts werden einmal in der gemeinsamen Infrastruktur unter
+`Revision/Expert_Apprentice_Distillation` erzeugt und anschließend von Paket 6,
+7 und 8 unverändert verwendet.
+
+Für Fixed IC erzeugt ein einzelner Worker genau eine deterministische
+200-Schritt-Episode. Derselbe gespeicherte Datensatz dient als Training-,
+Validation- und Testmenge.
+
+Für Varying IC wird für jede Basis des jeweiligen Splits die vollständige
+Transformationsmenge aus beiden Spiegelungszuständen und allen 96 horizontalen
+Offsets deterministisch mit dem zugehörigen Expert ausgewertet. Ein Worker
+besitzt genau eine Kombination aus Split, Basis-Seed und Spiegelungszustand und
+erzeugt darin alle 96 Offsetepisoden mit jeweils 200 Kontrollschritten. Daraus
+folgen:
+
+| Split | Basen | Worker | Episoden | Zeitschritte |
+|---|---:|---:|---:|---:|
+| Training | 20 | 40 | 3.840 | 768.000 |
+| Validation | 1 | 2 | 192 | 38.400 |
+| Test | 2 | 4 | 384 | 76.800 |
+
+Paket 6 verwendet ausschließlich Training und Validation. Die Testshards bleiben
+für die spätere finale Auswertung in Paket 8 ungenutzt.
+
+Gespeichert werden pro Zeitschritt das global eindeutige
+`3 × 48 × 8`-Sensortensor und die `1 × 12` Expert-Aktionsmittel als `Float32`.
+Die zwölf überlappenden lokalen MAT-Fenster werden nicht redundant gespeichert,
+sondern beim Laden bitgenau als `360 × 12`-Observation rekonstruiert. Damit
+benötigt der Varying-IC-Trainingscorpus ungefähr 3,33 GiB statt ungefähr
+12,4 GiB. Jeder Worker prüft vor der Generierung, dass die Rekonstruktion exakt
+mit der Observation des verwendeten Revision-MAT-Run-Files übereinstimmt.
