@@ -151,8 +151,23 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     überlappender lokaler Fenster. Callback- und echte Ein-Schritt-Tests prüfen
     atomare Speicherung, Split-Merge und bitgenaue Rekonstruktion der
     `360 × 12` MAT-Observation.
-  - Produktionscorpus, finale Experts, Apprentice-Budgets, Pareto-Auswertung
-    und die übrigen vorab zu schließenden Planungspunkte stehen noch aus.
+  - Der Apprentice-Code verwendet nur noch die kanonischen Methoden `:go`,
+    `:gr`, `:group_lasso` und `:growl`. Ein Trainingsschritt ist genau ein
+    Optimizer-Update; Regularisierungsstärke, Proximalintervall und ein
+    optionaler Finetune-Abschnitt mit fester nativer Maske sind explizit
+    konfiguriert. Ergebnisabhängige Stopps, Rollback und zufällige
+    Nullgruppenwiederherstellung sind entfernt.
+  - Echte Corpus-Validation, reine gruppenkonsistente Maskenerzeugung und das
+    gemeinsame Pareto-Archiv sind implementiert. Alle Messwerte und Masken
+    bleiben erhalten; nur aktuelle Run-Fronten besitzen Modellcheckpoints,
+    wobei alle Masken eines Trainingsschritts genau ein Modell teilen.
+    Dominierte Modelle werden referenzbasiert periodisch und final bereinigt;
+    der Restart-Checkpoint liegt getrennt unter `resume/latest.jld2`.
+  - Paket 6 erzeugt bereits die später benötigten Hard-Threshold-Kandidaten,
+    wertet für seine GO-Sensitivitätsfrage jedoch ausschließlich native
+    Regularisierer-Sparsity aus.
+  - Produktionscorpus, finale Experts, konkrete Apprentice-Budgets und
+    Thresholdstufen sowie die numerischen Akzeptanzbereiche stehen noch aus.
 
   Abschluss:
 

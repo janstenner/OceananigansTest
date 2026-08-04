@@ -5,18 +5,44 @@ revision Packages 6, 7, and 8.
 
 ## Files
 
-- `Expert_Apprentice.jl`: revision copy of the existing MAT
-  expert–apprentice implementation and the starting point for the shared
-  Package-6/7/8 training runner.
+- `Expert_Apprentice.jl`: shared MAT apprentice training, real corpus
+  validation, native/group-consistent hard-threshold mask generation, and the
+  canonical `:go`, `:gr`, `:group_lasso`, and `:growl` method configurations.
 - `DistillationCorpus.jl`: directly includable worker generation, atomic JLD2
   persistence, expert discovery, corpus loading, and global-to-local
   observation reconstruction.
+- `ParetoArchive.jl`: shared per-run candidate archive, strict two-objective
+  dominance, atomic manifests, reference-based model garbage collection, and
+  independent resume checkpoints.
 - `run_corpus_worker.jl`: one Fixed-IC or Varying-IC worker entry point.
 - `execute_corpus_worker.jl`: post-run-file adapter kept separate for Julia
   world-age-safe access to the selected MAT environment.
 - `prepare_corpus_workers.jl`: deterministic worker manifest creation.
 - `launch_tmux.sh`: detached, restart-safe parallel launch.
 - `test_distillation_corpus.jl`: small callback-based storage and merge tests.
+- `test_pareto_archive.jl`: archive dominance, shared-checkpoint, garbage
+  collection, rebuild, and resume tests.
+
+## Apprentice training and candidates
+
+Experiment scripts own the scientific policy. They construct
+`ApprenticeTrainingConfig`, `CandidateSchedule`, the complete vector of
+`HardThresholdSpec`s, and a `ParetoArchiveManager`, then call
+`train_apprentice!`. One training update is exactly one optimizer update;
+`proximal_interval` controls proximal applications independently.
+
+Validation always uses the loaded corpus `:validation` split. Autoregressive
+action matching is the default Pareto objective; teacher-forced matching can
+be stored as a diagnostic. Native zeros and post-hoc hard-threshold masks are
+separate candidate types. Thresholding is group-consistent and never mutates
+the model.
+
+All evaluated metrics and masks remain in per-update evaluation JLD2s. Only
+current per-run Pareto survivors receive a loadable model, and every survivor
+from one training update shares that update's single model checkpoint.
+`resume/latest.jld2` is separate from the scientific archive. Logical Pareto
+pruning happens after every evaluation; unreferenced model files are removed
+periodically and on finalization.
 
 ## Corpus layout
 

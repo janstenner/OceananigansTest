@@ -61,7 +61,8 @@ Die für Paket 6 erzeugten Teacher-Daten werden anschließend unverändert in Pa
 
 ## 3. Variierter Parameter
 
-Variiert wird ausschließlich die multiplikative GO-Stärke `growl_power_used`.
+Variiert wird ausschließlich die multiplikative GO-Stärke
+`regularization_strength`.
 Die geordnete Gewichtsfolge
 
 $$
@@ -86,8 +87,8 @@ Vorgesehen ist folgender vorab festgelegter Dreipunktsweep:
 Die drei Werte entsprechen jeweils $0.5\times$, $1\times$ und $2\times$ des bisherigen Werts.
 Nach Beginn der Produktionsruns wird der Sweep nicht anhand der Resultate erweitert oder verschoben.
 
-Das im Code als `power` bezeichnete Argument ist keine mathematische Potenz.
-Es ist der Skalierungsfaktor der GO-Gewichte.
+Die Bezeichnung ist methodenübergreifend: Sie beschreibt die Stärke des
+jeweiligen Regularisierers und keine mathematische Potenz.
 
 ## 4. Experimentumfang
 
@@ -166,11 +167,9 @@ Vor den Produktionsruns müssen kleine deterministische Tests bestätigen:
 7. Exakt auf null gesetzte Gruppen erzeugen die erwartete Maske.
 8. Alle Zufallsoperationen verwenden den Run-RNG.
 
-Besonders zu behandeln ist die bisherige zufällige Wiederherstellung von Nullgruppen in `apply_growl`.
-Sie darf in der Sensitivitätsstudie keine unkontrollierte zusätzliche Zufälligkeit einführen.
-
-Bevorzugt wird die zufällige Wiederherstellung aus der Studie entfernt und ein fast vollständig geprunter Lauf als degeneriertes Ergebnis festgehalten.
-Alternativ muss die Wiederherstellung deterministisch erfolgen.
+Die frühere zufällige Wiederherstellung von Nullgruppen ist entfernt. Ein fast
+vollständig geprunter Lauf wird als degeneriertes Ergebnis festgehalten und
+nicht nachträglich repariert.
 
 ## 8. Training ohne manuelles Stoppen
 
@@ -231,17 +230,45 @@ Für die Archivierung gilt:
 
 Ein innerhalb seines eigenen Runs dominierter Kandidat kann auch auf einer später gepoolten Front nicht mehr benötigt werden, solange sein Dominator erhalten bleibt.
 
-## 10. Kein nachträgliches Hard Thresholding
+### Zuständigkeit und persistente Ablage
 
-Paket 6 zählt ausschließlich die durch GO beziehungsweise GR selbst exakt auf null gesetzten Gruppen.
-Es wird kein nachträglicher Near-zero-Threshold verwendet.
+Das jeweilige Experiment-Script besitzt die wissenschaftliche Policy. Es legt
+insbesondere fest:
 
-Dadurch werden zwei getrennte Effekte nicht vermischt:
+- ab welchem Gradient-Update Kandidaten gespeichert werden
+- in welchem Updateintervall Validation stattfindet
+- welche Hard-Threshold-Stufen zusätzlich evaluiert werden
+- wie oft physische Garbage Collection und Restart-Sicherung erfolgen
+- Run-ID, Outputpfad und vollständige Konfiguration
 
-1. Sensitivität des Regularisierungstrainings
-2. Sensitivität der nachträglichen Maskenextraktion
+Die gemeinsame `ParetoArchive`-Infrastruktur übernimmt dagegen Mechanik und
+Konsistenz: Dominanz, atomare JLD2-Schreibvorgänge, Manifest, Wiederaufbau,
+referenzbasierte Löschung und `resume/latest.jld2`.
 
-Hard Thresholding wird erst in Paket 7 und 8 als eigener Kandidatenschritt in die Pareto-Erzeugung aufgenommen.
+Alle Kandidaten eines Trainingsschritts teilen genau einen Modellcheckpoint.
+Ihre kleinen Messwert- und Maskendatensätze bleiben unabhängig davon erhalten,
+ob sie die aktuelle Front erreichen. Nur wenn mindestens ein Kandidat des
+Schritts nichtdominiert ist, wird das zugehörige Modell dauerhaft geschrieben.
+Die logische Front wird bei jeder Validation neu bestimmt; unreferenzierte
+Modelldateien werden periodisch, beim Abschluss und beim Wiederanlauf bereinigt.
+
+Die persistente Reihenfolge lautet: zunächst Modellcheckpoint, dann
+Evaluation-Datei, dann aktualisiertes Manifest, erst danach Löschung nicht mehr
+referenzierter Modelle. Dadurch verweist ein veröffentlichtes Manifest nie auf
+einen noch nicht geschriebenen neuen Kandidaten.
+
+## 10. Native Sparsity und Hard Thresholding bleiben getrennt
+
+Paket 6 evaluiert und archiviert bereits alle später in Paket 7 und 8
+benötigten Hard-Threshold-Stufen. Dadurch müssen identische Apprentice-
+Checkpoints später nicht erneut ausgewertet oder gespeichert werden.
+
+Für seine GO-Sensitivitätsauswertung verwendet Paket 6 jedoch ausschließlich
+den Kandidaten `:native`, also genau die Gruppen, die der Regularisierer selbst
+auf null gesetzt hat. Die Hard-Threshold-Kandidaten tragen einen getrennten
+Kandidatentyp und fließen nicht in diese Sensitivitätsfront ein. Damit bleiben
+Regularisierungseffekt und nachträgliche Maskenextraktion wissenschaftlich
+getrennt, obwohl beide technisch im selben Archiv liegen.
 
 ## 11. Drei Ebenen der Pareto-Auswertung
 
@@ -391,7 +418,8 @@ Paket 6 umfasst:
 - Pareto-Archive über regelmäßig ausgewertete Trainingscheckpoints
 - ausschließlich Offline-Auswertung
 - keine Testdaten
-- kein Hard Thresholding
+- alle später benötigten Hard-Threshold-Stufen werden mit ausgewertet und
+  archiviert, aber nicht für die GO-Sensitivitätsauswertung verwendet
 - keine Closed-Loop-Simulation pro Sensitivitätspunkt
 - keine Toy-Probleme
 - keine Lasso- oder Standard-GrOWL-Sweeps
@@ -399,10 +427,12 @@ Paket 6 umfasst:
 Der Umfang bleibt bei 18 GO-Runs und 6 GR-Runs.
 Die teuren Closed-Loop-Auswertungen folgen erst in Paket 7 und 8 für wenige Pareto-Kandidaten.
 
-## Noch festzulegende Begriffsentscheidung
+## Festgelegte Zählweise aktiver Inputs
 
-Empfohlen wird, die Gesamtzahl aktiver Inputs als Anzahl der global eindeutigen, beibehaltenen Sensor-Kanal-Paare nach Auflösung der überlappenden Fenster zu definieren.
-Diese Größe ist für die spätere Deploymentaussage aussagekräftiger als die Anzahl mehrfach vorkommender lokaler Inputzeilen.
+Die Pareto-Zielgröße ist die Anzahl global eindeutiger, beibehaltener
+Sensor-Kanal-Paare nach Auflösung der überlappenden lokalen Fenster. Zusätzlich
+wird die kanalübergreifend zusammengefasste Anzahl aktiver physischer
+Sensororte als Diagnosewert gespeichert.
 
 ## Offene Punkte für die Implementierungsplanung
 
@@ -427,18 +457,16 @@ initialisierten MAT als Test-Expert verwenden.
    äußerer Schleifenschritt darf nicht stillschweigend je nach IC-Protokoll
    unterschiedlich viele Optimizer- oder Proximalupdates bezeichnen.
 4. **Methodennamen eindeutig auf den Code abbilden.**
-   GO entspricht `:gro_asc`, GR entspricht `:weighted`, und Standard-GrOWL
-   entspricht `:growl`. Neue Runner verwenden eine explizite Methodentabelle,
-   damit Legacy-Namen keine falsche Konfiguration auswählen.
+   Festgelegt sind ausschließlich die kanonischen Symbole `:go`, `:gr`,
+   `:group_lasso` und `:growl`. Legacy-Symbole werden im Revision-Ordner nicht
+   unterstützt.
 5. **Gesamtzahl aktiver Inputs endgültig definieren.**
    Zu entscheiden sind die Zusammenführung mehrfach vorkommender lokaler
    Fensterzeilen, die Zählung von Sensor-Kanal-Paaren gegenüber physischen
    Sensororten sowie die Behandlung möglicher Positionsinformationen.
 6. **Nullgruppen-Wiederherstellung endgültig behandeln.**
-   Die bisherige zufällige Wiederherstellung in `apply_growl` wird bevorzugt
-   entfernt; alternativ müsste sie vollständig deterministisch und über den
-   Run-RNG kontrolliert erfolgen. Degenerierte Läufe werden als Ergebnis
-   gespeichert und nicht durch unkontrollierte Zufälligkeit repariert.
+   Festgelegt: Die zufällige Wiederherstellung ist entfernt. Degenerierte
+   Läufe werden als Ergebnis gespeichert und nicht repariert.
 7. **Expert-Matching mathematisch vollständig definieren.**
    Festzulegen sind normalisierte oder physikalische Actions, die Gewichtung
    über Zustände, Aktuatoren und Komponenten, der Umgang mit Rolloutlängen

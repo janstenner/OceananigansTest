@@ -1,6 +1,9 @@
 using Zygote
 using Optimisers
 using Flux
+using LinearAlgebra
+using Random
+using Statistics
 
 
 
@@ -17,9 +20,6 @@ randomIC = EXPERT_APPRENTICE_PROTOCOL === :varying
 group_channels = lowercase(get(ENV, "DISTILLATION_GROUP_CHANNELS", "true")) in
                  ("1", "true", "yes")
 
-include(joinpath(EXPERT_APPRENTICE_PROJECT_ROOT, "rIC-validation.jl"))
-include(joinpath(EXPERT_APPRENTICE_PROJECT_ROOT, "fixedIC-validation.jl"))
-
 revision_run_file = randomIC ? "VaryingIC_MAT.jl" : "FixedIC_MAT.jl"
 include(joinpath(
     EXPERT_APPRENTICE_PROJECT_ROOT,
@@ -29,6 +29,9 @@ include(joinpath(
 ))
 if !isdefined(@__MODULE__, :DISTILLATION_CORPUS)
     include(joinpath(@__DIR__, "DistillationCorpus.jl"))
+end
+if !isdefined(@__MODULE__, :ParetoArchiveManager)
+    include(joinpath(@__DIR__, "ParetoArchive.jl"))
 end
 
 allow_fresh_expert = lowercase(
@@ -42,38 +45,7 @@ const DISTILLATION_EXPERT_METADATA = load_distillation_expert!(
 
 
 
-# rIC scores
-#reward_sums = [554.6305286939099, 560.2386884968918, 565.4618377650218, 557.434398548902, 561.6262672069304, 557.466004557712, 555.4317062304078, 555.4464920992392, 572.1192004805054, 548.639008840305, 548.6114441745203, 550.9900855238976, 556.3108301071123, 585.3668568567299, 552.5313324045303]
-#reward_sums_apprentice_gro_asc = [553.6471336620853, 559.751815049584, 566.2764691470024, 556.4568649930598, 563.2828020581873, 556.4910212653255, 555.1814424620101, 555.1843951026261, 575.2583532783839, 549.4435999495879, 549.4232846558572, 552.0851559461055, 555.9527187866161, 566.501420245082, 552.6937315511888]
-#reward_sums_apprentice_weighted = [555.5770322738642, 561.3015369017154, 567.318438725923, 558.8736695183811, 565.0696314231911, 558.9010305657155, 556.3769813340348, 556.3772801885348, 580.7108541831584, 551.5193677556914, 551.5014181811501, 552.9761762643988, 556.9237503040824, 579.3869118654817, 553.5396500447647]
-
-
-# load_apprentice()
-# load_apprentice(701) # for window size 7
-# agent.policy.approximator.actor.logσ[1] = -14.0f0
-
-batch_size = 20
-batch_size_rIC = 100
-
-num_states = 200
-num_states_rIC = 4_000
-
-
-loss_stop_threshold = Inf
-loss_stop_threshold_rIC = Inf
-
-
-growl_freq = 1
-growl_srate = 0.999
-# theta_rate = 0.7
-
-
-
 group_rows_by_overlap = true
-
-
-training_steps = 8_000
-extra_steps = 0
 
 
 
@@ -116,73 +88,57 @@ end
 
 betas = (0.9, 0.999)
 
-# Tracks which apprentice variant should be persisted/loaded.
-#apprentice_training_kind = :gro_asc
 apprentice_training_kind = :growl
-#apprentice_training_kind = :lasso
-#apprentice_training_kind = :weighted
 apprentice_training_rIC = randomIC
 
-const APPRENTICE_KIND_ALIASES = Dict{Symbol, Symbol}(
-    :gro_asc => :gro_asc,
-    :growl => :growl,
-    :lasso => :lasso,
-    :weighted => :weighted,
-    :growl_legacy => :gro_asc,
-)
-
-const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple{(:label, :regularizer, :power_fixed, :power_rIC, :weight_factor_target, :weight_factor_target_rIC, :uses_operator_weights, :theta_mode), Tuple{String, Symbol, Float64, Float64, Float64, Float64, Bool, Union{Nothing, Symbol}}}}(
-    :gro_asc => (
+const APPRENTICE_KIND_CONFIG = Dict{Symbol, NamedTuple}(
+    :go => (
         label = "Group Ordered",
-        regularizer = :group_owl,
-        power_fixed = 0.09,
-        power_rIC = 0.025,
-        weight_factor_target = 5.0,
-        weight_factor_target_rIC = 5.0,
+        regularizer = :grouped,
+        regularization_strength_fixed = 0.09,
+        regularization_strength_varying = 0.025,
         uses_operator_weights = false,
-        theta_mode = :gro_asc,
+        theta_mode = :go,
     ),
-    :lasso => (
-        label = "Lasso",
-        regularizer = :group_owl,
-        power_fixed = 0.0001,
-        power_rIC = 0.00012,
-        weight_factor_target = 6.0,
-        weight_factor_target_rIC = 8.0,
-        uses_operator_weights = false,
-        theta_mode = :lasso,
-    ),
-    :growl => (
-        label = "Growl",
-        regularizer = :group_owl,
-        power_fixed = 0.00006,
-        power_rIC = 0.0004,
-        weight_factor_target = 1.0,
-        weight_factor_target_rIC = 5.0,
-        uses_operator_weights = false,
-        theta_mode = :growl,
-    ),
-    :weighted => (
+    :gr => (
         label = "Group Reweighted",
-        regularizer = :weighted_l1,
-        power_fixed = 0.00004,
-        power_rIC = 0.0001,
-        weight_factor_target = 5.0,
-        weight_factor_target_rIC = 5.0,
+        regularizer = :group_reweighted,
+        regularization_strength_fixed = 0.00004,
+        regularization_strength_varying = 0.0001,
         uses_operator_weights = true,
         theta_mode = nothing,
+    ),
+    :group_lasso => (
+        label = "Group Lasso",
+        regularizer = :grouped,
+        regularization_strength_fixed = 0.0001,
+        regularization_strength_varying = 0.00012,
+        uses_operator_weights = false,
+        theta_mode = :group_lasso,
+    ),
+    :growl => (
+        label = "GrOWL",
+        regularizer = :grouped,
+        regularization_strength_fixed = 0.00006,
+        regularization_strength_varying = 0.0004,
+        uses_operator_weights = false,
+        theta_mode = :growl,
     ),
 )
 
 function normalize_apprentice_kind(kind)::Symbol
     kind_sym = kind isa Symbol ? kind : Symbol(lowercase(string(kind)))
-    return get(APPRENTICE_KIND_ALIASES, kind_sym, kind_sym)
+    haskey(APPRENTICE_KIND_CONFIG, kind_sym) || error(
+        "Unknown apprentice kind '$kind_sym'. Available kinds: " *
+        join(string.(available_apprentice_kinds()), ", "),
+    )
+    return kind_sym
 end
 
 function apprentice_kind_sort_key(kind)::Tuple{Int, String}
-    normalized = normalize_apprentice_kind(kind)
-    priority = Dict(:gro_asc => 0, :lasso => 1, :growl => 2, :weighted => 3)
-    return (get(priority, normalized, 100), string(normalized))
+    kind_sym = kind isa Symbol ? kind : Symbol(lowercase(string(kind)))
+    priority = Dict(:go => 0, :gr => 1, :group_lasso => 2, :growl => 3)
+    return (get(priority, kind_sym, 100), string(kind_sym))
 end
 
 function available_apprentice_kinds()
@@ -210,39 +166,54 @@ function apprentice_kind_config(kind)
     return normalized, config
 end
 
-function register_apprentice_kind!(
-    kind::Symbol;
-    label::String,
-    regularizer::Symbol = :none,
-    power_fixed::Real = 0.0,
-    power_rIC::Real = 0.0,
-    weight_factor_target::Real = 5.0,
-    weight_factor_target_rIC::Real = 5.0,
-    uses_operator_weights::Bool = false,
-    theta_mode::Union{Nothing, Symbol} = nothing,
-    aliases::AbstractVector{Symbol} = Symbol[],
-)
-    if regularizer == :group_owl && theta_mode === nothing
-        theta_mode = :gro_asc
-    end
+Base.@kwdef struct ApprenticeTrainingConfig
+    regularized_updates::Int = 8_000
+    post_pruning_finetune_updates::Int = 0
+    batch_size::Int = randomIC ? 100 : 20
+    proximal_interval::Int = 1
+    reweight_interval::Int = 10
+    regularization_strength::Float64 = NaN
+    validation_batch_size::Int = 256
+    validation_prediction_mode::Symbol = :autoregressive
+    diagnostic_teacher_forced::Bool = true
 
-    APPRENTICE_KIND_CONFIG[kind] = (
-        label = label,
-        regularizer = regularizer,
-        power_fixed = Float64(power_fixed),
-        power_rIC = Float64(power_rIC),
-        weight_factor_target = Float64(weight_factor_target),
-        weight_factor_target_rIC = Float64(weight_factor_target_rIC),
-        uses_operator_weights = uses_operator_weights,
-        theta_mode = theta_mode,
+    function ApprenticeTrainingConfig(
+        regularized_updates::Int,
+        post_pruning_finetune_updates::Int,
+        batch_size::Int,
+        proximal_interval::Int,
+        reweight_interval::Int,
+        regularization_strength::Float64,
+        validation_batch_size::Int,
+        validation_prediction_mode::Symbol,
+        diagnostic_teacher_forced::Bool,
     )
-
-    APPRENTICE_KIND_ALIASES[kind] = kind
-    for alias in aliases
-        APPRENTICE_KIND_ALIASES[alias] = kind
+        regularized_updates >= 0 || throw(ArgumentError("regularized_updates must be nonnegative."))
+        post_pruning_finetune_updates >= 0 || throw(ArgumentError("post_pruning_finetune_updates must be nonnegative."))
+        batch_size > 0 || throw(ArgumentError("batch_size must be positive."))
+        proximal_interval > 0 || throw(ArgumentError("proximal_interval must be positive."))
+        reweight_interval > 0 || throw(ArgumentError("reweight_interval must be positive."))
+        validation_batch_size > 0 || throw(ArgumentError("validation_batch_size must be positive."))
+        validation_prediction_mode in (:autoregressive, :teacher_forced) || throw(
+            ArgumentError("validation_prediction_mode must be :autoregressive or :teacher_forced."),
+        )
+        return new(
+            regularized_updates,
+            post_pruning_finetune_updates,
+            batch_size,
+            proximal_interval,
+            reweight_interval,
+            regularization_strength,
+            validation_batch_size,
+            validation_prediction_mode,
+            diagnostic_teacher_forced,
+        )
     end
+end
 
-    return kind
+function resolved_regularization_strength(config::ApprenticeTrainingConfig, kind_config; rIC::Bool = randomIC)
+    isfinite(config.regularization_strength) && return config.regularization_strength
+    return rIC ? kind_config.regularization_strength_varying : kind_config.regularization_strength_fixed
 end
 
 apprentice_agent = create_agent_mat(n_actors = actuators,
@@ -291,649 +262,8 @@ apprentice = apprentice_agent.policy
 encoder = apprentice.encoder
 decoder = apprentice.decoder
 
-mask = ones(Float32, size(env.state[:,1]))
-
-
-
-
-function update_mask(threshold = 0.1)
-    global mask
-
-    mask = ones(Float32, size(env.state[:,1]))
-
-    # first_layer_matrix = apprentice.encoder.embedding.weight
-
-    # back_projection = zeros(size(env.state[:,1]))
-
-    # for i in 1:size(first_layer_matrix)[1]
-    #     for j in 1:size(first_layer_matrix)[2]
-    #         back_projection[j] += abs(first_layer_matrix[i,j])
-    #     end
-    # end
-
-    # another, more simple way
-    transposed_weights = transpose(apprentice.encoder.embedding.weight)
-    transposed_weights = abs.(transposed_weights)
-    back_projection = sum(transposed_weights, dims=2)[:]
-
-    indexes_to_be_zero = findall(x -> x <= threshold, back_projection)
-
-    println("Number of indexes to be zero: ", length(indexes_to_be_zero))
-
-    mask[indexes_to_be_zero] .= 0.0f0
-end
-
-
-function plot_masked_input(; binary = true)
-    global mask
-
-    rIC_label = randomIC ? "Variying IC" : "Fixed IC"
-    kind_label = apprentice_kind_label(apprentice_training_kind)
-    channels_label = group_channels ? "Grouped Channels" : "Separate Channels"
-    trace_name = "Apprentice ($(kind_label), $(channels_label), $(rIC_label))"
-
-    first_layer_matrix = apprentice.encoder.embedding.weight
-
-    back_projection = zeros(size(env.state[:,1]))
-
-    for i in 1:size(first_layer_matrix)[1]
-        for j in 1:size(first_layer_matrix)[2]
-            back_projection[j] += abs(first_layer_matrix[i,j])
-        end
-    end
-
-    if new_pe
-        channel_size = sensors[2]+1
-    else
-        channel_size = sensors[2]
-    end
-
-    temp_y = reshape(back_projection .* mask, 3,window_size,channel_size)
-
-    p = make_subplots(rows=1, cols=3)
-
-    add_trace!(p, heatmap(z=temp_y[1,:,:]', coloraxis="coloraxis"), col = 1)
-    add_trace!(p, heatmap(z=temp_y[2,:,:]', coloraxis="coloraxis"), col = 2)
-    add_trace!(p, heatmap(z=temp_y[3,:,:]', coloraxis="coloraxis"), col = 3)
-
-    if binary
-        colorscale = [[0, "rgb(0, 0, 0)"], [0.001, "rgb(195, 131, 255)"], [1, "rgb(195, 131, 255)"], ]
-    else
-        colorscale = [[0, "rgb(0, 0, 0)"], [0.01, "rgb(59, 24, 124)"], [1, "rgb(195, 131, 255)"], ]
-    end
-
-    layout = Layout(
-            plot_bgcolor="#f1f3f7",
-            coloraxis = attr(cmin = 0, cmax = 5, colorscale = colorscale),
-            title = trace_name,
-            template="plotly_white",
-        )
-
-
-    relayout!(p, layout.fields)
-
-    display(p)
-
-    # now plot the overlayed windows of all agents and the sensor counts by channels
-
-    sensor_window = reshape(mask, 3, window_size, channel_size)
-    total_sensors = zeros(3, sensors[1], channel_size)
-    window_half_size = Int(floor(window_size/2))
-
-    for i in actuators_to_sensors
-        temp_indexes = [(i + j + sensors[1] - 1) % sensors[1] + 1 for j in 0-window_half_size:0+window_half_size]
-
-        total_sensors[:, temp_indexes, :] .+= sensor_window
-    end
-
-    total_sensors = clamp.(total_sensors, 0.0f0, 1.0f0)
-    total_sensors_combined = total_sensors[1,:,:] + total_sensors[2,:,:] + total_sensors[3,:,:]
-
-    p = plot(heatmap(z=total_sensors_combined', coloraxis="coloraxis"), layout)
-    display(p)
-
-
-    println("--- $trace_name ---")
-
-    indexes_zero = findall(x -> x == 0.0, mask)
-    println("Window Sparsity: $(100*length(indexes_zero)/length(mask))%")
-
-    window_sensors_combined = sensor_window[1,:,:] + sensor_window[2,:,:] + sensor_window[3,:,:]
-    window_combined = window_sensors_combined[:]
-    indexes_zero_combined = findall(x -> x == 0.0, window_combined)
-    println("Window Sparsity combined channels: $(100*length(indexes_zero_combined)/length(window_combined))%")
-
-    combined = total_sensors_combined[:]
-    indexes_zero_total_combined = findall(x -> x == 0.0, combined)
-    println("Total Sparsity combined channels: $(100*length(indexes_zero_total_combined)/length(combined))%")
-end
-
-function report_masked_input(; rIC = randomIC, use_evaluation_set::Bool = false)
-    global mask
-
-    rIC_label = rIC ? "Variying IC" : "Fixed IC"
-    kind_label = apprentice_kind_label(apprentice_training_kind)
-    channels_label = group_channels ? "Grouped Channels" : "Separate Channels"
-    trace_name = "Apprentice ($(kind_label), $(channels_label), $(rIC_label))"
-
-    if new_pe
-        channel_size = sensors[2] + 1
-    else
-        channel_size = sensors[2]
-    end
-
-    sensor_window = reshape(mask, 3, window_size, channel_size)
-    total_sensors = zeros(3, sensors[1], channel_size)
-    window_half_size = Int(floor(window_size / 2))
-
-    for i in actuators_to_sensors
-        temp_indexes = [(i + j + sensors[1] - 1) % sensors[1] + 1 for j in 0-window_half_size:0+window_half_size]
-        total_sensors[:, temp_indexes, :] .+= sensor_window
-    end
-
-    total_sensors = clamp.(total_sensors, 0.0f0, 1.0f0)
-    total_sensors_combined = total_sensors[1, :, :] + total_sensors[2, :, :] + total_sensors[3, :, :]
-
-    println("--- $trace_name ---")
-
-    indexes_zero = findall(x -> x == 0.0, mask)
-    println("Window Sparsity: $(100 * length(indexes_zero) / length(mask))%")
-
-    window_sensors_combined = sensor_window[1, :, :] + sensor_window[2, :, :] + sensor_window[3, :, :]
-    window_combined = window_sensors_combined[:]
-    indexes_zero_combined = findall(x -> x == 0.0, window_combined)
-    println("Window Sparsity combined channels: $(100 * length(indexes_zero_combined) / length(window_combined))%")
-
-    combined = total_sensors_combined[:]
-    indexes_zero_total_combined = findall(x -> x == 0.0, combined)
-    println("Total Sparsity combined channels: $(100 * length(indexes_zero_total_combined) / length(combined))%")
-
-    if rIC
-        if use_evaluation_set
-            ensure_rIC_evaluation_cache()
-            state_set = rIC_eval_states
-            expert_actions = rIC_eval_expert_actions
-            dataset_label = "rIC evaluation"
-        else
-            if !(@isdefined states_rIC)
-                grab_states_rIC()
-            end
-            state_set = states_rIC
-            expert_actions = prob(agent.policy, state_set, nothing).μ
-            dataset_label = "rIC training"
-        end
-    else
-        if !(@isdefined states)
-            generate_states()
-        end
-        state_set = states
-        expert_actions = prob(agent.policy, state_set, nothing).μ
-        dataset_label = "fixedIC"
-    end
-
-    apprentice_actions = prob(apprentice, state_set .* mask, nothing).μ
-    action_diff = apprentice_actions .- expert_actions
-
-    mean_l1_error = mean(abs, action_diff)
-    println("Mean L1 error ($(dataset_label) state set): $(mean_l1_error)")
-
-    return mean_l1_error
-end
-
-function report_masked_input_all_combinations(; rIC = randomIC, number = nothing, use_evaluation_set::Bool = false)
-    global apprentice_training_kind
-    global group_channels
-    global row_groups
-
-    original_kind = apprentice_training_kind
-    original_group_channels = group_channels
-
-    kinds = available_apprentice_kinds()
-    channel_options = (true, false)
-    first_block = true
-
-    try
-        if rIC && use_evaluation_set
-            ensure_rIC_evaluation_cache()
-        end
-
-        for kind in kinds
-            for group_channels_value in channel_options
-                first_block || println("")
-                first_block = false
-
-                apprentice_training_kind = normalize_apprentice_kind(kind)
-                group_channels = group_channels_value
-                row_groups = get_row_groups(group_channels = group_channels)
-
-                load_apprentice(number)
-                report_masked_input(rIC = rIC, use_evaluation_set = use_evaluation_set)
-            end
-        end
-    finally
-        apprentice_training_kind = original_kind
-        group_channels = original_group_channels
-        row_groups = get_row_groups(group_channels = group_channels)
-    end
-
-    return nothing
-end
-
-function build_rIC_evaluation_cache(; steps_per_offset = 200)
-    global rIC_eval_states
-    global rIC_eval_expert_actions
-    global rIC_eval_offsets
-    global rIC_eval_steps_per_offset
-
-    steps_per_offset > 0 || error("steps_per_offset must be positive, got $steps_per_offset")
-
-    total_states = length(rIC_validation_offsets) * steps_per_offset
-    rIC_eval_states = zeros(Float32, size(env.state)[1], size(env.state)[2], total_states)
-
-    idx = 1
-    for offset in rIC_validation_offsets
-        println("Generating rIC evaluation data with offset $offset")
-        RL.reset!(env)
-        generate_random_init(offset)
-
-        for _ in 1:steps_per_offset
-            rIC_eval_states[:, :, idx] .= env.state
-
-            action = prob(agent.policy, env.state, nothing).μ
-            env(action)
-
-            idx += 1
-        end
-    end
-
-    rIC_eval_expert_actions = prob(agent.policy, rIC_eval_states, nothing).μ
-    rIC_eval_offsets = copy(rIC_validation_offsets)
-    rIC_eval_steps_per_offset = steps_per_offset
-
-    println("Prepared rIC evaluation cache: $(total_states) states ($(length(rIC_validation_offsets)) offsets x $(steps_per_offset) steps).")
-end
-
-function ensure_rIC_evaluation_cache(; steps_per_offset = 200)
-    has_cache = @isdefined(rIC_eval_states) &&
-                @isdefined(rIC_eval_expert_actions) &&
-                @isdefined(rIC_eval_offsets) &&
-                @isdefined(rIC_eval_steps_per_offset)
-
-    expected_total_states = length(rIC_validation_offsets) * steps_per_offset
-    cache_matches = has_cache &&
-                    size(rIC_eval_states) == (size(env.state)[1], size(env.state)[2], expected_total_states) &&
-                    size(rIC_eval_expert_actions, ndims(rIC_eval_expert_actions)) == expected_total_states &&
-                    rIC_eval_offsets == rIC_validation_offsets &&
-                    rIC_eval_steps_per_offset == steps_per_offset
-
-    if cache_matches
-        return
-    end
-
-    build_rIC_evaluation_cache(; steps_per_offset = steps_per_offset)
-end
-
-
-function generate_states()
-    global states
-
-    states = zeros(Float32, size(env.state)[1], size(env.state)[2], num_states)
-
-    reset!(env)
-    generate_random_init()
-
-    for i in 1:num_states
-
-        #action = agent(env)
-        action = prob(agent.policy, env.state, nothing).μ
-
-        states[:, :, i] .= env.state
-
-        env(action)
-
-        # println(i, "% of simulation done")
-    end
-end
-
-function states_rIC_cache_path()
-    return joinpath(
-        EXPERT_APPRENTICE_PROJECT_ROOT,
-        "randomIC",
-        "states_rIC_MAT_$(num_states_rIC).jld2",
-    )
-end
-
-function grab_states_rIC()
-    global states_rIC
-    cache_path = states_rIC_cache_path()
-
-    if isfile(cache_path)
-        loaded_states_rIC = FileIO.load(cache_path, "states_rIC")
-        expected_size = (size(env.state)[1], size(env.state)[2], num_states_rIC)
-        if size(loaded_states_rIC) == expected_size
-            states_rIC = loaded_states_rIC
-            println("Loaded states_rIC from cache: $(cache_path)")
-            return
-        end
-        println("Found states_rIC cache with mismatched size, regenerating: $(cache_path)")
-    end
-
-    states_rIC = zeros(Float32, size(env.state)[1], size(env.state)[2], num_states_rIC)
-
-    stop_condition = StopAfterEpisodeWithMinSteps(num_states_rIC)
-
-    i = 1
-    is_stop = false
-    while !is_stop
-        reset!(env)
-        generate_random_init()
-
-        while !(is_terminated(env) || is_truncated(env))
-
-            action = prob(agent.policy, env.state, nothing).μ
-
-            # take the explorative action here
-            # action = agent(env)
-
-            states_rIC[:, :, i] .= deepcopy(env.state)
-            i += 1
-            if i > num_states_rIC
-                is_stop = true
-                break
-            end
-
-            env(action)
-
-            if stop_condition(agent, env)
-                is_stop = true
-                break
-            end
-        end
-    end
-
-    cache_dir = dirname(cache_path)
-    isdir(cache_dir) || mkdir(cache_dir)
-    FileIO.save(cache_path, "states_rIC", states_rIC)
-    println("Saved states_rIC cache to: $(cache_path)")
-end
-
-function train_apprentice(;mode = apprentice_training_kind, training_steps = training_steps, extra_steps = extra_steps, prune = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 10)
-
-    kind_sym, kind_config = apprentice_kind_config(mode)
-    uses_operator_weights = kind_config.uses_operator_weights
-    regularizer = kind_config.regularizer
-    theta_mode = kind_config.theta_mode
-
-    global apprentice_save
-    last_loss_mean = 10000.0
-
-    global states
-    global states_rIC
-
-    if rIC
-        if !(@isdefined states_rIC)
-            grab_states_rIC()
-        end
-    else
-        if !(@isdefined states)
-            generate_states()
-        end
-    end
-
-    global row_groups
-    row_groups = get_row_groups(;group_channels = group_channels)
-
-    global apprentice_training_kind = kind_sym
-    global apprentice_training_rIC = rIC
-
-    if uses_operator_weights
-        if group_rows_by_overlap
-            groups = deepcopy(row_groups)
-        else
-            n_rows = size(transpose(apprentice.encoder.embedding.weight), 1)
-            groups = [[i] for i in 1:n_rows]
-        end
-
-        n_groups = length(groups)
-        weight_eltype = eltype(apprentice.encoder.embedding.weight)
-        global operator_weights = ones(weight_eltype, n_groups)
-    end
-
-    report_every = 10
-    stop_threshold = rIC ? loss_stop_threshold_rIC : loss_stop_threshold
-    weight_factor_target = rIC ? kind_config.weight_factor_target_rIC : kind_config.weight_factor_target
-    threshold_reached_once = false
-    stop_training = false
-
-    global losses = Float32[]
-    for i in 1:training_steps+extra_steps
-        
-        i%100 == 0 && i <= training_steps && println(i*100/training_steps, "% done")
-
-        i == training_steps+1 && println("training_steps finished, starting extra_steps...")
-        i%100 == 0 && i > training_steps && println((i-training_steps)*100/extra_steps, "% of extra steps done")
-
-
-        # training call
-        current_batch_size = rIC ? batch_size_rIC : batch_size
-        num_batches = rIC ? cld(200, current_batch_size) : div(num_states, current_batch_size)
-
-        current_power = rIC ? kind_config.power_rIC : kind_config.power_fixed
-
-        if rIC
-            rand_inds = shuffle!(rng, Vector(1:num_states_rIC))
-        else
-            rand_inds = shuffle!(rng, Vector(1:num_states))
-        end
-
-        temp_losses = Float32[]
-
-        for j in 1:num_batches
-            #println("j is $(j) of $(num_batches)")
-
-            if rIC
-                global batch = states_rIC[:, :, rand_inds[(j-1)*current_batch_size+1:j*current_batch_size]]
-            else
-                global batch = states[:, :, rand_inds[(j-1)*current_batch_size+1:j*current_batch_size]]
-            end
-
-            batch_masked = batch .* mask
-
-            na = size(apprentice.decoder.embedding.weight)[2]
-
-            global g_encoder
-            global g_decoder
-
-            g_encoder, g_decoder = Flux.gradient(apprentice.encoder, apprentice.decoder) do p_encoder, p_decoder
-
-                obsrep, val = p_encoder(batch_masked)
-
-                # μ, logσ = p_decoder(zeros(Float32,na,1,current_batch_size), obsrep[:,1:1,:])
-
-                # for n in 2:apprentice.n_actors
-                #     newμ, newlogσ = p_decoder(cat(zeros(Float32,na,1,current_batch_size), μ, dims=2), obsrep[:,1:n,:])
-
-                #     μ = cat(μ, newμ[:,end:end,:], dims=2)
-                # end
-
-                # diff = μ - agent.policy.approximator.actor(batch)[1]
-
-
-                # new variant
-                μ_expert = prob(agent.policy, batch, nothing).μ
-
-                temp_act = cat(zeros(Float32,na,1,current_batch_size),μ_expert[:,1:end-1,:],dims=2)
-                μ, logσ = p_decoder(temp_act, obsrep)
-
-                diff = μ - μ_expert
-                mse = mean(diff.^2)
-
-                Zygote.ignore() do
-                    push!(temp_losses, mse)
-                end
-
-                mse
-            end
-
-            Flux.update!(apprentice.encoder_state_tree, apprentice.encoder, g_encoder)
-            Flux.update!(apprentice.decoder_state_tree, apprentice.decoder, g_decoder)
-
-            if i%growl_freq == 0 && prune && i <= training_steps
-                if regularizer == :weighted_l1
-                    apply_weighted(
-                        apprentice.encoder.embedding.weight;
-                        group_rows_by_overlap = group_rows_by_overlap,
-                        operator_weights = operator_weights,
-                        reweight_power_used = current_power,
-                    )
-                elseif regularizer == :group_owl
-                    apply_growl(
-                        apprentice.encoder.embedding.weight;
-                        group_rows_by_overlap = group_rows_by_overlap,
-                        growl_power_used = current_power,
-                        theta_mode = theta_mode,
-                    )
-                elseif regularizer == :none
-                    nothing
-                else
-                    error("Unsupported regularizer '$regularizer' for apprentice kind '$kind_sym'.")
-                end
-            end
-
-        end
-
-        if uses_operator_weights && i%weight_update == 0 && prune && i <= training_steps
-            reshaped_weight = transpose(apprentice.encoder.embedding.weight)
-
-            if group_rows_by_overlap
-                groups = deepcopy(row_groups)
-            else
-                n_rows = size(reshaped_weight, 1)
-                groups = [[idx] for idx in 1:n_rows]
-            end
-
-            n2_groups = [norm(reshaped_weight[idxs, :][:], 2) for idxs in groups]
-            eps_val = convert(eltype(operator_weights), 1e-3)
-            operator_weights .= one(eltype(operator_weights)) ./ (n2_groups .+ eps_val)
-        end
-
-
-        #check current performance of the apprentice
-        # if rIC
-        #     diff = prob(apprentice, states_rIC .* mask, nothing).μ - prob(agent.policy, states_rIC, nothing).μ
-        # else
-        #     diff = prob(apprentice, states .* mask, nothing).μ - prob(agent.policy, states, nothing).μ
-        # end
-        # mse = mean(diff.^2)
-
-        !isempty(temp_losses) && push!(losses, mean(temp_losses))
-
-        if !isempty(losses)
-            current_loss = mean(losses[max(1, end-199):end])
-            if !threshold_reached_once && current_loss < stop_threshold
-                threshold_reached_once = true
-                println("Loss dropped below threshold ($(stop_threshold)) at step $(i): $(current_loss)")
-            elseif threshold_reached_once && current_loss > stop_threshold
-                println("Stopping training at step $(i): loss rose above threshold ($(stop_threshold)) to $(current_loss)")
-                update_mask(0.0)
-                stop_training = true
-            end
-        end
-
-        if i%report_every == 0 
-            transposed_weights = transpose(apprentice.encoder.embedding.weight)
-            n_rows = size(transposed_weights, 1)
-            zero_row_idcs = [i for i in 1:n_rows if all(transposed_weights[i, :] .== 0)]
-            println("zero inputs: $(length(zero_row_idcs))")
-
-            weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
-            println("weight factor: $(weight_factor)")
-
-            loss_mean = mean(losses[max(1, end-99):end])
-            last_loss_mean = loss_mean
-            println("mean squared error over last 100 steps: $(loss_mean)")
-        end
-
-        if last_loss_mean < 0.002 && last_loss_mean - mean(losses[max(1, end-29):end]) < -0.001
-            stop_training = true
-            println("Loss increased significantly from $(last_loss_mean) to $(losses[end]) at step $(i), stopping training.")
-        else
-            apprentice_save = deepcopy(apprentice)
-        end
-
-        weight_factor = sum(abs.(apprentice.encoder.embedding.weight))
-        if weight_factor < weight_factor_target
-            stop_training = true
-            println("Weight factor dropped below target ($(weight_factor_target)) at step $(i): $(weight_factor). Stopping training.")
-        end
-
-        #keep the zeros if this is the last pruning step
-        if i+growl_freq > training_steps
-            println("keeping the zeros in the last $(String(kind_sym)) step")
-            update_mask(0.0)
-        end
-
-        if stop_training
-            break
-        end
-    end
-
-    plot(losses)
-end
-
-
-function growl_train(;training_steps = training_steps, extra_steps = extra_steps, growl = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
-    return train_apprentice(
-        mode = :growl,
-        training_steps = training_steps,
-        extra_steps = extra_steps,
-        prune = growl,
-        group_rows_by_overlap = group_rows_by_overlap,
-        group_channels = group_channels,
-        rIC = rIC,
-    )
-end
-
-function gro_asc_train(;training_steps = training_steps, extra_steps = extra_steps, gro_asc = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
-    return train_apprentice(
-        mode = :gro_asc,
-        training_steps = training_steps,
-        extra_steps = extra_steps,
-        prune = gro_asc,
-        group_rows_by_overlap = group_rows_by_overlap,
-        group_channels = group_channels,
-        rIC = rIC,
-    )
-end
-
-function lasso_train(;training_steps = training_steps, extra_steps = extra_steps, lasso = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC)
-    return train_apprentice(
-        mode = :lasso,
-        training_steps = training_steps,
-        extra_steps = extra_steps,
-        prune = lasso,
-        group_rows_by_overlap = group_rows_by_overlap,
-        group_channels = group_channels,
-        rIC = rIC,
-    )
-end
-
-
-function reweight_train(;training_steps = training_steps, extra_steps = extra_steps, reweight = true, group_rows_by_overlap = group_rows_by_overlap, group_channels = group_channels, rIC = randomIC, weight_update = 10)
-    return train_apprentice(
-        mode = :weighted,
-        training_steps = training_steps,
-        extra_steps = extra_steps,
-        prune = reweight,
-        group_rows_by_overlap = group_rows_by_overlap,
-        group_channels = group_channels,
-        rIC = rIC,
-        weight_update = weight_update,
-    )
-end
-
-
-
+# Training, validation, and candidate generation are defined below from the
+# DistillationCorpus data. No mutable global input mask is used.
 function get_row_groups(;group_channels = true)
 
     row_groups = []
@@ -1018,51 +348,35 @@ end
 function build_theta_is(n_groups::Int, theta_mode::Symbol)
     n_groups > 0 || error("n_groups must be positive, got $n_groups")
 
-    if theta_mode == :gro_asc
+    if theta_mode == :go
         return Float64[(i - 1) / n_groups for i in 1:n_groups]
-    elseif theta_mode == :lasso
+    elseif theta_mode == :group_lasso
         return ones(Float64, n_groups)
     elseif theta_mode == :growl
         return Float64[(i - 1) / n_groups for i in n_groups:-1:1]
     else
-        error("Unsupported theta_mode '$theta_mode'. Use :gro_asc, :lasso, or :growl.")
+        error("Unsupported theta_mode '$theta_mode'. Use :go, :group_lasso, or :growl.")
     end
 end
 
 
 
 
-function apply_growl(model_weights; group_rows_by_overlap = true, growl_power_used = 0.0, theta_mode::Symbol = :gro_asc)
-
-    pl_srate = growl_srate
-
+function apply_grouped_regularizer!(
+    model_weights;
+    groups,
+    regularization_strength::Real,
+    theta_mode::Symbol,
+)
     reshaped_weight = transpose(model_weights)
-
-    global row_groups
-    global theta_is
-
-    if group_rows_by_overlap
-        groups = deepcopy(row_groups)
-    else
-        groups =  [[i] for i in 1:size(reshaped_weight, 1)]
-    end
 
     # Compute the L2 norm for each row.
     n_groups = length(groups)
     n2_groups = [norm(reshaped_weight[i, :][:], 2) for i in groups]
 
     # --- Create GrOWL parameters ---
-    # Sort the row norms (returns indices that sort in increasing order).
-    s_inds = sortperm(n2_groups)
-
-    # Generate theta parameters (user-supplied function).
-    # theta_is = ones(n_groups) * 0.2
-    # theta_is[Int(floor((1-theta_rate) * n_groups)):end] .= 1.0
-
     theta_is = build_theta_is(n_groups, theta_mode)
-
-    # make the parameters smaller in general
-    theta_is .*= growl_power_used
+    theta_is .*= regularization_strength
 
     # Apply the proximal operator.
     new_n2_groups = proxOWL(deepcopy(n2_groups), deepcopy(theta_is))
@@ -1087,51 +401,19 @@ function apply_growl(model_weights; group_rows_by_overlap = true, growl_power_us
     end
 
 
-    # --- Check for excessive pruning ---
-
-    # Find indices of groups that are entirely zero.
-    zero_group_idcs = [i for i in 1:n_groups if new_n2_groups[i] < eps_val]
-
-    max_slct = Int(floor(pl_srate * n_groups))
-
-    if length(zero_group_idcs) > max_slct
-
-        numel = length(zero_group_idcs)
-        shuffled_idcs = shuffle(1:numel)
-        use_slct = numel - max_slct
-        selected_idcs = shuffled_idcs[1:use_slct]
-        selected_elmts = zero_group_idcs[selected_idcs]
-
-
-        for i in selected_elmts
-            # Restore all rows belonging to the group.
-            for j in groups[i]
-                new_W[j, :] .= reshaped_weight[j, :]
-            end
-        end
-    end
-
-    new_W = transpose(new_W)
-
-    # Update the weight in the model (assumes in-place update is acceptable).
-    model_weights .= new_W
+    model_weights .= transpose(new_W)
+    return model_weights
 end
 
 
 
-function apply_weighted(model_weights; group_rows_by_overlap = true, operator_weights::Vector, reweight_power_used = 0.0)
-
-    pl_srate = growl_srate
-
+function apply_group_reweighted_regularizer!(
+    model_weights;
+    groups,
+    operator_weights::AbstractVector,
+    regularization_strength::Real,
+)
     reshaped_weight = transpose(model_weights)
-
-    global row_groups
-
-    if group_rows_by_overlap
-        groups = deepcopy(row_groups)
-    else
-        groups = [[i] for i in 1:size(reshaped_weight, 1)]
-    end
 
     # Compute the L2 norm for each row group.
     n_groups = length(groups)
@@ -1140,7 +422,10 @@ function apply_weighted(model_weights; group_rows_by_overlap = true, operator_we
     length(operator_weights) == n_groups || error("operator_weights length must match number of groups.")
 
     # Apply weighted L1 proximal operator.
-    new_n2_groups = prox_weighted_l1(deepcopy(n2_groups), deepcopy(operator_weights .* reweight_power_used))
+    new_n2_groups = prox_weighted_l1(
+        deepcopy(n2_groups),
+        deepcopy(operator_weights .* regularization_strength),
+    )
 
     # --- Rescale the weight rows ---
     new_W = similar(reshaped_weight)
@@ -1161,33 +446,8 @@ function apply_weighted(model_weights; group_rows_by_overlap = true, operator_we
     end
 
 
-    # --- Check for excessive pruning ---
-
-    # Find indices of groups that are entirely zero.
-    zero_group_idcs = [i for i in 1:n_groups if new_n2_groups[i] < eps_val]
-
-    max_slct = Int(floor(pl_srate * n_groups))
-
-    if length(zero_group_idcs) > max_slct
-
-        numel = length(zero_group_idcs)
-        shuffled_idcs = shuffle(1:numel)
-        use_slct = numel - max_slct
-        selected_idcs = shuffled_idcs[1:use_slct]
-        selected_elmts = zero_group_idcs[selected_idcs]
-
-        for i in selected_elmts
-            # Restore all rows belonging to the group.
-            for j in groups[i]
-                new_W[j, :] .= reshaped_weight[j, :]
-            end
-        end
-    end
-
-    new_W = transpose(new_W)
-
-    # Update the weight in the model (assumes in-place update is acceptable).
-    model_weights .= new_W
+    model_weights .= transpose(new_W)
+    return model_weights
 end
 
 
@@ -1300,88 +560,562 @@ function proxOWL_segments(A::Vector, B::Vector)
 end
 
 
-function render_run_apprentice()
-    global rewards = Float64[]
-    global collected_actions = zeros(200,actuators)
-    reward_sum = 0.0
+struct HardThresholdSpec
+    id::Symbol
+    mode::Symbol
+    value::Float64
+    analysis_scope::Symbol
 
-    rm("frames/", recursive=true, force=true)
-    mkdir("frames")
-
-    colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
-    ymax = 30
-    layout = Layout(
-            plot_bgcolor="#f1f3f7",
-            coloraxis = attr(cmin = 1, cmid = 2.5, cmax = 3, colorscale = colorscale),
+    function HardThresholdSpec(
+        id::Symbol,
+        mode::Symbol,
+        value::Real;
+        analysis_scope::Symbol = :later_packages,
+    )
+        mode in (:absolute, :relative_to_max, :keep_groups) || throw(
+            ArgumentError("Hard-threshold mode must be :absolute, :relative_to_max, or :keep_groups."),
         )
-
-
-    reset!(env)
-    generate_random_init()
-
-    for i in 1:200
-
-        action = prob(apprentice, env.state .* mask, nothing).μ[:,:,1]
-
-        collected_actions[i,:] = action[:]
-        env(action)
-
-        result = env.y[1,:,:]
-        result_W = env.y[2,:,:]
-        result_U = env.y[3,:,:]
-
-        p = make_subplots(rows=1, cols=1)
-
-        add_trace!(p, heatmap(z=result', coloraxis="coloraxis"), col = 1)
-        #add_trace!(p, heatmap(z=result_W'), col = 2)
-        #add_trace!(p, heatmap(z=result_U'), col = 3)
-
-        # p = plot(heatmap(z=result', coloraxis="coloraxis"), layout)
-
-        relayout!(p, layout.fields)
-
-        #savefig(p, "frames/a$(lpad(string(i), 4, '0')).png"; width=1600, height=800)
-        #body!(w,p)
-
-        temp_reward = reward_function(env; returnGlobalNu = true)
-        temp_reward = state_Nu(env)
-        println(temp_reward)
-
-        reward_sum += temp_reward
-        push!(rewards, temp_reward)
-
-        # println(mean(env.reward))
-
-        # reward_sum += mean(env.reward)
-        # push!(rewards, mean(env.reward))
-    end
-
-    println(reward_sum)
-
-    p = plot(rewards)
-    display(p)
-
-
-
-    if true
-        isdir("video_output") || mkdir("video_output")
-        rm("video_output/MAT_Apprentice.mp4", force=true)
-        #run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le "video_output/MAT_Apprentice.mp4"`)
-
-        run(`ffmpeg -framerate 16 -i "frames/a%04d.png" -c:v libx264 -preset slow  -profile:v high -level:v 4.0 -pix_fmt yuv420p -crf 22 -codec:a aac "video_output/MAT_Apprentice.mp4"`)
+        value >= 0 || throw(
+            ArgumentError("Hard-threshold values must be nonnegative."),
+        )
+        return new(id, mode, Float64(value), analysis_scope)
     end
 end
 
+function regularizer_groups(model; group_rows_by_overlap::Bool, group_channels::Bool)
+    n_inputs = size(transpose(model.encoder.embedding.weight), 1)
+    groups = group_rows_by_overlap ? get_row_groups(; group_channels) : [[index] for index in 1:n_inputs]
+    any_shared(groups) && error("Regularizer groups overlap; masks would no longer be unambiguous.")
+    sort(vcat(groups...)) == collect(1:n_inputs) || error("Regularizer groups do not cover every input.")
+    return groups
+end
 
-#growl_train(training_steps)
+function group_importances(model, groups)
+    weights_by_input = transpose(model.encoder.embedding.weight)
+    return Float64[norm(view(weights_by_input, group, :)) for group in groups]
+end
 
-#render_run_apprentice()
+function local_input_mask(groups, active_groups, n_inputs::Integer)
+    length(groups) == length(active_groups) || throw(DimensionMismatch("One activity flag is required per group."))
+    result = zeros(Float32, n_inputs)
+    for (group, active) in zip(groups, active_groups)
+        active && (result[group] .= 1.0f0)
+    end
+    return result
+end
+
+function hard_threshold_group_mask(importances, spec::HardThresholdSpec)
+    if spec.mode === :absolute
+        return importances .> spec.value
+    elseif spec.mode === :relative_to_max
+        maximum_importance = maximum(importances; init = 0.0)
+        cutoff = spec.value * maximum_importance
+        return importances .> cutoff
+    end
+
+    keep_count = clamp(round(Int, spec.value), 0, length(importances))
+    active = falses(length(importances))
+    keep_count == 0 && return active
+    ordering = sortperm(importances; rev = true)
+    active[ordering[1:keep_count]] .= true
+    return active
+end
+
+function global_input_mask(
+    local_mask;
+    actuator_sensor_indices = actuators_to_sensors,
+    horizontal_sensor_count::Int = sensors[1],
+    vertical_sensor_count::Int = sensors[2],
+    local_window_size::Int = window_size,
+)
+    expected_inputs = 3 * local_window_size * vertical_sensor_count
+    length(local_mask) == expected_inputs || throw(DimensionMismatch(
+        "Expected a local mask with $expected_inputs entries, got $(length(local_mask)).",
+    ))
+    local_tensor = reshape(Bool.(local_mask), 3, local_window_size, vertical_sensor_count)
+    result = falses(3, horizontal_sensor_count, vertical_sensor_count)
+    half_width = fld(local_window_size, 2)
+    for sensor_index in actuator_sensor_indices
+        horizontal_indices = [
+            mod1(Int(sensor_index) + offset, horizontal_sensor_count)
+            for offset in -half_width:half_width
+        ]
+        result[:, horizontal_indices, :] .|= local_tensor
+    end
+    return result
+end
+
+function candidate_masks(model, threshold_specs; groups)
+    importances = group_importances(model, groups)
+    n_inputs = size(transpose(model.encoder.embedding.weight), 1)
+    specifications = collect(threshold_specs)
+    length(unique(spec.id for spec in specifications)) == length(specifications) || error(
+        "Hard-threshold IDs must be unique.",
+    )
+
+    definitions = [(
+        threshold_id = :native,
+        threshold_kind = :native,
+        threshold_mode = :exact_zero,
+        threshold_value = 0.0,
+        analysis_scope = :package6_native_sensitivity,
+        active_groups = importances .> 0.0,
+    )]
+    for spec in specifications
+        spec.id === :native && error(":native is reserved for the unmodified native-sparsity candidate.")
+        push!(definitions, (
+            threshold_id = spec.id,
+            threshold_kind = :hard_threshold,
+            threshold_mode = spec.mode,
+            threshold_value = spec.value,
+            analysis_scope = spec.analysis_scope,
+            active_groups = hard_threshold_group_mask(importances, spec),
+        ))
+    end
+
+    return map(definitions) do definition
+        local_mask = local_input_mask(groups, definition.active_groups, n_inputs)
+        global_mask = global_input_mask(local_mask)
+        active_sensor_locations = count(dropdims(any(global_mask; dims = 1); dims = 1))
+        Dict{Symbol, Any}(
+            :threshold_id => definition.threshold_id,
+            :threshold_kind => definition.threshold_kind,
+            :threshold_mode => definition.threshold_mode,
+            :threshold_value => definition.threshold_value,
+            :analysis_scope => definition.analysis_scope,
+            :mask => local_mask,
+            :group_mask => BitVector(definition.active_groups),
+            :global_mask => BitArray(global_mask),
+            :active_groups => count(definition.active_groups),
+            :active_inputs => count(global_mask),
+            :active_sensor_locations => active_sensor_locations,
+            :group_importances => copy(importances),
+        )
+    end
+end
+
+function teacher_forced_actions(model, observations, expert_actions)
+    observation_representation, _ = model.encoder(observations)
+    action_dimension = size(model.decoder.embedding.weight, 2)
+    batch_size = size(observations, 3)
+    shifted_actions = cat(
+        zeros(Float32, action_dimension, 1, batch_size),
+        expert_actions[:, 1:end-1, :];
+        dims = 2,
+    )
+    means, _ = model.decoder(shifted_actions, observation_representation)
+    return means
+end
+
+function apprentice_actions(model, observations, expert_actions; prediction_mode::Symbol)
+    if prediction_mode === :autoregressive
+        return prob(model, observations, nothing).μ
+    elseif prediction_mode === :teacher_forced
+        return teacher_forced_actions(model, observations, expert_actions)
+    end
+    throw(ArgumentError("prediction_mode must be :autoregressive or :teacher_forced."))
+end
+
+function evaluate_expert_matching(
+    model,
+    dataset,
+    input_mask;
+    batch_size::Int = 256,
+    prediction_mode::Symbol = :autoregressive,
+)
+    sample_count = Int(dataset[:sample_count])
+    sample_count > 0 || error("Cannot validate against an empty distillation dataset.")
+    length(input_mask) == size(env.state, 1) || throw(DimensionMismatch("Input mask has the wrong length."))
+    broadcast_mask = reshape(Float32.(input_mask), :, 1, 1)
+    squared_error_sum = 0.0
+    element_count = 0
+
+    for first_index in 1:batch_size:sample_count
+        last_index = min(first_index + batch_size - 1, sample_count)
+        batch = distillation_batch(
+            dataset,
+            first_index:last_index;
+            actuator_sensor_indices = actuators_to_sensors,
+            window_size,
+        )
+        observations = batch.observations .* broadcast_mask
+        predictions = apprentice_actions(
+            model,
+            observations,
+            batch.expert_actions;
+            prediction_mode,
+        )
+        difference = predictions .- batch.expert_actions
+        all(isfinite, difference) || return Inf
+        squared_error_sum += sum(abs2, difference)
+        element_count += length(difference)
+    end
+    return squared_error_sum / element_count
+end
+
+function evaluate_candidate_checkpoint!(
+    manager::ParetoArchiveManager,
+    model,
+    update::Integer,
+    validation_dataset,
+    threshold_specs;
+    groups,
+    method::Symbol,
+    regularization_strength::Real,
+    validation_batch_size::Int = 256,
+    prediction_mode::Symbol = :autoregressive,
+    diagnostic_teacher_forced::Bool = true,
+)
+    records = candidate_masks(model, threshold_specs; groups)
+    for record in records
+        record[:validation_matching] = evaluate_expert_matching(
+            model,
+            validation_dataset,
+            record[:mask];
+            batch_size = validation_batch_size,
+            prediction_mode,
+        )
+        record[:validation_prediction_mode] = prediction_mode
+        if diagnostic_teacher_forced
+            record[:teacher_forced_validation_matching] = evaluate_expert_matching(
+                model,
+                validation_dataset,
+                record[:mask];
+                batch_size = validation_batch_size,
+                prediction_mode = :teacher_forced,
+            )
+        end
+        record[:numeric_status] = isfinite(record[:validation_matching]) ? :ok : :nonfinite
+        record[:method] = method
+        record[:regularization_strength] = Float64(regularization_strength)
+    end
+    return record_candidate_batch!(
+        manager,
+        update,
+        records;
+        model_payload = deepcopy(model),
+        evaluation_metadata = Dict{Symbol, Any}(
+            :dataset_source_files => copy(validation_dataset[:source_files]),
+            :sample_count => Int(validation_dataset[:sample_count]),
+            :prediction_mode => prediction_mode,
+        ),
+    )
+end
+
+mutable struct DistillationBatchSampler
+    order::Vector{Int}
+    cursor::Int
+    epoch::Int
+end
+
+function DistillationBatchSampler(sample_count::Integer, rng::AbstractRNG)
+    sample_count > 0 || error("Cannot train from an empty distillation dataset.")
+    return DistillationBatchSampler(randperm(rng, Int(sample_count)), 1, 1)
+end
+
+function next_batch_indices!(sampler::DistillationBatchSampler, batch_size::Integer, rng::AbstractRNG)
+    batch_size > 0 || throw(ArgumentError("batch_size must be positive."))
+    result = Int[]
+    while length(result) < batch_size
+        available = length(sampler.order) - sampler.cursor + 1
+        take = min(batch_size - length(result), available)
+        append!(result, sampler.order[sampler.cursor:sampler.cursor + take - 1])
+        sampler.cursor += take
+        if sampler.cursor > length(sampler.order)
+            sampler.order = randperm(rng, length(sampler.order))
+            sampler.cursor = 1
+            sampler.epoch += 1
+        end
+    end
+    return result
+end
+
+function model_is_finite(model)
+    return all(parameter -> all(isfinite, parameter), Flux.trainables(model))
+end
+
+function update_operator_weights!(operator_weights, model, groups)
+    importances = group_importances(model, groups)
+    epsilon = convert(eltype(operator_weights), 1e-3)
+    operator_weights .= one(eltype(operator_weights)) ./ (importances .+ epsilon)
+    return operator_weights
+end
+
+function stop_on_numerical_failure!(
+    archive_manager,
+    update::Integer,
+    message::AbstractString;
+    model,
+    sampler,
+    training_rng,
+    losses,
+    input_mask,
+    operator_weights,
+)
+    if !isnothing(archive_manager)
+        save_resume_checkpoint!(
+            archive_manager,
+            update,
+            Dict{Symbol, Any}(
+                :model => deepcopy(model),
+                :sampler => deepcopy(sampler),
+                :rng => deepcopy(training_rng),
+                :losses => copy(losses),
+                :finetune_input_mask => copy(input_mask),
+                :operator_weights => copy(operator_weights),
+                :failure_message => String(message),
+            );
+            status = :failed,
+        )
+    end
+    error(message)
+end
+
+function train_apprentice!(
+    model = apprentice;
+    method::Symbol = apprentice_training_kind,
+    train_dataset = distillation_dataset(EXPERT_APPRENTICE_PROTOCOL, :train),
+    validation_dataset = distillation_dataset(EXPERT_APPRENTICE_PROTOCOL, :validation),
+    config::ApprenticeTrainingConfig = ApprenticeTrainingConfig(),
+    archive_manager::Union{Nothing, ParetoArchiveManager} = nothing,
+    threshold_specs = HardThresholdSpec[],
+    group_rows_by_overlap::Bool = true,
+    group_channels::Bool = group_channels,
+    training_rng::AbstractRNG = rng,
+    resume::Bool = false,
+)
+    method, method_config = apprentice_kind_config(method)
+    regularization_strength = resolved_regularization_strength(
+        config,
+        method_config;
+        rIC = EXPERT_APPRENTICE_PROTOCOL === :varying,
+    )
+    groups = regularizer_groups(model; group_rows_by_overlap, group_channels)
+    sample_count = Int(train_dataset[:sample_count])
+    sampler = DistillationBatchSampler(sample_count, training_rng)
+    operator_weights = ones(eltype(model.encoder.embedding.weight), length(groups))
+    input_mask = ones(Float32, size(env.state, 1))
+    losses = Float64[]
+    total_updates = config.regularized_updates + config.post_pruning_finetune_updates
+    first_update = 1
+
+    if resume
+        isnothing(archive_manager) && error("resume=true requires an archive_manager.")
+        checkpoint = load_resume_checkpoint(archive_manager)
+        isnothing(checkpoint) && error("No resume/latest.jld2 exists for this run.")
+        checkpoint.status === :complete && error("The requested run is already complete.")
+        state = checkpoint.resume_state
+        model = state[:model]
+        sampler = state[:sampler]
+        training_rng = state[:rng]
+        losses = Float64.(state[:losses])
+        input_mask = Float32.(state[:finetune_input_mask])
+        groups = regularizer_groups(model; group_rows_by_overlap, group_channels)
+        operator_weights = copy(state[:operator_weights])
+        first_update = checkpoint.update + 1
+    end
+
+    global apprentice_training_kind = method
+    global apprentice_training_rIC = EXPERT_APPRENTICE_PROTOCOL === :varying
+
+    if first_update == 1 && !isnothing(archive_manager) && should_evaluate_candidates(archive_manager.schedule, 0)
+        evaluate_candidate_checkpoint!(
+            archive_manager,
+            model,
+            0,
+            validation_dataset,
+            threshold_specs;
+            groups,
+            method,
+            regularization_strength,
+            validation_batch_size = config.validation_batch_size,
+            prediction_mode = config.validation_prediction_mode,
+            diagnostic_teacher_forced = config.diagnostic_teacher_forced,
+        )
+    end
+
+    for update in first_update:total_updates
+        if update == config.regularized_updates + 1
+            native_candidate = only(filter(
+                candidate -> candidate[:threshold_id] === :native,
+                candidate_masks(model, HardThresholdSpec[]; groups),
+            ))
+            input_mask = native_candidate[:mask]
+        end
+
+        indices = next_batch_indices!(sampler, config.batch_size, training_rng)
+        batch = distillation_batch(
+            train_dataset,
+            indices;
+            actuator_sensor_indices = actuators_to_sensors,
+            window_size,
+        )
+        masked_observations = batch.observations .* reshape(input_mask, :, 1, 1)
+        batch_loss = Ref(NaN)
+        encoder_gradient, decoder_gradient = Flux.gradient(model.encoder, model.decoder) do trial_encoder, trial_decoder
+            observation_representation, _ = trial_encoder(masked_observations)
+            action_dimension = size(trial_decoder.embedding.weight, 2)
+            shifted_actions = cat(
+                zeros(Float32, action_dimension, 1, length(indices)),
+                batch.expert_actions[:, 1:end-1, :];
+                dims = 2,
+            )
+            predicted_actions, _ = trial_decoder(shifted_actions, observation_representation)
+            loss = mean(abs2, predicted_actions .- batch.expert_actions)
+            Zygote.ignore() do
+                batch_loss[] = Float64(loss)
+            end
+            return loss
+        end
+        if !isfinite(batch_loss[])
+            stop_on_numerical_failure!(
+                archive_manager,
+                update,
+                "Non-finite training loss at update $update.";
+                model,
+                sampler,
+                training_rng,
+                losses,
+                input_mask,
+                operator_weights,
+            )
+        end
+        Flux.update!(model.encoder_state_tree, model.encoder, encoder_gradient)
+        Flux.update!(model.decoder_state_tree, model.decoder, decoder_gradient)
+
+        if update <= config.regularized_updates && mod(update, config.proximal_interval) == 0
+            if method_config.regularizer === :grouped
+                apply_grouped_regularizer!(
+                    model.encoder.embedding.weight;
+                    groups,
+                    regularization_strength,
+                    theta_mode = method_config.theta_mode,
+                )
+            elseif method_config.regularizer === :group_reweighted
+                apply_group_reweighted_regularizer!(
+                    model.encoder.embedding.weight;
+                    groups,
+                    operator_weights,
+                    regularization_strength,
+                )
+            else
+                error("Unsupported regularizer $(method_config.regularizer).")
+            end
+        end
+        if method_config.uses_operator_weights &&
+           update <= config.regularized_updates &&
+           mod(update, config.reweight_interval) == 0
+            update_operator_weights!(operator_weights, model, groups)
+        end
+
+        if !model_is_finite(model)
+            stop_on_numerical_failure!(
+                archive_manager,
+                update,
+                "Non-finite apprentice parameters at update $update.";
+                model,
+                sampler,
+                training_rng,
+                losses,
+                input_mask,
+                operator_weights,
+            )
+        end
+        push!(losses, batch_loss[])
+
+        if !isnothing(archive_manager) && should_evaluate_candidates(archive_manager.schedule, update)
+            evaluate_candidate_checkpoint!(
+                archive_manager,
+                model,
+                update,
+                validation_dataset,
+                threshold_specs;
+                groups,
+                method,
+                regularization_strength,
+                validation_batch_size = config.validation_batch_size,
+                prediction_mode = config.validation_prediction_mode,
+                diagnostic_teacher_forced = config.diagnostic_teacher_forced,
+            )
+        end
+        if !isnothing(archive_manager) && should_save_resume(archive_manager.schedule, update)
+            save_resume_checkpoint!(
+                archive_manager,
+                update,
+                Dict{Symbol, Any}(
+                    :model => deepcopy(model),
+                    :sampler => deepcopy(sampler),
+                    :rng => deepcopy(training_rng),
+                    :losses => copy(losses),
+                    :finetune_input_mask => copy(input_mask),
+                    :operator_weights => copy(operator_weights),
+                ),
+            )
+        end
+    end
+
+    if !isnothing(archive_manager)
+        if should_evaluate_candidates(archive_manager.schedule, total_updates; final = true)
+            evaluate_candidate_checkpoint!(
+                archive_manager,
+                model,
+                total_updates,
+                validation_dataset,
+                threshold_specs;
+                groups,
+                method,
+                regularization_strength,
+                validation_batch_size = config.validation_batch_size,
+                prediction_mode = config.validation_prediction_mode,
+                diagnostic_teacher_forced = config.diagnostic_teacher_forced,
+            )
+        end
+        save_resume_checkpoint!(
+            archive_manager,
+            total_updates,
+            Dict{Symbol, Any}(
+                :model => deepcopy(model),
+                :sampler => deepcopy(sampler),
+                :rng => deepcopy(training_rng),
+                :losses => copy(losses),
+                :finetune_input_mask => copy(input_mask),
+                :operator_weights => copy(operator_weights),
+            );
+            status = :complete,
+        )
+        finalize_pareto_archive!(archive_manager)
+    end
+
+    return (
+        model,
+        losses,
+        final_input_mask = input_mask,
+        groups,
+        regularization_strength,
+        archive_manager,
+    )
+end
 
 
+function render_run_apprentice(input_mask; steps::Int = 200)
+    length(input_mask) == size(env.state, 1) || throw(DimensionMismatch("Input mask has the wrong length."))
+    rewards = Float64[]
+    collected_actions = zeros(Float32, steps, actuators)
+    reset!(env)
+    generate_random_init()
+
+    for step in 1:steps
+        action = prob(apprentice, env.state .* input_mask, nothing).μ[:, :, 1]
+        collected_actions[step, :] .= vec(action)
+        env(action)
+        push!(rewards, state_Nu(env))
+    end
+    return (reward_sum = sum(rewards), rewards, collected_actions)
+end
 
 
-# Apprentice outputs are protocol-specific and never overwrite the shared
-# infrastructure directory or its repository-level ignore rules.
+# Apprentice outputs are protocol-specific and never overwrite shared
+# infrastructure or repository-level ignore rules.
 dirpath = get(
     ENV,
     "DISTILLATION_OUTPUT_DIRECTORY",
@@ -1390,238 +1124,76 @@ dirpath = get(
 mkpath(dirpath)
 
 function apprentice_save_stem(; group_channels_value = group_channels)
-    global apprentice_training_kind
-    global apprentice_training_rIC
-
     method_tag = string(normalize_apprentice_kind(apprentice_training_kind))
-    ric_tag = apprentice_training_rIC ? "rIC_true" : "rIC_false"
-    group_channels_suffix = group_channels_value ? "" : "_group_channels_false"
-
-    return "MAT_Apprentice_$(method_tag)_$(ric_tag)$(group_channels_suffix)"
+    protocol_tag = string(EXPERT_APPRENTICE_PROTOCOL)
+    grouping_tag = group_channels_value ? "grouped_channels" : "separate_channels"
+    return "MAT_Apprentice_$(method_tag)_$(protocol_tag)_$(grouping_tag)"
 end
 
 function apprentice_save_path(number = nothing; group_channels_value = group_channels)
-    stem = apprentice_save_stem(; group_channels_value = group_channels_value)
+    stem = apprentice_save_stem(; group_channels_value)
     filename = isnothing(number) ? "$(stem).jld2" : "$(stem)_$(number).jld2"
-    return dirpath * "/saves/" * filename
+    return joinpath(dirpath, "saves", filename)
 end
 
-function legacy_growl_save_path(number = nothing; group_channels_value = group_channels)
-    ric_tag = apprentice_training_rIC ? "rIC_true" : "rIC_false"
-    group_channels_suffix = group_channels_value ? "" : "_group_channels_false"
-    stem = "MAT_Apprentice_growl_$(ric_tag)$(group_channels_suffix)"
-    filename = isnothing(number) ? "$(stem).jld2" : "$(stem)_$(number).jld2"
-    return dirpath * "/saves/" * filename
+function save_apprentice(
+    input_mask;
+    number = nothing,
+    group_channels_value = group_channels,
+    metadata = Dict{Symbol, Any}(),
+)
+    length(input_mask) == size(env.state, 1) || throw(DimensionMismatch("Input mask has the wrong length."))
+    path = apprentice_save_path(number; group_channels_value)
+    mkpath(dirname(path))
+    pareto_atomic_save(
+        path;
+        apprentice,
+        input_mask = Float32.(input_mask),
+        method = normalize_apprentice_kind(apprentice_training_kind),
+        protocol = EXPERT_APPRENTICE_PROTOCOL,
+        group_channels = group_channels_value,
+        metadata = Dict{Symbol, Any}(metadata),
+    )
+    return path
 end
 
-function rename_growl_saves_to_gro_asc!()
-    saves_dir = dirpath * "/saves"
-    if !isdir(saves_dir)
-        println("No saves directory found at: $(saves_dir)")
-        return
-    end
-
-    renamed = 0
-    for filename in readdir(saves_dir)
-        startswith(filename, "MAT_Apprentice_growl_") || continue
-        new_filename = replace(filename, "MAT_Apprentice_growl_" => "MAT_Apprentice_gro_asc_")
-        old_path = joinpath(saves_dir, filename)
-        new_path = joinpath(saves_dir, new_filename)
-
-        if isfile(new_path)
-            @warn "Skipping rename because target already exists." old_path new_path
-            continue
-        end
-
-        mv(old_path, new_path)
-        renamed += 1
-    end
-
-    println("Renamed $(renamed) growl save(s) to gro_asc naming.")
+function load_apprentice(
+    number = nothing;
+    group_channels_value = group_channels,
+)
+    path = apprentice_save_path(number; group_channels_value)
+    loaded = JLD2.load(path)
+    loaded_method = Symbol(loaded["method"])
+    normalize_apprentice_kind(loaded_method)
+    loaded_protocol = Symbol(loaded["protocol"])
+    loaded_protocol === EXPERT_APPRENTICE_PROTOCOL || error(
+        "Saved apprentice protocol $loaded_protocol does not match $EXPERT_APPRENTICE_PROTOCOL.",
+    )
+    global apprentice = loaded["apprentice"]
+    global apprentice_training_kind = loaded_method
+    global apprentice_training_rIC = loaded_protocol === :varying
+    return (
+        apprentice,
+        input_mask = Float32.(loaded["input_mask"]),
+        metadata = get(loaded, "metadata", Dict{Symbol, Any}()),
+        path,
+    )
 end
 
-function load_apprentice(number = nothing; group_channels_value = group_channels)
-    filepath = apprentice_save_path(number; group_channels_value = group_channels_value)
-    if !isfile(filepath) && normalize_apprentice_kind(apprentice_training_kind) == :gro_asc
-        legacy_filepath = legacy_growl_save_path(number; group_channels_value = group_channels_value)
-        if isfile(legacy_filepath)
-            @warn "Using legacy growl save filename. Consider renaming with rename_growl_saves_to_gro_asc!()." legacy_filepath
-            filepath = legacy_filepath
-        end
-    end
-    global apprentice = FileIO.load(filepath, "apprentice")
-
-    try
-        global mask = FileIO.load(filepath, "mask")
-    catch
-        @warn "No mask found in apprentice save. Keeping current mask." filepath
-    end
-end
-
-function load_apprentice_kind(kind::Symbol, number = nothing; group_channels_value = group_channels, rIC = randomIC)
+function load_apprentice_kind(
+    kind::Symbol,
+    number = nothing;
+    group_channels_value = group_channels,
+)
     global apprentice_training_kind = normalize_apprentice_kind(kind)
-    global apprentice_training_rIC = rIC
-    return load_apprentice(number; group_channels_value = group_channels_value)
+    return load_apprentice(number; group_channels_value)
 end
 
-function gro_asc_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
-    return load_apprentice_kind(:gro_asc, number; group_channels_value = group_channels_value, rIC = rIC)
-end
-
-function growl_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
-    return load_apprentice_kind(:growl, number; group_channels_value = group_channels_value, rIC = rIC)
-end
-
-function lasso_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
-    return load_apprentice_kind(:lasso, number; group_channels_value = group_channels_value, rIC = rIC)
-end
-
-function reweight_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
-    return load_apprentice_kind(:weighted, number; group_channels_value = group_channels_value, rIC = rIC)
-end
-
-function weighted_load(number = nothing; group_channels_value = group_channels, rIC = randomIC)
-    return reweight_load(number; group_channels_value = group_channels_value, rIC = rIC)
-end
-
-function save_apprentice(number = nothing; group_channels_value = group_channels)
-    isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
-
-    FileIO.save(apprentice_save_path(number; group_channels_value = group_channels_value), "apprentice", apprentice, "mask", mask)
-end
-
-
-
-
-
-function train_masked(use_random_init = randomIC; visuals = false, num_steps = 1600, inner_loops = 5, outer_loops = 25)
-    rm(dirpath * "/training_frames/", recursive=true, force=true)
-    mkdir(dirpath * "/training_frames/")
-    frame = 1
-
-    if visuals
-        colorscale = [[0, "rgb(34, 74, 168)"], [0.25, "rgb(224, 224, 180)"], [0.5, "rgb(156, 33, 11)"], [1, "rgb(226, 63, 161)"], ]
-        ymax = 30
-        layout = Layout(
-                plot_bgcolor="#f1f3f7",
-                coloraxis = attr(cmin = 1, cmid = 2.5, cmax = 3, colorscale = colorscale),
-            )
-    end
-
-
-    if use_random_init
-        hook.generate_random_init = generate_random_init
-    else
-        hook.generate_random_init = generate_random_init
-    end
-    
-
-    for i = 1:outer_loops
-        
-        for i = 1:inner_loops
-            println("")
-            
-            stop_condition = StopAfterEpisodeWithMinSteps(num_steps)
-
-
-            # run start
-            hook(PRE_EXPERIMENT_STAGE, agent, env)
-            agent(PRE_EXPERIMENT_STAGE, env)
-            is_stop = false
-            while !is_stop
-                reset!(env)
-                agent(PRE_EPISODE_STAGE, env)
-                hook(PRE_EPISODE_STAGE, agent, env)
-
-                while !(is_terminated(env) || is_truncated(env))
-
-                    # update env state!!!!!
-                    env.state = env.state .* mask
-
-                    action = agent(env)
-
-                    # dist = prob(agent.policy, env.state .* mask, nothing)
-                    # action = rand.(agent.policy.rng, dist)
-
-                    # if ndims(action) == 2
-                    #     log_p = vec(sum(normlogpdf(dist.μ, dist.σ, action), dims=1))
-                    # else
-                    #     log_p = normlogpdf(dist.μ, dist.σ, action)
-                    # end
-
-                    # agent.policy.last_action_log_prob = log_p[:]
-
-
-
-                    agent(PRE_ACT_STAGE, env, action)
-                    hook(PRE_ACT_STAGE, agent, env, action)
-
-                    env(action)
-
-                    agent(POST_ACT_STAGE, env)
-                    hook(POST_ACT_STAGE, agent, env)
-
-                    if visuals
-                        p = plot(heatmap(z=env.y[1,:,:]', coloraxis="coloraxis"), layout)
-
-                        savefig(p, dirpath * "/training_frames//a$(lpad(string(frame), 5, '0')).png"; width=1000, height=800)
-                    end
-
-                    frame += 1
-
-                    if stop_condition(agent, env)
-                        is_stop = true
-                        break
-                    end
-                end # end of an episode
-
-                if is_terminated(env) || is_truncated(env)
-                    agent(POST_EPISODE_STAGE, env)  # let the agent see the last observation
-                    hook(POST_EPISODE_STAGE, agent, env)
-                end
-            end
-            hook(POST_EXPERIMENT_STAGE, agent, env)
-            # run end
-
-
-            println(hook.bestreward)
-            
-
-            # hook.rewards = clamp.(hook.rewards, -3000, 0)
-        end
-    end
-
-    if visuals && false
-        rm(dirpath * "/training.mp4", force=true)
-        run(`ffmpeg -framerate 16 -i $(dirpath * "/training_frames/a%05d.png") -c:v libx264 -crf 21 -an -pix_fmt yuv420p10le $(dirpath * "/training.mp4")`)
-    end
-
-    #save_apprentice()
-end
-
-
-function load_masked(number = nothing)
-    if isnothing(number)
-        global hook = FileIO.load(dirpath * "/saves/masked_hookMAT.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/masked_agentMAT.jld2","agent")
-        global mask = FileIO.load(dirpath * "/saves/masked_maskMAT.jld2","mask")
-    else
-        global hook = FileIO.load(dirpath * "/saves/masked_hookMAT$number.jld2","hook")
-        global agent = FileIO.load(dirpath * "/saves/masked_agentMAT$number.jld2","agent")
-        global mask = FileIO.load(dirpath * "/saves/masked_maskMAT$number.jld2","mask")
-    end
-end
-
-function save_masked(number = nothing)
-    isdir(dirpath * "/saves") || mkdir(dirpath * "/saves")
-
-    if isnothing(number)
-        FileIO.save(dirpath * "/saves/masked_hookMAT.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/masked_agentMAT.jld2","agent",agent)
-        FileIO.save(dirpath * "/saves/masked_maskMAT.jld2","mask",mask)
-    else
-        FileIO.save(dirpath * "/saves/masked_hookMAT$number.jld2","hook",hook)
-        FileIO.save(dirpath * "/saves/masked_agentMAT$number.jld2","agent",agent)
-        FileIO.save(dirpath * "/saves/masked_maskMAT$number.jld2","mask",mask)
-    end
-end
+go_load(number = nothing; kwargs...) =
+    load_apprentice_kind(:go, number; kwargs...)
+gr_load(number = nothing; kwargs...) =
+    load_apprentice_kind(:gr, number; kwargs...)
+group_lasso_load(number = nothing; kwargs...) =
+    load_apprentice_kind(:group_lasso, number; kwargs...)
+growl_load(number = nothing; kwargs...) =
+    load_apprentice_kind(:growl, number; kwargs...)
