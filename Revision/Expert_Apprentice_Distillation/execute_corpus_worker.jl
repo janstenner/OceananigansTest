@@ -45,9 +45,14 @@ function execute_loaded_corpus_worker(options)
         :control_dt => dt,
     )
 
+    offsets = if isnothing(options["offset_start"])
+        distillation_offsets(protocol, split)
+    else
+        collect(options["offset_start"]:(options["offset_start"] + options["offset_count"] - 1))
+    end
     verification_spec = protocol === :fixed ?
         (split = :shared, base_seed = nothing, mirror = false, offset = nothing) :
-        (split = split, base_seed = base_seed, mirror = mirror, offset = options["offset_start"])
+        (split = split, base_seed = base_seed, mirror = mirror, offset = first(offsets))
     initialize_episode!(verification_spec)
     assert_lossless_observation_reconstruction(
         observe(),
@@ -56,7 +61,6 @@ function execute_loaded_corpus_worker(options)
         window_size,
     )
 
-    offsets = options["offset_start"]:(options["offset_start"] + options["offset_count"] - 1)
     output = generate_distillation_worker!(
         ;
         protocol,

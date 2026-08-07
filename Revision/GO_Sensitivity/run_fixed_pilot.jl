@@ -50,6 +50,8 @@ const P6_FIXED_PILOT_RUN_DIRECTORY = joinpath(
 # These variables must be set before Expert_Apprentice.jl includes the Fixed
 # Revision MAT run file and the DistillationCorpus loader.
 ENV["DISTILLATION_PROTOCOL"] = "fixed"
+ENV["DISTILLATION_AUTOLOAD_PROTOCOL"] = "fixed"
+ENV["DISTILLATION_SKIP_AUTOLOAD"] = "false"
 ENV["REVISION_RUN_SEED"] = string(P6_FIXED_PILOT_SEED)
 ENV["DISTILLATION_FIXED_EXPERT_PATH"] = P6_FIXED_EXPERT_PATH
 ENV["DISTILLATION_WORKER_DIRECTORY"] = P6_DISTILLATION_WORKER_DIRECTORY

@@ -23,8 +23,8 @@ usage() {
 Usage: Revision/Expert_Apprentice_Distillation/launch_tmux.sh [options]
 
 Defaults to the 40 Varying-IC training workers: 20 basis ICs x 2 mirrors.
-Each Varying-IC worker evaluates all 96 horizontal offsets. Fixed IC creates
-one worker with one episode.
+Training workers evaluate all 96 offsets; validation and test workers evaluate
+only offsets 0 and 20. Fixed IC creates one worker with one episode.
 
 Options:
   --protocol all|fixed|varying       Default: varying.

@@ -47,17 +47,19 @@ periodically and on finalization.
 
 ## Corpus layout
 
-A Varying-IC worker owns one `(split, base_seed, mirror)` combination and
-normally evaluates offsets `0:95`, each for 200 deterministic expert control
-steps. The default training launch therefore contains 40 workers:
+A Varying-IC worker owns one `(split, base_seed, mirror)` combination. Training
+workers evaluate offsets `0:95`; validation and test workers evaluate only the
+fixed offsets `0` and `20`. Every episode contains 200 deterministic expert
+control steps. The default training launch therefore contains 40 workers:
 
 ```text
 20 training bases × 2 mirror choices = 40 workers
 ```
 
-Validation has two workers and test has four workers. Fixed IC uses one worker
-and one 200-step episode; the loader exposes that same dataset object as its
-training, validation, and test set.
+Validation has two workers with four episodes and 800 samples in total. Test
+has four workers with eight episodes and 1,600 samples in total. Fixed IC uses
+one worker and one 200-step episode; the loader exposes that same dataset
+object as its training, validation, and test set.
 
 Workers store the unique global `3×48×8` sensor tensor and the `1×12` expert
 action means as `Float32`. The overlapping `360×12` MAT observation is rebuilt
@@ -68,9 +70,12 @@ training corpus from about 12.4 GiB to about 3.33 GiB.
 
 Every worker writes one descriptive JLD2 atomically below `worker_results/`.
 Including `DistillationCorpus.jl` loads every available complete worker file
-and merges it by protocol and split into `DISTILLATION_CORPUS`. Corpus workers
-set `DISTILLATION_SKIP_AUTOLOAD=true` to avoid loading the growing training set
-while generating another shard.
+and merges it by protocol and split into `DISTILLATION_CORPUS`. Setting
+`DISTILLATION_AUTOLOAD_PROTOCOL` to `fixed` or `varying` before inclusion loads
+only the selected protocol; the default is `all`. Experiment runners should
+select their protocol so a Fixed-only process does not load the multi-gigabyte
+Varying corpus. Corpus workers set `DISTILLATION_SKIP_AUTOLOAD=true` to avoid
+loading the growing training set while generating another shard.
 Package runners call `assert_distillation_coverage` before production training;
 partial available shards remain loadable for inspection and development.
 
@@ -105,6 +110,26 @@ Revision/Expert_Apprentice_Distillation/launch_tmux.sh \
   --protocol varying --split train \
   --varying-expert-path /path/to/agent.jld2
 ```
+
+After training shards exist, generate the two Varying validation workers and
+the four Varying test workers separately. This avoids needlessly checking all
+40 large training shards while preparing either launch:
+
+```bash
+bash Revision/Expert_Apprentice_Distillation/launch_tmux.sh \
+  --protocol varying --split validation --max-workers 2 \
+  --varying-expert-path Revision/Expert_Apprentice_Distillation/experts/varying/agent.jld2 \
+  --no-systemd-inhibit
+
+bash Revision/Expert_Apprentice_Distillation/launch_tmux.sh \
+  --protocol varying --split test --max-workers 4 \
+  --varying-expert-path Revision/Expert_Apprentice_Distillation/experts/varying/agent.jld2 \
+  --no-systemd-inhibit
+```
+
+Omit `--no-systemd-inhibit` on a server where the configured user is allowed
+to acquire the inhibitor. Completed matching shards are skipped, so neither
+command needs `--overwrite` for a restart.
 
 Generate the Fixed-IC dataset:
 

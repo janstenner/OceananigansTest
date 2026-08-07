@@ -82,6 +82,7 @@ end
 function matching_worker_complete(
     path::AbstractString;
     protocol,
+    split = DISTILLATION_SHARED_SPLIT,
     expected_identifier,
 )
     isfile(path) || return false
@@ -90,7 +91,7 @@ function matching_worker_complete(
         result = load_distillation_worker(path)
         metadata = distillation_value(result, :expert_metadata)
         identifier = string(get(metadata, :identifier, get(metadata, "identifier", "unknown")))
-        expected_offsets = protocol === :fixed ? [nothing] : collect(DISTILLATION_OFFSETS)
+        expected_offsets = distillation_offsets(protocol, split)
         return distillation_value(result, :complete) === true &&
                Int(distillation_value(result, :rollout_steps)) == DISTILLATION_ROLLOUT_STEPS &&
                collect(distillation_value(result, :offsets)) == expected_offsets &&
@@ -132,6 +133,7 @@ function planned_jobs(
         if overwrite || !matching_worker_complete(
             path;
             protocol = :fixed,
+            split = DISTILLATION_SHARED_SPLIT,
             expected_identifier = fixed_identifier,
         )
             push!(jobs, (
@@ -159,6 +161,7 @@ function planned_jobs(
                 if overwrite || !matching_worker_complete(
                     path;
                     protocol = :varying,
+                    split,
                     expected_identifier = varying_identifier,
                 )
                     push!(jobs, (

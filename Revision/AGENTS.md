@@ -52,9 +52,14 @@ Sparse Sensing paper.
 - `GO_Sensitivity/run_fixed_pilot.jl`: Plain-Julia local Package-6 Fixed-IC GO
   pilot with strict corpus/expert provenance checks and a scoped Pareto
   archive. It requires neither Bash nor tmux.
+- `GO_Sensitivity/run_strength_calibration_pilot.jl`: Plain-Julia Package-6
+  one-seed calibration orchestrator for three strengths across Fixed/Varying
+  IC and grouped/separate channels. It launches fresh Julia processes for the
+  four include-time configurations; its worker helper owns the individual
+  resumable Pareto runs.
 - `GO_Sensitivity/inspect_fixed_pilot.jl`: Lightweight result inspector that
   prints the native GO trajectory and archived Pareto points and exports CSV
-  summaries plus a PlotlyJS sensor-sparsity/validation-MSE plot. Its default
+  summaries plus a PlotlyJS active-groups/validation-MSE plot. Its default
   mode additionally performs or loads a cached deterministic 200-step
   Fixed-IC closed-loop expert/native-apprentice comparison, including reward,
   full-state global Nusselt number, and action histories. Model-free inspection
@@ -221,11 +226,13 @@ All panels use common color limits for the selected field.
 
 The Package-6/7/8 distillation corpus is stored as independent atomic worker
 JLD2 files. A Varying-IC worker owns exactly one
-`(split, basis seed, mirror)` combination and evaluates all 96 horizontal
-offsets for 200 deterministic expert control steps. The default training plan
-therefore has 40 workers. Validation has two workers and test has four. Fixed
-IC uses one worker and one 200-step episode, exposed as the same in-memory
-training, validation, and test dataset.
+`(split, basis seed, mirror)` combination. Training workers evaluate all 96
+horizontal offsets, while validation and test workers evaluate only offsets 0
+and 20, always for 200 deterministic expert control steps. The default
+training plan therefore has 40 workers. Validation has two workers/four
+episodes and test has four workers/eight episodes. Fixed IC uses one worker and
+one 200-step episode, exposed as the same in-memory training, validation, and
+test dataset.
 
 Worker files store the unique `3 × 48 × 8` global sensor tensor and `1 × 12`
 expert action means as `Float32`. They do not persist the twelve overlapping

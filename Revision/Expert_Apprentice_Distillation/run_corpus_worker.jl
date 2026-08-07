@@ -16,8 +16,9 @@ function usage(io::IO = stdout)
       --expert-path PATH       Explicit expert checkpoint.
       --worker-dir PATH        Override the worker-result root.
       --steps N                Rollout length; production default: 200.
-      --offset-start N         Testing/sharding override; default: 0.
-      --offset-count N         Testing override; production default: 96.
+      --offset-start N         Optional contiguous testing/sharding override.
+      --offset-count N         Required together with --offset-start.
+                              Defaults: train 0:95; validation/test 0,20.
       --run-seed N             MAT initialization seed; default: 600600.
       --allow-fresh-expert     Smoke tests only; use the freshly initialized MAT.
       --overwrite              Replace a matching complete worker file.
@@ -34,8 +35,8 @@ function parse_worker_arguments(arguments)
         "expert_path" => nothing,
         "worker_dir" => joinpath(@__DIR__, "worker_results"),
         "steps" => 200,
-        "offset_start" => 0,
-        "offset_count" => 96,
+        "offset_start" => nothing,
+        "offset_count" => nothing,
         "run_seed" => 600600,
         "allow_fresh_expert" => false,
         "overwrite" => false,
@@ -63,15 +64,22 @@ function parse_worker_arguments(arguments)
     end
 
     isnothing(options["protocol"]) && error("--protocol is required.")
-    for key in ("steps", "offset_start", "offset_count", "run_seed")
+    for key in ("steps", "run_seed")
         options[key] = options[key] isa Integer ? options[key] : parse(Int, options[key])
     end
     options["steps"] > 0 || error("--steps must be positive.")
-    0 <= options["offset_start"] <= 95 || error("--offset-start must be in 0:95.")
-    1 <= options["offset_count"] <= 96 || error("--offset-count must be in 1:96.")
-    options["offset_start"] + options["offset_count"] <= 96 || error(
-        "--offset-start + --offset-count must not exceed 96.",
+    xor(isnothing(options["offset_start"]), isnothing(options["offset_count"])) && error(
+        "--offset-start and --offset-count must be supplied together.",
     )
+    if !isnothing(options["offset_start"])
+        options["offset_start"] = parse(Int, string(options["offset_start"]))
+        options["offset_count"] = parse(Int, string(options["offset_count"]))
+        0 <= options["offset_start"] <= 95 || error("--offset-start must be in 0:95.")
+        1 <= options["offset_count"] <= 96 || error("--offset-count must be in 1:96.")
+        options["offset_start"] + options["offset_count"] <= 96 || error(
+            "--offset-start + --offset-count must not exceed 96.",
+        )
+    end
 
     protocol = Symbol(lowercase(string(options["protocol"])))
     protocol in (:fixed, :varying) || error("--protocol must be fixed or varying.")

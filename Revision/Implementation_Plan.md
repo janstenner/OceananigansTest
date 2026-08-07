@@ -145,8 +145,10 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Fixed-/Varying-IC-Worker, deterministische Expertauflösung und einen
     persistenten tmux-Launcher.
   - Der Varying-IC-Plan erzeugt 40 Training-Worker aus 20 Basiszuständen und
-    zwei Spiegelungen; jeder Worker besitzt alle 96 Offsets. Fixed IC verwendet
-    einen Worker und eine Episode.
+    zwei Spiegelungen; jeder Training-Worker besitzt alle 96 Offsets.
+    Validation und Test verwenden pro Basis-/Spiegelungskombination nur die
+    festen Offsets 0 und 20, also vier beziehungsweise acht Episoden. Fixed IC
+    verwendet einen Worker und eine Episode.
   - Die Worker speichern globale `3 × 48 × 8`-Sensortensoren statt mehrfach
     überlappender lokaler Fenster. Callback- und echte Ein-Schritt-Tests prüfen
     atomare Speicherung, Split-Merge und bitgenaue Rekonstruktion der
@@ -170,10 +172,18 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Fixed-IC-Technikpilot mit Expert-/Corpus-Provenienzprüfung, Resume und
     getrennten nativen beziehungsweise Hard-Threshold-Pareto-Scopes aus. Der
     lokale Runner verwendet bewusst weder Bash noch tmux.
+  - Der Plain-Julia-Runner `run_strength_calibration_pilot.jl` führt vor dem
+    Produktionssweep eine gepaarte Ein-Seed-Kalibrierung mit jeweils drei
+    GO-Stärken für Fixed/Varying IC und channel-coupled/separate-channel
+    grouping aus. Jede der vier Kombinationen läuft wegen der include-time
+    Konfiguration in einem frischen Julia-Prozess; innerhalb einer Kombination
+    teilen alle drei Stärken exakt dieselbe Initialisierung und Batch-Reihenfolge.
+    Die Kalibrierung dient zur Festlegung von fünf Produktionsstärken je
+    Protokoll und zählt nicht als wissenschaftlicher Paket-6-Sweep.
   - Ein leichtgewichtiger Fixed-Pilot-Inspector gibt Trainingsmetadaten, den
     vollständigen nativen GO-Verlauf, den finalen Thresholdvergleich und das
     erhaltene Pareto-Archiv aus und exportiert diese Daten als Text, CSV und
-    PlotlyJS-Pareto-Plot über aktive Sensorpositionen und autoregressiven
+    PlotlyJS-Pareto-Plot über aktive Gruppen und autoregressiven
     Validation-MSE, ohne Expert-, Apprentice- oder Resume-Checkpoints zu
     deserialisieren. Der verlängerte Technikpilot verwendet 6.000 Updates; die
     Validation beginnt bei Update 2.000 und erfolgt danach alle 5 Updates.
@@ -183,8 +193,11 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     werden identitätsgeprüft als JLD2 gecacht; Rewardvergleich, CSV und
     PlotlyJS-Kurve werden im Analyseordner gespeichert. Dies ist ein technischer
     Einzelvergleich und kein Closed-Loop-Sweep über Sensitivitätspunkte.
-  - Produktionscorpus, finale Experts, konkrete Apprentice-Budgets und
-    Thresholdstufen sowie die numerischen Akzeptanzbereiche stehen noch aus.
+  - Fixed- und Varying-Training-Corpus sowie finale Experts sind vorhanden.
+    Varying-Validation und -Test müssen noch vollständig erzeugt beziehungsweise
+    lokal bereitgestellt werden. Konkrete Produktionsbudgets, die aus der
+    Kalibrierung abgeleiteten fünf GO-Stärken, Thresholdstufen und numerischen
+    Akzeptanzbereiche stehen noch aus.
 
   Abschluss:
 

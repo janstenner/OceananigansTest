@@ -169,11 +169,11 @@ function plot_fixed_pilot_validation(records, current_front, analysis_directory)
         push!(
             traces,
             scatter(
-                x = active_sensors,
+                x = active_groups,
                 y = validation_loss,
                 mode = "markers",
                 name = string(threshold_id),
-                customdata = hcat(updates, active_inputs, active_groups),
+                customdata = hcat(updates, active_inputs, active_sensors),
                 marker = attr(
                     color = color,
                     size = threshold_id === :native ? 8 : 7,
@@ -183,9 +183,9 @@ function plot_fixed_pilot_validation(records, current_front, analysis_directory)
                 hovertemplate =
                     "Threshold: %{fullData.name}<br>" *
                     "Update: %{customdata[0]}<br>" *
-                    "Active sensor locations: %{x}<br>" *
+                    "Active groups: %{x}<br>" *
                     "Active global inputs: %{customdata[1]}<br>" *
-                    "Active groups: %{customdata[2]}<br>" *
+                    "Active global sensor locations: %{customdata[2]}<br>" *
                     "Validation MSE: %{y:.6e}<extra></extra>",
             ),
         )
@@ -196,7 +196,7 @@ function plot_fixed_pilot_validation(records, current_front, analysis_directory)
             traces,
             scatter(
                 x = Int[
-                    archive_value(record, :active_sensor_locations) for record in current_front
+                    archive_value(record, :active_groups) for record in current_front
                 ],
                 y = Float64[
                     archive_value(record, :validation_matching) for record in current_front
@@ -206,6 +206,12 @@ function plot_fixed_pilot_validation(records, current_front, analysis_directory)
                 customdata = hcat(
                     Int[archive_value(record, :update) for record in current_front],
                     string.(archive_value.(current_front, Ref(:threshold_id))),
+                    Int[
+                        archive_value(record, :active_inputs) for record in current_front
+                    ],
+                    Int[
+                        archive_value(record, :active_sensor_locations) for record in current_front
+                    ],
                 ),
                 marker = attr(
                     color = "rgba(0, 0, 0, 0)",
@@ -216,7 +222,9 @@ function plot_fixed_pilot_validation(records, current_front, analysis_directory)
                 hovertemplate =
                     "Retained: %{customdata[1]}<br>" *
                     "Update: %{customdata[0]}<br>" *
-                    "Active sensor locations: %{x}<br>" *
+                    "Active groups: %{x}<br>" *
+                    "Active global inputs: %{customdata[2]}<br>" *
+                    "Active global sensor locations: %{customdata[3]}<br>" *
                     "Validation MSE: %{y:.6e}<extra></extra>",
             ),
         )
@@ -239,7 +247,7 @@ function plot_fixed_pilot_validation(records, current_front, analysis_directory)
             margin = attr(l = 95, r = 30, t = 80, b = 80),
             font = attr(family = "Arial, sans-serif", size = 15, color = "#303030"),
             xaxis = attr(
-                title = attr(text = "Active sensor locations (lower is sparser)", standoff = 12),
+                title = attr(text = "Active groups (lower is sparser)", standoff = 12),
                 showline = true,
                 mirror = true,
                 linecolor = "#3A3A3A",

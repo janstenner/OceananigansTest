@@ -1,6 +1,6 @@
 # Paket 6 — Minimale GO-Sensitivitätsstudie auf RBC-Daten
 
-Stand: 2026-07-31
+Stand: 2026-08-07
 
 ## Ziel
 
@@ -72,20 +72,28 @@ $$
 bleibt unverändert.
 Ihre Form, die Proximalfrequenz und alle anderen Optimierungsparameter bleiben konstant.
 
-Im bestehenden Code sind die bisherigen GO-Zentralwerte:
+Im bestehenden Code sind die bisherigen GO-Referenzwerte:
 
 - Fixed IC: `0.09`
 - Varying IC: `0.025`
 
-Vorgesehen ist folgender vorab festgelegter Dreipunktsweep:
+Vor dem Produktionssweep wird ein technischer Ein-Seed-Kalibrierungslauf mit
+folgenden drei Ankerwerten durchgeführt:
 
-| Protokoll | niedrig | bisheriger Wert | hoch |
+| Protokoll | niedrig | mittel | bisheriger Wert |
 |---|---:|---:|---:|
-| Fixed IC | 0.045 | 0.09 | 0.18 |
-| Varying IC | 0.0125 | 0.025 | 0.05 |
+| Fixed IC | 0.01 | 0.03 | 0.09 |
+| Varying IC | 0.003 | 0.008 | 0.025 |
 
-Die drei Werte entsprechen jeweils $0.5\times$, $1\times$ und $2\times$ des bisherigen Werts.
-Nach Beginn der Produktionsruns wird der Sweep nicht anhand der Resultate erweitert oder verschoben.
+Jede dieser Stärken wird mit demselben Apprentice-Seed sowohl für
+channel-coupled als auch für separate-channel grouping geprüft. Diese zwölf
+Läufe sind ausschließlich eine Kalibrierung der sinnvollen Größenordnung und
+kein Teil der wissenschaftlichen Sensitivitätsauswertung.
+
+Anhand der Kalibrierung wird pro Protokoll ein Satz aus fünf geordneten
+Produktionsstärken festgelegt. Die Abstände müssen keine Verdopplungen sein.
+Die fünf Werte werden vor Beginn der Produktionsruns dokumentiert und danach
+nicht anhand der Produktionsresultate erweitert oder verschoben.
 
 Die Bezeichnung ist methodenübergreifend: Sie beschreibt die Stärke des
 jeweiligen Regularisierers und keine mathematische Potenz.
@@ -102,7 +110,8 @@ Eine reine Fixed-IC-Studie würde den Varying-IC-Wert nicht absichern.
 
 Der experimentelle Sensitivitätssweep verwendet ausschließlich channel-coupled grouping.
 Dies ist die praktisch wichtigste Variante, bei der ein physischer Sensorort gemeinsam über seine Komponenten behandelt wird.
-Separate-channel grouping wird technisch geprüft, erhält jedoch keinen eigenen vollständigen Sensitivitätssweep.
+Separate-channel grouping wird im Ein-Seed-Kalibrierungslauf technisch
+geprüft, erhält jedoch keinen eigenen vollständigen Sensitivitätssweep.
 
 ## 5. Seeds und Paarung
 
@@ -123,11 +132,11 @@ Der GO-Umfang beträgt
 $$
 2\ \text{Protokolle}
 \times
-3\ \text{GO-Stärken}
+5\ \text{GO-Stärken}
 \times
 3\ \text{Seeds}
 =
-18\ \text{GO-Runs}.
+30\ \text{GO-Runs}.
 $$
 
 ## 6. GR als Referenz
@@ -141,7 +150,8 @@ Es wird mit seiner bisherigen nominalen Konfiguration als Referenz ausgeführt:
 - dieselben Daten und Trainingsbudgets
 
 Damit kommen sechs GR-Runs hinzu.
-Paket 6 umfasst insgesamt 24 offline durchgeführte Apprentice-Runs.
+Paket 6 umfasst nach der separaten technischen Kalibrierung insgesamt 36
+offline durchgeführte Produktionsruns.
 
 Jeder GR-Run erzeugt dasselbe Pareto-Archiv wie ein GO-Run.
 Der GR-Vergleich soll keine allgemeine Überlegenheit eines Verfahrens nachweisen.
@@ -173,7 +183,7 @@ nicht nachträglich repariert.
 
 ## 8. Training ohne manuelles Stoppen
 
-Alle 24 Runs erhalten dasselbe feste Maximalbudget innerhalb ihres jeweiligen IC-Protokolls.
+Alle 36 Produktionsruns erhalten dasselbe feste Maximalbudget innerhalb ihres jeweiligen IC-Protokolls.
 Ergebnisabhängige Stopps werden für die Studie deaktiviert.
 Dies betrifft insbesondere:
 
@@ -293,7 +303,7 @@ Für GR wird dieselbe gepoolte Referenzfront erzeugt.
 
 ### C. Gemeinsame Front über alle GO-Stärken
 
-Die Kandidaten aller drei GO-Stärken werden anschließend zusammengeführt.
+Die Kandidaten aller fünf GO-Produktionsstärken werden anschließend zusammengeführt.
 Jeder Punkt behält seine Kennzeichnung für GO-Stärke, Seed und Trainingsschritt.
 
 Diese Front zeigt:
@@ -414,7 +424,8 @@ Paket 6 umfasst:
 
 - zwei RBC-Datenprotokolle
 - channel-coupled grouping
-- drei GO-Stärken
+- fünf GO-Stärken, festgelegt nach einer separaten Ein-Seed-Kalibrierung über
+  drei Ankerwerte
 - drei Apprentice-Seeds
 - eine nominale GR-Referenz
 - Pareto-Archive über regelmäßig ausgewertete Trainingscheckpoints
@@ -429,7 +440,8 @@ Paket 6 umfasst:
 - keine Toy-Probleme
 - keine Lasso- oder Standard-GrOWL-Sweeps
 
-Der Umfang bleibt bei 18 GO-Runs und 6 GR-Runs.
+Der Produktionsumfang beträgt 30 GO-Runs und 6 GR-Runs. Die zwölf technischen
+Kalibrierungsläufe zählen nicht als wissenschaftliche Paket-6-Runs.
 Die teuren Closed-Loop-Auswertungen folgen erst in Paket 7 und 8 für wenige Pareto-Kandidaten.
 
 ## Festgelegte Zählweise aktiver Inputs
@@ -492,18 +504,19 @@ Für Fixed IC erzeugt ein einzelner Worker genau eine deterministische
 200-Schritt-Episode. Derselbe gespeicherte Datensatz dient als Training-,
 Validation- und Testmenge.
 
-Für Varying IC wird für jede Basis des jeweiligen Splits die vollständige
+Für Varying IC verwendet das Training für jede Basis die vollständige
 Transformationsmenge aus beiden Spiegelungszuständen und allen 96 horizontalen
-Offsets deterministisch mit dem zugehörigen Expert ausgewertet. Ein Worker
-besitzt genau eine Kombination aus Split, Basis-Seed und Spiegelungszustand und
-erzeugt darin alle 96 Offsetepisoden mit jeweils 200 Kontrollschritten. Daraus
-folgen:
+Offsets. Validation und Test bleiben bewusst klein und verwenden pro Basis und
+Spiegelungszustand ausschließlich die beiden vorab festgelegten Offsets 0 und
+20. Ein Worker besitzt genau eine Kombination aus Split, Basis-Seed und
+Spiegelungszustand und erzeugt die zu seinem Split gehörenden Offsetepisoden mit
+jeweils 200 Kontrollschritten. Daraus folgen:
 
 | Split | Basen | Worker | Episoden | Zeitschritte |
 |---|---:|---:|---:|---:|
 | Training | 20 | 40 | 3.840 | 768.000 |
-| Validation | 1 | 2 | 192 | 38.400 |
-| Test | 2 | 4 | 384 | 76.800 |
+| Validation | 1 | 2 | 4 | 800 |
+| Test | 2 | 4 | 8 | 1.600 |
 
 Paket 6 verwendet ausschließlich Training und Validation. Die Testshards bleiben
 für die spätere finale Auswertung in Paket 8 ungenutzt.

@@ -16,7 +16,15 @@ end
 @testset "pure group-consistent candidates" begin
     test_model = deepcopy(apprentice)
     groups = regularizer_groups(test_model; group_rows_by_overlap = true, group_channels = true)
+    separate_channel_groups = regularizer_groups(
+        test_model;
+        group_rows_by_overlap = true,
+        group_channels = false,
+    )
+    @test length(groups) == 32
+    @test length(separate_channel_groups) == 96
     @test !any_shared(groups)
+    @test !any_shared(separate_channel_groups)
     test_model.encoder.embedding.weight[:, groups[1]] .= 0
 
     specifications = [

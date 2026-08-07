@@ -95,10 +95,28 @@ function run_distillation_corpus_tests()
         @assert corpus[:fixed][:validation] === corpus[:fixed][:test]
         @assert corpus[:fixed][:train][:sample_count] == 2
         @assert !corpus[:fixed][:train][:coverage_complete]
+        fixed_only = load_distillation_corpus(worker_directory; protocols = (:fixed,))
+        @assert fixed_only[:fixed][:train][:sample_count] == 2
+        @assert fixed_only[:varying][:train][:sample_count] == 0
+        varying_only = load_distillation_corpus(worker_directory; protocols = (:varying,))
+        @assert varying_only[:fixed][:train][:sample_count] == 0
+        @assert varying_only[:varying][:train][:sample_count] == 6
         @assert expected_distillation_counts(:varying, :train) == (
             workers = 40,
             episodes = 3840,
             samples = 768000,
+        )
+        @assert distillation_offsets(:varying, :validation) == [0, 20]
+        @assert distillation_offsets(:varying, :test) == [0, 20]
+        @assert expected_distillation_counts(:varying, :validation) == (
+            workers = 2,
+            episodes = 4,
+            samples = 800,
+        )
+        @assert expected_distillation_counts(:varying, :test) == (
+            workers = 4,
+            episodes = 8,
+            samples = 1600,
         )
     end
     println("distillation-corpus-tests-ok")

@@ -7,7 +7,8 @@ const DISTILLATION_PROTOCOLS = (:fixed, :varying)
 const DISTILLATION_SPLITS = (:train, :validation, :test)
 const DISTILLATION_SHARED_SPLIT = :shared
 const DISTILLATION_ROLLOUT_STEPS = 200
-const DISTILLATION_OFFSETS = 0:95
+const DISTILLATION_TRAIN_OFFSETS = 0:95
+const DISTILLATION_EVALUATION_OFFSETS = (0, 20)
 
 const DISTILLATION_CHANNELS = 3
 const DISTILLATION_HORIZONTAL_SENSORS = 48
@@ -43,6 +44,14 @@ function normalize_distillation_split(split; allow_shared::Bool = false)::Symbol
         ArgumentError("Unknown split '$split'. Use :train, :validation, or :test."),
     )
     return value
+end
+
+function distillation_offsets(protocol, split = :train)
+    protocol_value = normalize_distillation_protocol(protocol)
+    protocol_value === :fixed && return [nothing]
+    split_value = normalize_distillation_split(split)
+    return split_value === :train ?
+        collect(DISTILLATION_TRAIN_OFFSETS) : collect(DISTILLATION_EVALUATION_OFFSETS)
 end
 
 function distillation_value(container, key::Symbol)
@@ -320,7 +329,9 @@ function normalize_episode_specs(protocol, split, base_seed, mirror, offsets)
 
     split_value = normalize_distillation_split(split)
     isnothing(base_seed) && throw(ArgumentError("base_seed is required for varying IC."))
-    normalized_offsets = sort!(unique(mod.(Int.(collect(offsets)), 96)))
+    requested_offsets = isnothing(offsets) ?
+        distillation_offsets(protocol_value, split_value) : collect(offsets)
+    normalized_offsets = sort!(unique(mod.(Int.(requested_offsets), 96)))
     isempty(normalized_offsets) && throw(ArgumentError("At least one offset is required."))
     return [
         (
@@ -337,7 +348,8 @@ end
     generate_distillation_worker!(; ...)
 
 Generate all episodes owned by one worker. Varying-IC workers own one
-`(split, base_seed, mirror)` combination and normally evaluate all 96 offsets.
+`(split, base_seed, mirror)` combination. Training workers evaluate all 96
+offsets; validation and test workers evaluate the fixed offsets 0 and 20.
 The Fixed-IC worker owns one shared episode. Environment-specific behavior is
 supplied through four callbacks, so every Package-6/7/8 worker uses this same
 generation function.
@@ -348,7 +360,7 @@ function generate_distillation_worker!(
     split = DISTILLATION_SHARED_SPLIT,
     base_seed::Union{Nothing, Integer} = nothing,
     mirror::Bool = false,
-    offsets = DISTILLATION_OFFSETS,
+    offsets = nothing,
     rollout_steps::Integer = DISTILLATION_ROLLOUT_STEPS,
     initialize_episode!::Function,
     observe::Function,
@@ -585,22 +597,41 @@ function merge_distillation_workers(paths::Vector{String})
 end
 
 """
-    load_distillation_corpus(worker_directory=DISTILLATION_WORKER_DIRECTORY)
+    load_distillation_corpus(worker_directory=DISTILLATION_WORKER_DIRECTORY;
+                               protocols=DISTILLATION_PROTOCOLS)
 
-Load every complete worker JLD2 and merge it in memory by protocol and split.
+Load every complete worker JLD2 for the selected protocols and merge it in
+memory by protocol and split.
 Fixed IC uses one shared dataset object for train, validation, and test.
 """
 function load_distillation_corpus(
     worker_directory::AbstractString = DISTILLATION_WORKER_DIRECTORY,
+    ;
+    protocols = DISTILLATION_PROTOCOLS,
 )
+    selected_protocols = Set(normalize_distillation_protocol.(collect(protocols)))
+    isempty(selected_protocols) && throw(ArgumentError("protocols must not be empty."))
     corpus = empty_distillation_corpus()
     files = available_distillation_worker_files(worker_directory)
     fixed_files = String[]
     varying_files = Dict(split => String[] for split in DISTILLATION_SPLITS)
 
+    fixed_directory = abspath(joinpath(worker_directory, "fixed"))
+    varying_directory = abspath(joinpath(worker_directory, "varying"))
+    path_is_below(path, directory) = begin
+        relative = relpath(abspath(path), directory)
+        relative != ".." && !startswith(relative, "..$(Base.Filesystem.path_separator)")
+    end
+
     for path in files
+        if path_is_below(path, fixed_directory) && !(:fixed in selected_protocols)
+            continue
+        elseif path_is_below(path, varying_directory) && !(:varying in selected_protocols)
+            continue
+        end
         result = load_distillation_worker(path)
         protocol = normalize_distillation_protocol(distillation_value(result, :protocol))
+        protocol in selected_protocols || continue
         if protocol === :fixed
             push!(fixed_files, path)
         else
@@ -636,8 +667,10 @@ end
 
 function reload_distillation_corpus!(
     worker_directory::AbstractString = DISTILLATION_WORKER_DIRECTORY,
+    ;
+    protocols = DISTILLATION_PROTOCOLS,
 )
-    loaded = load_distillation_corpus(worker_directory)
+    loaded = load_distillation_corpus(worker_directory; protocols)
     empty!(DISTILLATION_CORPUS)
     merge!(DISTILLATION_CORPUS, loaded)
     return DISTILLATION_CORPUS
@@ -660,7 +693,7 @@ function expected_distillation_counts(protocol, split = :train)
         return (workers = 1, episodes = 1, samples = DISTILLATION_ROLLOUT_STEPS)
     end
     workers = DISTILLATION_EXPECTED_BASES[split_value] * 2
-    episodes = workers * length(DISTILLATION_OFFSETS)
+    episodes = workers * length(distillation_offsets(protocol_value, split_value))
     return (
         workers,
         episodes,
@@ -780,5 +813,11 @@ end
 const DISTILLATION_CORPUS = if get(ENV, "DISTILLATION_SKIP_AUTOLOAD", "false") in ("1", "true", "yes")
     empty_distillation_corpus()
 else
-    load_distillation_corpus()
+    requested_protocol = lowercase(get(ENV, "DISTILLATION_AUTOLOAD_PROTOCOL", "all"))
+    requested_protocol in ("all", "fixed", "varying") || error(
+        "DISTILLATION_AUTOLOAD_PROTOCOL must be all, fixed, or varying.",
+    )
+    selected_protocols = requested_protocol == "all" ?
+        DISTILLATION_PROTOCOLS : (Symbol(requested_protocol),)
+    load_distillation_corpus(; protocols = selected_protocols)
 end
