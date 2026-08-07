@@ -170,6 +170,19 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Fixed-IC-Technikpilot mit Expert-/Corpus-Provenienzprüfung, Resume und
     getrennten nativen beziehungsweise Hard-Threshold-Pareto-Scopes aus. Der
     lokale Runner verwendet bewusst weder Bash noch tmux.
+  - Ein leichtgewichtiger Fixed-Pilot-Inspector gibt Trainingsmetadaten, den
+    vollständigen nativen GO-Verlauf, den finalen Thresholdvergleich und das
+    erhaltene Pareto-Archiv aus und exportiert diese Daten als Text, CSV und
+    PlotlyJS-Pareto-Plot über aktive Sensorpositionen und autoregressiven
+    Validation-MSE, ohne Expert-, Apprentice- oder Resume-Checkpoints zu
+    deserialisieren. Der verlängerte Technikpilot verwendet 6.000 Updates; die
+    Validation beginnt bei Update 2.000 und erfolgt danach alle 5 Updates.
+  - Der Fixed-IC-Pilot-Inspector kann zusätzlich den bestmatchenden nativen
+    Archivkandidaten und den MAT-Expert deterministisch über je eine echte
+    200-Schritt-Episode auswerten. Reward-, globale Nusselt- und Aktionskurven
+    werden identitätsgeprüft als JLD2 gecacht; Rewardvergleich, CSV und
+    PlotlyJS-Kurve werden im Analyseordner gespeichert. Dies ist ein technischer
+    Einzelvergleich und kein Closed-Loop-Sweep über Sensitivitätspunkte.
   - Produktionscorpus, finale Experts, konkrete Apprentice-Budgets und
     Thresholdstufen sowie die numerischen Akzeptanzbereiche stehen noch aus.
 

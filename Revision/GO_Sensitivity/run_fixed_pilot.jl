@@ -7,10 +7,11 @@ using Printf
 
 const P6_FIXED_PILOT_SEED = 600_601
 const P6_FIXED_PILOT_REGULARIZATION_STRENGTH = 0.09
-const P6_FIXED_PILOT_REGULARIZED_UPDATES = 500
+const P6_FIXED_PILOT_REGULARIZED_UPDATES = 6_000
 const P6_FIXED_PILOT_BATCH_SIZE = 20
 const P6_FIXED_PILOT_PROXIMAL_INTERVAL = 1
-const P6_FIXED_PILOT_EVALUATION_INTERVAL = 25
+const P6_FIXED_PILOT_EVALUATION_START = 2_000
+const P6_FIXED_PILOT_EVALUATION_INTERVAL = 5
 const P6_FIXED_PILOT_RESUME_INTERVAL = 100
 const P6_FIXED_PILOT_GARBAGE_COLLECTION_INTERVAL = 5
 
@@ -38,7 +39,9 @@ end
 
 const P6_FIXED_PILOT_RUN_ID =
     "fixed_go_pilot_strength_$(strength_tag(P6_FIXED_PILOT_REGULARIZATION_STRENGTH))_" *
-    "seed_$(P6_FIXED_PILOT_SEED)"
+    "seed_$(P6_FIXED_PILOT_SEED)_updates_$(P6_FIXED_PILOT_REGULARIZED_UPDATES)_" *
+    "eval_start_$(P6_FIXED_PILOT_EVALUATION_START)_" *
+    "interval_$(P6_FIXED_PILOT_EVALUATION_INTERVAL)"
 const P6_FIXED_PILOT_RUN_DIRECTORY = joinpath(
     P6_FIXED_PILOT_RESULTS_ROOT,
     P6_FIXED_PILOT_RUN_ID,
@@ -68,9 +71,9 @@ function pilot_threshold_specs()
             analysis_scope = :pilot_only,
         ),
         HardThresholdSpec(
-            :pilot_keep_16_groups,
+            :pilot_keep_6_groups,
             :keep_groups,
-            16;
+            6;
             analysis_scope = :pilot_only,
         ),
     ]
@@ -205,7 +208,7 @@ function run_fixed_pilot()
         diagnostic_teacher_forced = true,
     )
     schedule = CandidateSchedule(
-        start_update = 0,
+        start_update = P6_FIXED_PILOT_EVALUATION_START,
         evaluation_interval = P6_FIXED_PILOT_EVALUATION_INTERVAL,
         garbage_collection_interval = P6_FIXED_PILOT_GARBAGE_COLLECTION_INTERVAL,
         resume_interval = P6_FIXED_PILOT_RESUME_INTERVAL,
@@ -248,6 +251,7 @@ function run_fixed_pilot()
     println("  apprentice seed:         $P6_FIXED_PILOT_SEED")
     println("  regularization strength: $P6_FIXED_PILOT_REGULARIZATION_STRENGTH")
     println("  updates:                 $P6_FIXED_PILOT_REGULARIZED_UPDATES")
+    println("  first evaluation:        $P6_FIXED_PILOT_EVALUATION_START")
     println("  evaluation interval:     $P6_FIXED_PILOT_EVALUATION_INTERVAL")
     println("  resume:                  $resume")
     println("  output:                  $P6_FIXED_PILOT_RUN_DIRECTORY")

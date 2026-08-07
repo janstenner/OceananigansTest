@@ -418,11 +418,14 @@ Paket 6 umfasst:
 - drei Apprentice-Seeds
 - eine nominale GR-Referenz
 - Pareto-Archive über regelmäßig ausgewertete Trainingscheckpoints
-- ausschließlich Offline-Auswertung
+- ausschließlich Offline-Auswertung für die eigentliche Sensitivitätsstudie
 - keine Testdaten
 - alle später benötigten Hard-Threshold-Stufen werden mit ausgewertet und
   archiviert, aber nicht für die GO-Sensitivitätsauswertung verwendet
 - keine Closed-Loop-Simulation pro Sensitivitätspunkt
+- ein gecachter deterministischer Fixed-IC-Closed-Loop-Vergleich zwischen MAT
+  und dem bestmatchenden nativen Kandidaten ist als technischer Pilotdiagnostik
+  zulässig, aber kein Ergebnis der Paket-6-Sensitivitätsstudie
 - keine Toy-Probleme
 - keine Lasso- oder Standard-GrOWL-Sweeps
 

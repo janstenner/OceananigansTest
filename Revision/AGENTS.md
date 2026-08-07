@@ -52,8 +52,15 @@ Sparse Sensing paper.
 - `GO_Sensitivity/run_fixed_pilot.jl`: Plain-Julia local Package-6 Fixed-IC GO
   pilot with strict corpus/expert provenance checks and a scoped Pareto
   archive. It requires neither Bash nor tmux.
+- `GO_Sensitivity/inspect_fixed_pilot.jl`: Lightweight result inspector that
+  prints the native GO trajectory and archived Pareto points and exports CSV
+  summaries plus a PlotlyJS sensor-sparsity/validation-MSE plot. Its default
+  mode additionally performs or loads a cached deterministic 200-step
+  Fixed-IC closed-loop expert/native-apprentice comparison, including reward,
+  full-state global Nusselt number, and action histories. Model-free inspection
+  remains available through `closed_loop=false`.
 - `GO_Sensitivity/README.md`: Windows-local pilot invocation, fixed pilot
-  configuration, restart behavior, and result layout.
+  configuration, restart behavior, result inspection, and result layout.
 
 ## Revision Run Files
 
