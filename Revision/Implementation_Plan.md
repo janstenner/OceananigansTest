@@ -166,6 +166,10 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Paket 6 erzeugt bereits die später benötigten Hard-Threshold-Kandidaten,
     wertet für seine GO-Sensitivitätsfrage jedoch ausschließlich native
     Regularisierer-Sparsity aus.
+  - Ein reiner Julia-Runner unter `Revision/GO_Sensitivity` führt lokal den
+    Fixed-IC-Technikpilot mit Expert-/Corpus-Provenienzprüfung, Resume und
+    getrennten nativen beziehungsweise Hard-Threshold-Pareto-Scopes aus. Der
+    lokale Runner verwendet bewusst weder Bash noch tmux.
   - Produktionscorpus, finale Experts, konkrete Apprentice-Budgets und
     Thresholdstufen sowie die numerischen Akzeptanzbereiche stehen noch aus.
 

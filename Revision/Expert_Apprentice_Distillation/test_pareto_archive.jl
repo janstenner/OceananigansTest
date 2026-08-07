@@ -1,12 +1,19 @@
 include(joinpath(@__DIR__, "ParetoArchive.jl"))
 
-function dummy_candidate(threshold_id, active_inputs, matching; mask_value = true)
+function dummy_candidate(
+    threshold_id,
+    active_inputs,
+    matching;
+    mask_value = true,
+    pareto_scope = :default,
+)
     return Dict{Symbol, Any}(
         :threshold_id => threshold_id,
         :validation_matching => matching,
         :active_inputs => active_inputs,
         :mask => fill(mask_value, 8),
         :numeric_status => :ok,
+        :pareto_scope => pareto_scope,
     )
 end
 
@@ -21,6 +28,18 @@ function run_pareto_archive_tests()
     @assert should_evaluate_candidates(schedule, 10)
     @assert should_evaluate_candidates(schedule, 15)
     @assert should_evaluate_candidates(schedule, 17; final = true)
+
+    scoped_front = pareto_front([
+        merge(
+            dummy_candidate(:native, 100, 1.0; pareto_scope = :native),
+            Dict(:candidate_id => "native"),
+        ),
+        merge(
+            dummy_candidate(:threshold, 50, 0.5; pareto_scope = :hard_threshold),
+            Dict(:candidate_id => "threshold"),
+        ),
+    ])
+    @assert length(scoped_front) == 2
 
     mktempdir() do directory
         manager = initialize_pareto_archive(

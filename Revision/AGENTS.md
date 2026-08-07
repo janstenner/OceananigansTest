@@ -49,6 +49,11 @@ Sparse Sensing paper.
   shared distillation corpus.
 - `Expert_Apprentice_Distillation/README.md`: Corpus layout, expert resolution,
   worker counts, launch, restart, and storage notes.
+- `GO_Sensitivity/run_fixed_pilot.jl`: Plain-Julia local Package-6 Fixed-IC GO
+  pilot with strict corpus/expert provenance checks and a scoped Pareto
+  archive. It requires neither Bash nor tmux.
+- `GO_Sensitivity/README.md`: Windows-local pilot invocation, fixed pilot
+  configuration, restart behavior, and result layout.
 
 ## Revision Run Files
 

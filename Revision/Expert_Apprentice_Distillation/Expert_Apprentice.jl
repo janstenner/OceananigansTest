@@ -656,6 +656,7 @@ function candidate_masks(model, threshold_specs; groups)
     definitions = [(
         threshold_id = :native,
         threshold_kind = :native,
+        pareto_scope = :native,
         threshold_mode = :exact_zero,
         threshold_value = 0.0,
         analysis_scope = :package6_native_sensitivity,
@@ -666,6 +667,7 @@ function candidate_masks(model, threshold_specs; groups)
         push!(definitions, (
             threshold_id = spec.id,
             threshold_kind = :hard_threshold,
+            pareto_scope = :hard_threshold,
             threshold_mode = spec.mode,
             threshold_value = spec.value,
             analysis_scope = spec.analysis_scope,
@@ -680,6 +682,7 @@ function candidate_masks(model, threshold_specs; groups)
         Dict{Symbol, Any}(
             :threshold_id => definition.threshold_id,
             :threshold_kind => definition.threshold_kind,
+            :pareto_scope => definition.pareto_scope,
             :threshold_mode => definition.threshold_mode,
             :threshold_value => definition.threshold_value,
             :analysis_scope => definition.analysis_scope,

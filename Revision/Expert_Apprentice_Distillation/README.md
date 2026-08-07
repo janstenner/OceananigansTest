@@ -34,8 +34,9 @@ Experiment scripts own the scientific policy. They construct
 Validation always uses the loaded corpus `:validation` split. Autoregressive
 action matching is the default Pareto objective; teacher-forced matching can
 be stored as a diagnostic. Native zeros and post-hoc hard-threshold masks are
-separate candidate types. Thresholding is group-consistent and never mutates
-the model.
+separate candidate types and separate Pareto scopes. A hard-threshold
+candidate therefore cannot delete a Package-6 native-front checkpoint.
+Thresholding is group-consistent and never mutates the model.
 
 All evaluated metrics and masks remain in per-update evaluation JLD2s. Only
 current per-run Pareto survivors receive a loadable model, and every survivor

@@ -180,6 +180,7 @@ function normalize_candidate_record(candidate, run_id::String, update::Integer)
     record[:validation_matching] = Float64(record[:validation_matching])
     record[:active_inputs] = Int(record[:active_inputs])
     record[:numeric_status] = Symbol(record[:numeric_status])
+    record[:pareto_scope] = Symbol(get(record, :pareto_scope, :default))
     record[:model_path] = nothing
     record[:loadable] = false
     return record
@@ -192,6 +193,8 @@ function valid_pareto_candidate(candidate)
 end
 
 function candidate_dominates(left, right)
+    Symbol(archive_value(left, :pareto_scope; default = :default)) ==
+        Symbol(archive_value(right, :pareto_scope; default = :default)) || return false
     valid_pareto_candidate(left) || return false
     valid_pareto_candidate(right) || return true
     left_inputs = Int(archive_value(left, :active_inputs))
@@ -204,7 +207,9 @@ function candidate_dominates(left, right)
 end
 
 function equivalent_objectives(left, right)
-    return Int(archive_value(left, :active_inputs)) == Int(archive_value(right, :active_inputs)) &&
+    return Symbol(archive_value(left, :pareto_scope; default = :default)) ==
+               Symbol(archive_value(right, :pareto_scope; default = :default)) &&
+           Int(archive_value(left, :active_inputs)) == Int(archive_value(right, :active_inputs)) &&
            Float64(archive_value(left, :validation_matching)) == Float64(archive_value(right, :validation_matching))
 end
 
@@ -213,6 +218,7 @@ function pareto_front(candidates)
     sort!(
         valid;
         by = candidate -> (
+            string(archive_value(candidate, :pareto_scope; default = :default)),
             Int(archive_value(candidate, :active_inputs)),
             Float64(archive_value(candidate, :validation_matching)),
             string(archive_value(candidate, :candidate_id)),
@@ -232,6 +238,7 @@ function pareto_front(candidates)
     sort!(
         result;
         by = candidate -> (
+            string(archive_value(candidate, :pareto_scope; default = :default)),
             Int(archive_value(candidate, :active_inputs)),
             Float64(archive_value(candidate, :validation_matching)),
         ),

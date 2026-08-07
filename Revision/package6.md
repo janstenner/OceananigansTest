@@ -266,7 +266,9 @@ Checkpoints später nicht erneut ausgewertet oder gespeichert werden.
 Für seine GO-Sensitivitätsauswertung verwendet Paket 6 jedoch ausschließlich
 den Kandidaten `:native`, also genau die Gruppen, die der Regularisierer selbst
 auf null gesetzt hat. Die Hard-Threshold-Kandidaten tragen einen getrennten
-Kandidatentyp und fließen nicht in diese Sensitivitätsfront ein. Damit bleiben
+Kandidatentyp und einen getrennten Pareto-Scope. Sie können daher keinen
+nativen Frontpunkt samt Modell aus dem Archiv verdrängen und fließen nicht in
+diese Sensitivitätsfront ein. Damit bleiben
 Regularisierungseffekt und nachträgliche Maskenextraktion wissenschaftlich
 getrennt, obwohl beide technisch im selben Archiv liegen.
 
