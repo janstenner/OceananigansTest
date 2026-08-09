@@ -673,8 +673,8 @@ function write_calibration_test_csv(
 end
 
 function run_loaded_calibration_test_worker(options, loaded, runtime)
-    loaded.extension_complete || error(
-        "The additive calibration extension is incomplete for " *
+    loaded.study_complete || error(
+        "The long-budget calibration block is incomplete for " *
         "$(options.protocol)/$(options.grouping). Refusing to run a partial test diagnostic.",
     )
     candidates = retained_calibration_pareto_candidates(loaded.runs)
@@ -755,8 +755,8 @@ function calibration_test_worker_main(arguments = ARGS)
     options = parse_calibration_test_arguments(arguments)
     isnothing(options) && return nothing
     loaded = load_calibration_combination(options.protocol, options.grouping)
-    loaded.extension_complete || error(
-        "Additive calibration extension is not complete for " *
+    loaded.study_complete || error(
+        "Long-budget calibration block is not complete for " *
         "$(options.protocol)/$(options.grouping).",
     )
     runtime = configure_calibration_test_runtime!(options, loaded)

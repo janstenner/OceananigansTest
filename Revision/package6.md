@@ -1,6 +1,6 @@
 # Paket 6 — Minimale GO-Sensitivitätsstudie auf RBC-Daten
 
-Stand: 2026-08-07
+Stand: 2026-08-09
 
 ## Ziel
 
@@ -77,41 +77,24 @@ Im bestehenden Code sind die bisherigen GO-Referenzwerte:
 - Fixed IC: `0.09`
 - Varying IC: `0.025`
 
-Vor dem Produktionssweep wird ein technischer Ein-Seed-Kalibrierungslauf mit
-folgenden drei Ankerwerten durchgeführt:
+Vor dem Produktionssweep wird die vollständige bisher untersuchte
+Strength-Menge in einem homogenen technischen Ein-Seed-Block neu gerechnet:
 
-| Protokoll | Gruppierung | niedrig | mittel | hoch |
-|---|---|---:|---:|---:|
-| Fixed IC | channel-coupled | 0.01 | 0.03 | 0.09 |
-| Fixed IC | separate-channel | 0.01 | 0.02 | 0.03 |
-| Varying IC | channel-coupled | 0.003 | 0.008 | 0.025 |
-| Varying IC | separate-channel | 0.003 | 0.008 | 0.025 |
-
-Jede Kombination verwendet denselben Apprentice-Seed. Diese zwölf Läufe bilden
-den unverändert erhaltenen Kalibrierungs-Baselineblock mit 6.000 Fixed- und
-10.000 Varying-Updates. Er wird nicht erneut ausgeführt.
-
-Nach der ersten Closed-Loop-Diagnostik wird additiv folgender Erweiterungsblock
-gerechnet:
-
-| Protokoll | Gruppierung | zusätzliche Stärken | Updates |
+| Protokoll | Gruppierung | Stärken | Updates |
 |---|---|---|---:|
-| Fixed IC | channel-coupled | 0.003, 0.006, 0.06 | 9.000 |
-| Fixed IC | separate-channel | 0.0015, 0.003, 0.006 | 9.000 |
-| Varying IC | channel-coupled | 0.04, 0.06 | 15.000 |
-| Varying IC | separate-channel | 0.04, 0.06 | 15.000 |
+| Fixed IC | channel-coupled | 0.003, 0.006, 0.01, 0.03, 0.06, 0.09 | 35.000 |
+| Fixed IC | separate-channel | 0.0015, 0.003, 0.006, 0.01, 0.02, 0.03 | 35.000 |
+| Varying IC | channel-coupled | 0.003, 0.008, 0.025, 0.04, 0.06 | 50.000 |
+| Varying IC | separate-channel | 0.003, 0.008, 0.025, 0.04, 0.06 | 50.000 |
 
-Alle zehn Erweiterungsläufe verwenden eine Regressions-Lernrate von `2e-4`.
-Phase, Lernrate und Budget sind Bestandteil der Run-Identität. Baseline und
-Erweiterung bleiben dadurch getrennt reproduzierbar und können anschließend
-gemeinsam geplottet werden. Sämtliche Kalibrierungsläufe sind ausschließlich
-technische Kalibrierung und kein Teil der wissenschaftlichen
+Damit bleiben insbesondere die Fixed-Stärken `0.01` und `0.03` Teil der
+Kalibrierung, obwohl sie in der vorigen Auswertung nicht in die Pareto-Menge
+eingingen. Alle 22 Läufe verwenden denselben Apprentice-Seed und dieselbe
+Regressions-Lernrate `2e-4`. Phase, Lernrate und Budget sind Bestandteil der
+Run-Identität. Die älteren 6.000/9.000/10.000/15.000-Update-Blöcke werden nicht
+mit dem neuen Block zusammen ausgewertet. Sämtliche Kalibrierungsläufe bleiben
+technische Kalibrierung und sind kein Teil der wissenschaftlichen
 Sensitivitätsauswertung.
-
-Da Lernrate und Budget gemeinsam mit den zusätzlichen Stärken geändert werden,
-ist der Vergleich zwischen Baseline- und Erweiterungsblock explorativ und kein
-reiner Ein-Faktor-Stärkenvergleich. Für alle späteren Paket-6/7/8-Runs gelten
-einheitlich die neuen Lernraten- und Budgetwerte.
 
 Anhand der Kalibrierung wird pro Protokoll ein Satz aus fünf geordneten
 Produktionsstärken festgelegt. Die Abstände müssen keine Verdopplungen sein.
@@ -132,8 +115,8 @@ Beide Fälle werden einbezogen, weil der bestehende Code verschiedene GO-Stärke
 Eine reine Fixed-IC-Studie würde den Varying-IC-Wert nicht absichern.
 
 Das feste Apprentice-Trainingsbudget beträgt für sämtliche zukünftigen
-Methoden und Gruppierungsvarianten 9.000 Optimizer-Updates unter Fixed IC und
-15.000 Optimizer-Updates unter Varying IC. Die Regressions-Lernrate beträgt in
+Methoden und Gruppierungsvarianten 35.000 Optimizer-Updates unter Fixed IC und
+50.000 Optimizer-Updates unter Varying IC. Die Regressions-Lernrate beträgt in
 beiden Protokollen `2e-4`. Diese Festlegungen gelten gemeinsam für Paket 6, 7
 und 8; ein Update bezeichnet in beiden Protokollen genau ein Optimizer-Update.
 
@@ -212,8 +195,8 @@ nicht nachträglich repariert.
 
 ## 8. Training ohne manuelles Stoppen
 
-Alle 36 Produktionsruns erhalten das feste Maximalbudget von 9.000 Updates
-unter Fixed IC beziehungsweise 15.000 Updates unter Varying IC.
+Alle 36 Produktionsruns erhalten das feste Maximalbudget von 35.000 Updates
+unter Fixed IC beziehungsweise 50.000 Updates unter Varying IC.
 Ergebnisabhängige Stopps werden für die Studie deaktiviert.
 Dies betrifft insbesondere:
 
@@ -459,8 +442,8 @@ Paket 6 umfasst:
 
 - zwei RBC-Datenprotokolle
 - channel-coupled grouping
-- fünf GO-Stärken, festgelegt nach einer separaten Ein-Seed-Kalibrierung über
-  drei Ankerwerte
+- fünf GO-Stärken, festgelegt nach einer separaten homogenen
+  Ein-Seed-Kalibrierung über die vollständige bisherige Strength-Menge
 - drei Apprentice-Seeds
 - eine nominale GR-Referenz
 - Pareto-Archive über regelmäßig ausgewertete Trainingscheckpoints
@@ -475,7 +458,7 @@ Paket 6 umfasst:
 - keine Toy-Probleme
 - keine Lasso- oder Standard-GrOWL-Sweeps
 
-Der Produktionsumfang beträgt 30 GO-Runs und 6 GR-Runs. Die zwölf technischen
+Der Produktionsumfang beträgt 30 GO-Runs und 6 GR-Runs. Die 22 technischen
 Kalibrierungsläufe zählen nicht als wissenschaftliche Paket-6-Runs.
 Die teuren Closed-Loop-Auswertungen folgen erst in Paket 7 und 8 für wenige Pareto-Kandidaten.
 
@@ -504,7 +487,7 @@ initialisierten MAT als Test-Expert verwenden.
    Training, Validation und Test. Varying IC verwendet strikt getrennte
    Corpus-Basen für Training, Validation und Test.
 3. **Trainingsbudget und Bedeutung eines Trainingsschritts definieren.**
-   Festgelegt sind 9.000 Updates für Fixed IC und 15.000 Updates für Varying
+   Festgelegt sind 35.000 Updates für Fixed IC und 50.000 Updates für Varying
    IC. Ein Trainingsschritt ist in beiden Protokollen genau ein
    Optimizer-Update. Batchgröße, verarbeitete Beispiele,
    Proximalanwendungen sowie Checkpoint- und Validationintervalle werden

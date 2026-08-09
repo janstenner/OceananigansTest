@@ -40,7 +40,7 @@ Sparse Sensing paper.
 - `Expert_Apprentice_Distillation/Expert_Apprentice.jl`: Shared revision copy
   of the MAT expert-apprentice implementation used as the Package-6/7/8
   training starting point. Future Fixed and Varying apprentice regressions use
-  learning rate `2e-4`; their default regularized budgets are 9,000 and 15,000
+  learning rate `2e-4`; their default regularized budgets are 35,000 and 50,000
   updates respectively.
 - `Expert_Apprentice_Distillation/DistillationCorpus.jl`: Directly includable
   Fixed-/Varying-IC teacher-rollout shard generation, atomic persistence,
@@ -55,14 +55,16 @@ Sparse Sensing paper.
   pilot with strict corpus/expert provenance checks and a scoped Pareto
   archive. It requires neither Bash nor tmux.
 - `GO_Sensitivity/run_strength_calibration_pilot.jl`: Plain-Julia Package-6
-  additive one-seed calibration orchestrator across Fixed/Varying IC and
-  grouped/separate channels. It preserves the completed 6,000/10,000-update
-  baseline and launches only ten additional runs in fresh Julia processes.
-  New Fixed runs use 9,000 updates, new Varying runs 15,000, and all use a
-  regression learning rate of `2e-4`. Run identities include phase, learning
+  one-seed calibration orchestrator across all 22 frozen Fixed/Varying and
+  grouped/separate strength cases. Every strength runs in a fresh Julia
+  process; Fixed uses 35,000 updates, Varying 50,000, and all runs use
+  regression learning rate `2e-4`. Run identities include phase, learning
   rate, and budget.
+- `GO_Sensitivity/launch_tmux.sh`: Server launcher that submits the same 22
+  cases concurrently as one self-closing tmux session per strength, with
+  independent logs, resumable workers, and systemd inhibition by default.
 - `GO_Sensitivity/inspect_strength_calibration_pilot.jl`: PlotlyJS inspector
-  that combines complete baseline and additive-extension blocks and exports
+  that accepts only complete homogeneous long-budget blocks and exports
   four strength-colored, point-only active-group versus
   autoregressive-validation-MSE plots and highlights each combination's pooled
   nondominated checkpoints. Its default mode then launches the closed-loop

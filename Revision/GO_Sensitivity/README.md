@@ -6,95 +6,78 @@ in `Revision/Expert_Apprentice_Distillation`.
 
 ## One-seed strength calibration
 
-`run_strength_calibration_pilot.jl` performs the technical calibration that
-precedes the five-strength Package-6 production sweep. The completed baseline
-is retained unchanged:
+The new calibration reruns the complete frozen strength grid with one common
+regression learning rate and protocol-specific long budgets:
 
-| Protocol | Grouping | Strengths |
-|---|---|---|
-| Fixed IC | grouped channels | `0.01`, `0.03`, `0.09` |
-| Fixed IC | separate channels | `0.01`, `0.02`, `0.03` |
-| Varying IC | grouped channels | `0.003`, `0.008`, `0.025` |
-| Varying IC | separate channels | `0.003`, `0.008`, `0.025` |
-
-Those twelve baseline runs used apprentice seed `600601`, 6,000 Fixed or
-10,000 Varying updates, and the historical Fixed regression learning rate
-`1e-4` (Varying already used `2e-4`). They are not resumed, extended, or
-recomputed.
-
-The runner now adds the following extension runs:
-
-| Protocol | Grouping | Additional strengths | Updates |
+| Protocol | Grouping | Strengths | Updates |
 |---|---|---|---:|
-| Fixed IC | grouped channels | `0.003`, `0.006`, `0.06` | 9,000 |
-| Fixed IC | separate channels | `0.0015`, `0.003`, `0.006` | 9,000 |
-| Varying IC | grouped channels | `0.04`, `0.06` | 15,000 |
-| Varying IC | separate channels | `0.04`, `0.06` | 15,000 |
+| Fixed IC | grouped channels | `0.003`, `0.006`, `0.01`, `0.03`, `0.06`, `0.09` | 35,000 |
+| Fixed IC | separate channels | `0.0015`, `0.003`, `0.006`, `0.01`, `0.02`, `0.03` | 35,000 |
+| Varying IC | grouped channels | `0.003`, `0.008`, `0.025`, `0.04`, `0.06` | 50,000 |
+| Varying IC | separate channels | `0.003`, `0.008`, `0.025`, `0.04`, `0.06` | 50,000 |
 
-All ten extension runs use regression learning rate `2e-4`, apprentice seed
-`600601`, and 1.5 times the previous update budget. Their run IDs explicitly
-contain phase, learning rate, and budget, so they coexist with the baseline
-without collisions. All calibration runs evaluate native GO sparsity only,
-with autoregressive validation every 25 updates starting at update 0.
-Hard-threshold candidates and teacher-forced diagnostics are omitted because
-this pilot only calibrates the strength scale. The training runner checks
-test-corpus coverage and expert provenance but never evaluates test samples
-itself.
+All 22 runs use regression learning rate `2e-4` and apprentice seed `600601`.
+This explicitly retains the Fixed strengths `0.01` and `0.03`, even though
+they did not enter the Pareto set in the previous analysis. Every run starts
+from the same paired apprentice initialization and uses the same batch-order
+RNG. Run identities include phase, learning rate, budget, protocol, grouping,
+strength, and seed, so old short-budget results cannot be mixed with this
+homogeneous block.
 
-Because learning rate and budget changed together with the added strengths,
-baseline-versus-extension comparisons are exploratory rather than a controlled
-one-factor strength comparison. All future Package-6/7/8 apprentice runs use
-the extension settings (`2e-4`, 9,000 Fixed updates, 15,000 Varying updates).
+All runs evaluate native GO sparsity only, with autoregressive validation every
+25 updates starting at update 0. Hard-threshold candidates and teacher-forced
+diagnostics are omitted. The training worker verifies test-corpus coverage and
+expert provenance but does not evaluate test samples.
 
-Each protocol/grouping combination is executed sequentially in a fresh Julia
-process. Within that process, all additional strengths start from deep copies
-of the same apprentice and use the same batch-order RNG. Fresh processes are
-required because protocol and channel grouping are fixed when the shared
-apprentice file is included. Sequential execution also avoids holding multiple
-copies of the multi-gigabyte Varying corpus in memory.
+### Server launch
 
-From Windows PowerShell in the project root:
+Preview the complete launch from the project root:
+
+```bash
+bash Revision/GO_Sensitivity/launch_tmux.sh --preview
+```
+
+Then start all 22 workers in parallel:
+
+```bash
+bash Revision/GO_Sensitivity/launch_tmux.sh
+```
+
+The launcher creates one detached tmux session per strength and combination,
+for example `p6_cal_fixed_gc_s0p003`. Each session writes its own log below
+`results/strength_calibration/logs/` and closes automatically when its Julia
+worker exits. Active sessions with the same name are not duplicated. A
+completed run is skipped, while an interrupted run resumes from
+`resume/latest.jld2`. As in the other server studies, `systemd-inhibit` is used
+by default; `--no-systemd-inhibit` is available for intentional local/debug
+use. `--protocol` and `--grouping` can restrict a restart to a subset.
+
+The result root can be overridden with `P6_CALIBRATION_RESULTS_DIR`. The local
+plain-Julia fallback remains available and processes the same 22 jobs
+sequentially:
 
 ```powershell
 julia --project=. .\Revision\GO_Sensitivity\run_strength_calibration_pilot.jl
 ```
 
-Or from an activated Julia REPL:
-
-```julia
-include("Revision/GO_Sensitivity/run_strength_calibration_pilot.jl")
-run_strength_calibration_pilot()
-```
-
-The runner resumes interrupted strength runs, skips complete ones, and writes
-results below `Revision/GO_Sensitivity/results/strength_calibration/`. A command
-preview that starts no child process is available as
-`run_strength_calibration_pilot(; preview = true)`.
-
-After all ten extension runs finish, run the inspector with:
+After the complete server result directory has been copied locally, run:
 
 ```powershell
 julia --project=. .\Revision\GO_Sensitivity\inspect_strength_calibration_pilot.jl
 ```
 
-The inspector combines the complete baseline and extension blocks and creates
-one validation SVG for each Fixed/Varying and grouped/separate-channel
-combination below `results/strength_calibration/analysis/`. Incomplete
-extension blocks are ignored, so a running extension never yields a mixed
-partial plot. Every validation checkpoint is an unconnected circle, colored
-by regularization strength. Larger diamonds with a black outline mark the pooled nondominated
-checkpoints while retaining the corresponding strength color. The y-axis uses
-a logarithmic scale because the calibration spans multiple orders of magnitude
-in validation MSE.
+The inspector accepts only complete 35,000/50,000-update blocks with learning
+rate `2e-4` and the exact frozen strength lists. It creates one validation SVG
+per combination below `results/strength_calibration/analysis/`; old
+short-budget runs are ignored. Every validation checkpoint is an unconnected
+strength-colored circle. Larger black-outlined diamonds mark the pooled
+nondominated checkpoints. The y-axis is logarithmic.
 
-By default, and only after all four extension blocks are complete, the
-inspector starts one fresh Julia process per combination and evaluates **every
-candidate retained by all baseline and extension Pareto archives** in closed
-loop together with the MAT expert. Fixed IC uses the one shared 200-step
-episode. Varying IC uses the eight predeclared test episodes
-(two bases, original and mirrored, offsets 0 and 20). Runs are cached by expert,
-candidate, and test case, so an interruption can be resumed without repeating
-complete episodes.
+By default, and only after all four long-budget blocks are complete, the
+inspector evaluates every retained Pareto candidate in closed loop together
+with the MAT expert. Fixed IC uses the shared 200-step episode. Varying IC uses
+the eight predeclared test episodes. Evaluations are cached by expert,
+candidate, and test case.
 
 Each combination produces:
 

@@ -1,6 +1,6 @@
 # Paket 7 und 8 — Apprentice-Distillation, Pareto-Auswahl und Evaluation
 
-Stand: 2026-07-31
+Stand: 2026-08-09
 
 ## Ziel und Abgrenzung
 
@@ -38,8 +38,8 @@ Alle Randomisierungen werden über gespeicherte Seeds kontrolliert.
 Die finale Testevaluation darf keine spätere Modell-, Masken- oder Thresholdentscheidung beeinflussen.
 
 Das Apprentice-Trainingsbudget ist protokollweit festgelegt: sämtliche
-Methoden und Gruppierungsvarianten verwenden 9.000 Optimizer-Updates unter
-Fixed IC und 15.000 Optimizer-Updates unter Varying IC. Die Regressions-
+Methoden und Gruppierungsvarianten verwenden 35.000 Optimizer-Updates unter
+Fixed IC und 50.000 Optimizer-Updates unter Varying IC. Die Regressions-
 Lernrate beträgt für beide Protokolle `2e-4`. Diese Festlegung gilt gemeinsam
 mit Paket 6.
 

@@ -1,6 +1,6 @@
 # Implementation Plan for the Paper Revision
 
-Stand: 2026-07-30
+Stand: 2026-08-09
 
 Dieser Plan enthält nur ganze, in sinnvoller Reihenfolge abzuarbeitende Implementierungs- und Experimentpakete.
 Nur die Paketüberschriften sind abhakbar.
@@ -172,25 +172,28 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Fixed-IC-Technikpilot mit Expert-/Corpus-Provenienzprüfung, Resume und
     getrennten nativen beziehungsweise Hard-Threshold-Pareto-Scopes aus. Der
     lokale Runner verwendet bewusst weder Bash noch tmux.
-  - Der Plain-Julia-Runner `run_strength_calibration_pilot.jl` erhält den
-    abgeschlossenen gepaarten Ein-Seed-Baselineblock unverändert und startet
-    ausschließlich eine additive Erweiterung. Neu hinzukommen Fixed-GC
-    `0.003/0.006/0.06`, Fixed-SC `0.0015/0.003/0.006` sowie Varying-GC und
-    Varying-SC jeweils `0.04/0.06`. Jede der vier Kombinationen läuft wegen der
-    include-time Konfiguration in einem frischen Julia-Prozess; innerhalb
-    einer Kombination teilen die neuen Stärken exakt dieselbe Initialisierung
-    und Batch-Reihenfolge. Alle neuen Läufe verwenden Regressions-Lernrate
-    `2e-4`; Fixed verwendet 9.000 und Varying 15.000 Updates. Phase, Lernrate
-    und Budget gehören zur Run-Identität. Die Kalibrierung dient zur Festlegung
-    von fünf Produktionsstärken je Protokoll und zählt nicht als
-    wissenschaftlicher Paket-6-Sweep.
+  - Der Plain-Julia-Runner `run_strength_calibration_pilot.jl` rechnet die
+    vollständige bisherige Strength-Menge als homogenen Ein-Seed-Block neu:
+    Fixed-GC `0.003/0.006/0.01/0.03/0.06/0.09`, Fixed-SC
+    `0.0015/0.003/0.006/0.01/0.02/0.03` sowie Varying-GC und Varying-SC jeweils
+    `0.003/0.008/0.025/0.04/0.06`. Jeder der 22 Fälle läuft wegen der
+    include-time Konfiguration in einem eigenen frischen Julia-Prozess. Alle
+    Läufe verwenden exakt dieselbe gepaarte Initialisierung und Batch-Reihenfolge,
+    Regressions-Lernrate `2e-4`, 35.000 Fixed- beziehungsweise 50.000
+    Varying-Updates. Phase, Lernrate und Budget gehören zur Run-Identität. Die
+    Kalibrierung dient zur Festlegung von fünf Produktionsstärken je Protokoll
+    und zählt nicht als wissenschaftlicher Paket-6-Sweep.
+  - `GO_Sensitivity/launch_tmux.sh` startet standardmäßig alle 22
+    Strength-Fälle gleichzeitig als je eine selbstbeendende tmux-Session mit
+    eigenem Log und `systemd-inhibit`. Abgeschlossene Runs werden übersprungen,
+    unterbrochene Runs aus `resume/latest.jld2` fortgesetzt.
   - Ein eigener leichtgewichtiger Kalibrierungs-Inspector erzeugt für alle vier
     Protokoll-/Gruppierungskombinationen PlotlyJS-Pareto-Plots über aktive
     Gruppen und logarithmischen autoregressiven Validation-MSE. Alle
     Checkpoints bleiben unverbundene, nach Stärke eingefärbte Punkte; die
     gepoolten nichtdominierten Punkte werden zusätzlich markiert.
-  - Der Kalibrierungs-Inspector kombiniert ausschließlich vollständige
-    Baseline- und Erweiterungsblöcke und kann anschließend alle in deren
+  - Der Kalibrierungs-Inspector akzeptiert ausschließlich vollständige
+    homogene 35.000/50.000-Update-Blöcke mit Lernrate `2e-4` und kann anschließend alle in deren
     stärkeweisen Pareto-Archiven erhaltenen Kandidaten in echten 200-Schritt-
     Episoden auswerten. Fixed verwendet die eine gemeinsame Episode; Varying
     verwendet alle acht festgelegten Testepisoden. Pro Kombination entstehen
@@ -219,8 +222,8 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Fixed- und Varying-Corpus für Training, Validation und Test sowie finale
     Experts sind vorhanden. Die aus der Kalibrierung abgeleiteten fünf
     GO-Produktionsstärken, Thresholdstufen und numerischen Akzeptanzbereiche
-    stehen noch aus. Das Apprentice-Trainingsbudget ist mit 9.000 Updates für
-    Fixed IC und 15.000 Updates für Varying IC sowie einer Regressions-Lernrate
+    stehen noch aus. Das Apprentice-Trainingsbudget ist mit 35.000 Updates für
+    Fixed IC und 50.000 Updates für Varying IC sowie einer Regressions-Lernrate
     von `2e-4` für Paket 6 bis 8 festgelegt.
 
   Abschluss:

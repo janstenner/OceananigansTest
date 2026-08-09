@@ -27,19 +27,14 @@ const P6_CALIBRATION_STRENGTH_COLORS = (
     "#B2182B",
     "#67001F",
 )
-const P6_CALIBRATION_BASELINE_UPDATES = Dict(:fixed => 6_000, :varying => 10_000)
-const P6_CALIBRATION_EXTENSION_UPDATES = Dict(:fixed => 9_000, :varying => 15_000)
-const P6_CALIBRATION_BASELINE_STRENGTHS = Dict(
-    (:fixed, :grouped_channels) => [0.01, 0.03, 0.09],
-    (:fixed, :separate_channels) => [0.01, 0.02, 0.03],
-    (:varying, :grouped_channels) => [0.003, 0.008, 0.025],
-    (:varying, :separate_channels) => [0.003, 0.008, 0.025],
-)
-const P6_CALIBRATION_EXTENSION_STRENGTHS = Dict(
-    (:fixed, :grouped_channels) => [0.003, 0.006, 0.06],
-    (:fixed, :separate_channels) => [0.0015, 0.003, 0.006],
-    (:varying, :grouped_channels) => [0.04, 0.06],
-    (:varying, :separate_channels) => [0.04, 0.06],
+const P6_CALIBRATION_UPDATES = Dict(:fixed => 35_000, :varying => 50_000)
+const P6_CALIBRATION_REGRESSION_LEARNING_RATE = 2e-4
+const P6_CALIBRATION_PHASE = :long_budget_rerun
+const P6_CALIBRATION_STRENGTHS = Dict(
+    (:fixed, :grouped_channels) => [0.003, 0.006, 0.01, 0.03, 0.06, 0.09],
+    (:fixed, :separate_channels) => [0.0015, 0.003, 0.006, 0.01, 0.02, 0.03],
+    (:varying, :grouped_channels) => [0.003, 0.008, 0.025, 0.04, 0.06],
+    (:varying, :separate_channels) => [0.003, 0.008, 0.025, 0.04, 0.06],
 )
 const P6_CALIBRATION_TEST_WORKER = joinpath(
     @__DIR__,
@@ -159,6 +154,8 @@ function load_calibration_combination(protocol::Symbol, grouping::Symbol)
     function complete_block(expected_strengths, expected_updates)
         block = filter(
             run -> run.regularized_updates == expected_updates &&
+                   run.regression_learning_rate == P6_CALIBRATION_REGRESSION_LEARNING_RATE &&
+                   run.calibration_phase === P6_CALIBRATION_PHASE &&
                    run.strength in expected_strengths,
             available_runs,
         )
@@ -166,22 +163,19 @@ function load_calibration_combination(protocol::Symbol, grouping::Symbol)
                sort([run.strength for run in block]) == sort(expected_strengths) ? block : NamedTuple[]
     end
 
-    baseline_runs = complete_block(
-        P6_CALIBRATION_BASELINE_STRENGTHS[key],
-        P6_CALIBRATION_BASELINE_UPDATES[protocol],
+    runs = complete_block(
+        P6_CALIBRATION_STRENGTHS[key],
+        P6_CALIBRATION_UPDATES[protocol],
     )
-    isempty(baseline_runs) && error(
-        "$protocol/$grouping has no complete baseline calibration block.",
+    study_complete = !isempty(runs)
+    study_complete || error(
+        "$protocol/$grouping has no complete $(P6_CALIBRATION_PHASE) block with " *
+        "$(P6_CALIBRATION_UPDATES[protocol]) updates and regression learning rate " *
+        "$P6_CALIBRATION_REGRESSION_LEARNING_RATE.",
     )
-    extension_runs = complete_block(
-        P6_CALIBRATION_EXTENSION_STRENGTHS[key],
-        P6_CALIBRATION_EXTENSION_UPDATES[protocol],
-    )
-    extension_complete = !isempty(extension_runs)
-    runs = vcat(baseline_runs, extension_runs)
     sort!(runs; by = run -> run.strength)
     budgets = sort!(unique(run.regularized_updates for run in runs))
-    return (; runs, budgets, extension_complete)
+    return (; runs, budgets, study_complete)
 end
 
 function calibration_dominates(left, right)
@@ -410,11 +404,10 @@ function require_complete_calibration_test_blocks!()
             combination.protocol,
             combination.grouping,
         )
-        loaded.extension_complete || error(
-            "Closed-loop test diagnostics require the complete additive calibration " *
-            "extension for $(combination.protocol)/$(combination.grouping): expected " *
-            "$(P6_CALIBRATION_EXTENSION_UPDATES[combination.protocol]) updates for " *
-            "all additional strengths. " *
+        loaded.study_complete || error(
+            "Closed-loop test diagnostics require the complete long-budget calibration " *
+            "block for $(combination.protocol)/$(combination.grouping): expected " *
+            "$(P6_CALIBRATION_UPDATES[combination.protocol]) updates for all frozen strengths. " *
             "No test episode has been started.",
         )
     end

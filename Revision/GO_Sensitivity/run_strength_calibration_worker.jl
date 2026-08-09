@@ -2,25 +2,26 @@ using Dates
 using Printf
 
 # This helper is intentionally launched in a fresh Julia process for each
-# protocol/grouping combination. Expert_Apprentice.jl fixes both choices when
-# it is included, so changing them inside one process would be misleading.
+# protocol/grouping/strength combination. Expert_Apprentice.jl fixes the
+# protocol and grouping when it is included, and one strength per process
+# keeps every server job independently resumable.
 
 const P6_CALIBRATION_SEED = 600_601
 const P6_CALIBRATION_UPDATES = Dict(
-    :fixed => 9_000,
-    :varying => 15_000,
+    :fixed => 35_000,
+    :varying => 50_000,
 )
-const P6_CALIBRATION_PHASE = :additive_extension
+const P6_CALIBRATION_PHASE = :long_budget_rerun
 const P6_CALIBRATION_REGRESSION_LEARNING_RATE = 2e-4
 const P6_CALIBRATION_EVALUATION_START = 0
 const P6_CALIBRATION_EVALUATION_INTERVAL = 25
 const P6_CALIBRATION_RESUME_INTERVAL = 100
 const P6_CALIBRATION_GARBAGE_COLLECTION_INTERVAL = 5
 const P6_CALIBRATION_STRENGTHS = Dict(
-    (:fixed, true) => [0.003, 0.006, 0.06],
-    (:fixed, false) => [0.0015, 0.003, 0.006],
-    (:varying, true) => [0.04, 0.06],
-    (:varying, false) => [0.04, 0.06],
+    (:fixed, true) => [0.003, 0.006, 0.01, 0.03, 0.06, 0.09],
+    (:fixed, false) => [0.0015, 0.003, 0.006, 0.01, 0.02, 0.03],
+    (:varying, true) => [0.003, 0.008, 0.025, 0.04, 0.06],
+    (:varying, false) => [0.003, 0.008, 0.025, 0.04, 0.06],
 )
 
 const P6_DIRECTORY = @__DIR__
@@ -42,7 +43,8 @@ function calibration_worker_usage(io::IO = stdout)
 
     Usage:
       julia --project=. run_strength_calibration_worker.jl \\
-        --protocol fixed|varying --group-channels true|false
+        --protocol fixed|varying --group-channels true|false --strength VALUE
+        [--results-dir PATH]
 
     Run run_strength_calibration_pilot.jl instead of calling this helper by hand.
     """)
@@ -52,6 +54,8 @@ function parse_calibration_worker_arguments(arguments)
     options = Dict{String, Any}(
         "protocol" => nothing,
         "group_channels" => nothing,
+        "strength" => nothing,
+        "results_dir" => P6_CALIBRATION_RESULTS_ROOT,
     )
     index = 1
     while index <= length(arguments)
@@ -80,9 +84,22 @@ function parse_calibration_worker_arguments(arguments)
     group_channels_text in ("true", "false") || error(
         "--group-channels must be true or false.",
     )
+    group_channels_value = group_channels_text == "true"
+
+    isnothing(options["strength"]) && error("--strength is required.")
+    strength = tryparse(Float64, string(options["strength"]))
+    isnothing(strength) && error("--strength must be a finite number.")
+    isfinite(strength) && strength > 0 || error("--strength must be positive and finite.")
+    strength in calibration_strengths(protocol, group_channels_value) || error(
+        "Strength $strength is not in the frozen grid for $protocol/" *
+        "$(calibration_grouping_tag(group_channels_value)): " *
+        "$(join(calibration_strengths(protocol, group_channels_value), ", ")).",
+    )
     return (
         protocol,
-        group_channels = group_channels_text == "true",
+        group_channels = group_channels_value,
+        strength,
+        results_directory = abspath(string(options["results_dir"])),
     )
 end
 
@@ -98,8 +115,14 @@ function calibration_strengths(protocol::Symbol, group_channels_value::Bool)
     return P6_CALIBRATION_STRENGTHS[(protocol, group_channels_value)]
 end
 
-function configure_calibration_environment!(protocol::Symbol, group_channels_value::Bool)
+function configure_calibration_environment!(
+    protocol::Symbol,
+    group_channels_value::Bool,
+    strength::Real,
+    results_directory::AbstractString,
+)
     grouping_tag = calibration_grouping_tag(group_channels_value)
+    strength_tag = calibration_strength_tag(strength)
     expert_path = joinpath(
         P6_DISTILLATION_DIRECTORY,
         "experts",
@@ -110,7 +133,7 @@ function configure_calibration_environment!(protocol::Symbol, group_channels_val
     runtime_directory = joinpath(
         P6_DIRECTORY,
         "runtime",
-        "strength_calibration_$(protocol)_$(grouping_tag)",
+        "strength_calibration_$(protocol)_$(grouping_tag)_$(strength_tag)",
     )
 
     ENV["DISTILLATION_PROTOCOL"] = string(protocol)
@@ -123,10 +146,11 @@ function configure_calibration_environment!(protocol::Symbol, group_channels_val
     ENV["DISTILLATION_ALLOW_FRESH_EXPERT"] = "false"
     ENV["REVISION_RUN_DIRECTORY"] = runtime_directory
     ENV["DISTILLATION_OUTPUT_DIRECTORY"] = joinpath(
-        P6_CALIBRATION_RESULTS_ROOT,
+        results_directory,
         "apprentice_outputs",
         string(protocol),
         grouping_tag,
+        "strength_$(strength_tag)",
     )
     return (expert_path, worker_directory, runtime_directory)
 end
@@ -256,10 +280,11 @@ function run_calibration_strength!(
     corpus_identifier::AbstractString,
     coverages,
     datasets,
+    results_directory::AbstractString,
 )
     run_id = calibration_run_id(protocol, group_channels_value, strength)
     run_directory = joinpath(
-        P6_CALIBRATION_RESULTS_ROOT,
+        results_directory,
         string(protocol),
         calibration_grouping_tag(group_channels_value),
         run_id,
@@ -345,6 +370,8 @@ function calibration_worker_main(arguments = ARGS)
     expert_path, _, _ = configure_calibration_environment!(
         options.protocol,
         options.group_channels,
+        options.strength,
+        options.results_directory,
     )
     include(joinpath(P6_DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
     return Base.invokelatest(
@@ -365,19 +392,17 @@ function run_loaded_calibration_worker(options, expert_path::AbstractString)
     )
     initial_apprentice = deepcopy(apprentice)
 
-    for strength in calibration_strengths(options.protocol, options.group_channels)
-        run_calibration_strength!(
-            options.protocol,
-            options.group_channels,
-            strength,
-            initial_apprentice,
-            expert_path,
-            corpus_identifier,
-            coverages,
-            datasets,
-        )
-    end
-    return nothing
+    return run_calibration_strength!(
+        options.protocol,
+        options.group_channels,
+        options.strength,
+        initial_apprentice,
+        expert_path,
+        corpus_identifier,
+        coverages,
+        datasets,
+        options.results_directory,
+    )
 end
 
 if abspath(PROGRAM_FILE) == abspath(@__FILE__)

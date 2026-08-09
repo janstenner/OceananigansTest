@@ -167,7 +167,7 @@ function apprentice_kind_config(kind)
 end
 
 Base.@kwdef struct ApprenticeTrainingConfig
-    regularized_updates::Int = randomIC ? 15_000 : 9_000
+    regularized_updates::Int = randomIC ? 50_000 : 35_000
     post_pruning_finetune_updates::Int = 0
     batch_size::Int = randomIC ? 100 : 20
     proximal_interval::Int = 1
