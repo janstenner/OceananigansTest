@@ -80,15 +80,38 @@ Im bestehenden Code sind die bisherigen GO-Referenzwerte:
 Vor dem Produktionssweep wird ein technischer Ein-Seed-Kalibrierungslauf mit
 folgenden drei Ankerwerten durchgeführt:
 
-| Protokoll | niedrig | mittel | bisheriger Wert |
-|---|---:|---:|---:|
-| Fixed IC | 0.01 | 0.03 | 0.09 |
-| Varying IC | 0.003 | 0.008 | 0.025 |
+| Protokoll | Gruppierung | niedrig | mittel | hoch |
+|---|---|---:|---:|---:|
+| Fixed IC | channel-coupled | 0.01 | 0.03 | 0.09 |
+| Fixed IC | separate-channel | 0.01 | 0.02 | 0.03 |
+| Varying IC | channel-coupled | 0.003 | 0.008 | 0.025 |
+| Varying IC | separate-channel | 0.003 | 0.008 | 0.025 |
 
-Jede dieser Stärken wird mit demselben Apprentice-Seed sowohl für
-channel-coupled als auch für separate-channel grouping geprüft. Diese zwölf
-Läufe sind ausschließlich eine Kalibrierung der sinnvollen Größenordnung und
-kein Teil der wissenschaftlichen Sensitivitätsauswertung.
+Jede Kombination verwendet denselben Apprentice-Seed. Diese zwölf Läufe bilden
+den unverändert erhaltenen Kalibrierungs-Baselineblock mit 6.000 Fixed- und
+10.000 Varying-Updates. Er wird nicht erneut ausgeführt.
+
+Nach der ersten Closed-Loop-Diagnostik wird additiv folgender Erweiterungsblock
+gerechnet:
+
+| Protokoll | Gruppierung | zusätzliche Stärken | Updates |
+|---|---|---|---:|
+| Fixed IC | channel-coupled | 0.003, 0.006, 0.06 | 9.000 |
+| Fixed IC | separate-channel | 0.0015, 0.003, 0.006 | 9.000 |
+| Varying IC | channel-coupled | 0.04, 0.06 | 15.000 |
+| Varying IC | separate-channel | 0.04, 0.06 | 15.000 |
+
+Alle zehn Erweiterungsläufe verwenden eine Regressions-Lernrate von `2e-4`.
+Phase, Lernrate und Budget sind Bestandteil der Run-Identität. Baseline und
+Erweiterung bleiben dadurch getrennt reproduzierbar und können anschließend
+gemeinsam geplottet werden. Sämtliche Kalibrierungsläufe sind ausschließlich
+technische Kalibrierung und kein Teil der wissenschaftlichen
+Sensitivitätsauswertung.
+
+Da Lernrate und Budget gemeinsam mit den zusätzlichen Stärken geändert werden,
+ist der Vergleich zwischen Baseline- und Erweiterungsblock explorativ und kein
+reiner Ein-Faktor-Stärkenvergleich. Für alle späteren Paket-6/7/8-Runs gelten
+einheitlich die neuen Lernraten- und Budgetwerte.
 
 Anhand der Kalibrierung wird pro Protokoll ein Satz aus fünf geordneten
 Produktionsstärken festgelegt. Die Abstände müssen keine Verdopplungen sein.
@@ -107,6 +130,12 @@ Untersucht werden beide Datenprotokolle:
 
 Beide Fälle werden einbezogen, weil der bestehende Code verschiedene GO-Stärken für sie verwendet.
 Eine reine Fixed-IC-Studie würde den Varying-IC-Wert nicht absichern.
+
+Das feste Apprentice-Trainingsbudget beträgt für sämtliche zukünftigen
+Methoden und Gruppierungsvarianten 9.000 Optimizer-Updates unter Fixed IC und
+15.000 Optimizer-Updates unter Varying IC. Die Regressions-Lernrate beträgt in
+beiden Protokollen `2e-4`. Diese Festlegungen gelten gemeinsam für Paket 6, 7
+und 8; ein Update bezeichnet in beiden Protokollen genau ein Optimizer-Update.
 
 Der experimentelle Sensitivitätssweep verwendet ausschließlich channel-coupled grouping.
 Dies ist die praktisch wichtigste Variante, bei der ein physischer Sensorort gemeinsam über seine Komponenten behandelt wird.
@@ -183,7 +212,8 @@ nicht nachträglich repariert.
 
 ## 8. Training ohne manuelles Stoppen
 
-Alle 36 Produktionsruns erhalten dasselbe feste Maximalbudget innerhalb ihres jeweiligen IC-Protokolls.
+Alle 36 Produktionsruns erhalten das feste Maximalbudget von 9.000 Updates
+unter Fixed IC beziehungsweise 15.000 Updates unter Varying IC.
 Ergebnisabhängige Stopps werden für die Studie deaktiviert.
 Dies betrifft insbesondere:
 
@@ -328,7 +358,12 @@ Für Fixed IC sind Training-, Validation- und Testdaten entsprechend dem festgel
 Das Expert Matching ist dort keine Generalisierungsmessung, sondern eine kontrollierte Optimierungs- und Sensitivitätsmessung.
 
 Für Varying IC wird das Expert Matching auf dem separaten Validation-Split berechnet.
-Die Testbasen werden in Paket 6 nicht verwendet.
+Die wissenschaftliche Paket-6-Sensitivitätsauswertung verwendet die Testbasen
+nicht. Eine separate Ein-Seed-Kalibrierungsdiagnostik darf auf ausdrücklichen
+Wunsch alle erhaltenen Pareto-Kandidaten geschlossen auf dem bisherigen
+Testsplit ausrollen, ist aber mit `scientific_selection_allowed = false`
+gekennzeichnet und darf weder Stärke noch Kandidaten bestimmen. Nach Ansicht
+dieser Diagnose gilt der Split nicht mehr als unangetasteter finaler Testsplit.
 
 ### Sekundäre Messgrößen
 
@@ -469,10 +504,11 @@ initialisierten MAT als Test-Expert verwenden.
    Training, Validation und Test. Varying IC verwendet strikt getrennte
    Corpus-Basen für Training, Validation und Test.
 3. **Trainingsbudget und Bedeutung eines Trainingsschritts definieren.**
-   Gradient-Updates, Batchgröße, verarbeitete Beispiele, Proximalanwendungen
-   sowie Checkpoint- und Validationintervalle werden explizit angegeben. Ein
-   äußerer Schleifenschritt darf nicht stillschweigend je nach IC-Protokoll
-   unterschiedlich viele Optimizer- oder Proximalupdates bezeichnen.
+   Festgelegt sind 9.000 Updates für Fixed IC und 15.000 Updates für Varying
+   IC. Ein Trainingsschritt ist in beiden Protokollen genau ein
+   Optimizer-Update. Batchgröße, verarbeitete Beispiele,
+   Proximalanwendungen sowie Checkpoint- und Validationintervalle werden
+   zusätzlich explizit angegeben.
 4. **Methodennamen eindeutig auf den Code abbilden.**
    Festgelegt sind ausschließlich die kanonischen Symbole `:go`, `:gr`,
    `:group_lasso` und `:growl`. Legacy-Symbole werden im Revision-Ordner nicht
@@ -518,8 +554,13 @@ jeweils 200 Kontrollschritten. Daraus folgen:
 | Validation | 1 | 2 | 4 | 800 |
 | Test | 2 | 4 | 8 | 1.600 |
 
-Paket 6 verwendet ausschließlich Training und Validation. Die Testshards bleiben
-für die spätere finale Auswertung in Paket 8 ungenutzt.
+Die wissenschaftliche Paket-6-Auswertung verwendet ausschließlich Training und
+Validation. Der optionale Kalibrierungs-Testdiagnostiklauf ist davon strikt
+getrennt, verwendet jedoch die acht bisherigen Varying-Testepisoden. Sobald
+dessen Ergebnisse angesehen werden, erfordert eine spätere unabhängige
+Paket-8-Auswertung neu erzeugte und eingefrorene Testbasen samt zugehörigen
+Expert-Shards; andernfalls darf der bisherige Split nur als explorativer
+Diagnostiksplit bezeichnet werden.
 
 Gespeichert werden pro Zeitschritt das global eindeutige
 `3 × 48 × 8`-Sensortensor und die `1 × 12` Expert-Aktionsmittel als `Float32`.

@@ -37,6 +37,12 @@ Vor Beginn werden festgeschrieben:
 Alle Randomisierungen werden über gespeicherte Seeds kontrolliert.
 Die finale Testevaluation darf keine spätere Modell-, Masken- oder Thresholdentscheidung beeinflussen.
 
+Das Apprentice-Trainingsbudget ist protokollweit festgelegt: sämtliche
+Methoden und Gruppierungsvarianten verwenden 9.000 Optimizer-Updates unter
+Fixed IC und 15.000 Optimizer-Updates unter Varying IC. Die Regressions-
+Lernrate beträgt für beide Protokolle `2e-4`. Diese Festlegung gilt gemeinsam
+mit Paket 6.
+
 ## 2. Methoden- und Gruppierungsmatrix
 
 Die vollständige Matrix enthält, soweit die jeweilige Methode nach Paket 6 im Paper verbleibt:
@@ -50,7 +56,12 @@ Die vollständige Matrix enthält, soweit die jeweilige Methode nach Paket 6 im 
 - Standard-GrOWL mit channel-coupled grouping
 - Standard-GrOWL mit separate-channel grouping
 
-Die aus Paket 6 übernommenen GO-Stärken werden nicht erneut anhand von Testresultaten angepasst.
+Die aus Paket 6 übernommenen GO-Stärken werden nicht erneut anhand von
+Testresultaten angepasst. Die optionale geschlossene Kalibrierungsdiagnostik
+auf den bisherigen acht Varying-Testepisoden ist ausdrücklich nicht für diese
+Auswahl zulässig. Sobald ihre Resultate angesehen wurden, benötigt Paket 8 für
+eine echte Held-out-Aussage einen neu erzeugten und vorab eingefrorenen
+Testsplit samt Expert-Rollouts.
 Falls Paket 6 eine einzelne GO-Stärke auswählt, wird nur diese weitergeführt.
 Falls eine konservative und eine aggressive Stärke komplementäre Pareto-Bereiche abdecken, dürfen höchstens diese beiden weitergeführt werden.
 

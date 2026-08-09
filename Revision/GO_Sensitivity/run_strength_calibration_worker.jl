@@ -6,14 +6,21 @@ using Printf
 # it is included, so changing them inside one process would be misleading.
 
 const P6_CALIBRATION_SEED = 600_601
-const P6_CALIBRATION_UPDATES = 2_000
+const P6_CALIBRATION_UPDATES = Dict(
+    :fixed => 9_000,
+    :varying => 15_000,
+)
+const P6_CALIBRATION_PHASE = :additive_extension
+const P6_CALIBRATION_REGRESSION_LEARNING_RATE = 2e-4
 const P6_CALIBRATION_EVALUATION_START = 0
 const P6_CALIBRATION_EVALUATION_INTERVAL = 25
 const P6_CALIBRATION_RESUME_INTERVAL = 100
 const P6_CALIBRATION_GARBAGE_COLLECTION_INTERVAL = 5
 const P6_CALIBRATION_STRENGTHS = Dict(
-    :fixed => [0.01, 0.03, 0.09],
-    :varying => [0.003, 0.008, 0.025],
+    (:fixed, true) => [0.003, 0.006, 0.06],
+    (:fixed, false) => [0.0015, 0.003, 0.006],
+    (:varying, true) => [0.04, 0.06],
+    (:varying, false) => [0.04, 0.06],
 )
 
 const P6_DIRECTORY = @__DIR__
@@ -85,6 +92,10 @@ end
 
 function calibration_grouping_tag(group_channels_value::Bool)
     return group_channels_value ? "grouped_channels" : "separate_channels"
+end
+
+function calibration_strengths(protocol::Symbol, group_channels_value::Bool)
+    return P6_CALIBRATION_STRENGTHS[(protocol, group_channels_value)]
 end
 
 function configure_calibration_environment!(protocol::Symbol, group_channels_value::Bool)
@@ -167,7 +178,10 @@ function calibration_run_id(
     grouping_tag = calibration_grouping_tag(group_channels_value)
     return "calibration_$(protocol)_$(grouping_tag)_strength_" *
            "$(calibration_strength_tag(strength))_seed_$(P6_CALIBRATION_SEED)_" *
-           "updates_$(P6_CALIBRATION_UPDATES)_interval_$(P6_CALIBRATION_EVALUATION_INTERVAL)"
+           "phase_$(P6_CALIBRATION_PHASE)_" *
+           "lr_$(calibration_strength_tag(P6_CALIBRATION_REGRESSION_LEARNING_RATE))_" *
+           "updates_$(P6_CALIBRATION_UPDATES[protocol])_" *
+           "interval_$(P6_CALIBRATION_EVALUATION_INTERVAL)"
 end
 
 function calibration_archive_config(
@@ -183,6 +197,7 @@ function calibration_archive_config(
         :experiment => :package6_strength_calibration_pilot,
         :scientific_result => false,
         :purpose => :choose_five_point_production_strength_grid,
+        :calibration_phase => P6_CALIBRATION_PHASE,
         :protocol => protocol,
         :method => :go,
         :group_rows_by_overlap => true,
@@ -190,8 +205,9 @@ function calibration_archive_config(
         :grouping => Symbol(calibration_grouping_tag(group_channels_value)),
         :apprentice_seed => P6_CALIBRATION_SEED,
         :batch_order_seed => P6_CALIBRATION_SEED + 10_000,
-        :calibration_strengths => copy(P6_CALIBRATION_STRENGTHS[protocol]),
+        :calibration_strengths => copy(calibration_strengths(protocol, group_channels_value)),
         :regularization_strength => Float64(strength),
+        :regression_learning_rate => P6_CALIBRATION_REGRESSION_LEARNING_RATE,
         :regularized_updates => training_config.regularized_updates,
         :post_pruning_finetune_updates => training_config.post_pruning_finetune_updates,
         :batch_size => training_config.batch_size,
@@ -223,6 +239,8 @@ function save_calibration_summary!(manager, result, elapsed_seconds::Real)
         update_count = length(result.losses),
         final_training_loss = isempty(result.losses) ? NaN : last(result.losses),
         regularization_strength = result.regularization_strength,
+        calibration_phase = P6_CALIBRATION_PHASE,
+        regression_learning_rate = P6_CALIBRATION_REGRESSION_LEARNING_RATE,
         evaluation_count = manager.evaluation_count,
         pareto_front = manager.front,
     )
@@ -247,7 +265,7 @@ function run_calibration_strength!(
         run_id,
     )
     training_config = ApprenticeTrainingConfig(
-        regularized_updates = P6_CALIBRATION_UPDATES,
+        regularized_updates = P6_CALIBRATION_UPDATES[protocol],
         post_pruning_finetune_updates = 0,
         batch_size = protocol === :fixed ? 20 : 100,
         proximal_interval = 1,
@@ -292,6 +310,8 @@ function run_calibration_strength!(
     println("  protocol:                $protocol")
     println("  grouping:                $(calibration_grouping_tag(group_channels_value))")
     println("  strength:                $strength")
+    println("  regression learning rate: $P6_CALIBRATION_REGRESSION_LEARNING_RATE")
+    println("  regularized updates:     $(P6_CALIBRATION_UPDATES[protocol])")
     println("  train coverage:          $(coverages[:train].actual)")
     println("  validation coverage:     $(coverages[:validation].actual)")
     println("  test coverage (unused):  $(coverages[:test].actual)")
@@ -335,13 +355,17 @@ function calibration_worker_main(arguments = ARGS)
 end
 
 function run_loaded_calibration_worker(options, expert_path::AbstractString)
+    Float64(learning_rate) == P6_CALIBRATION_REGRESSION_LEARNING_RATE || error(
+        "Loaded apprentice regression learning rate $learning_rate does not match " *
+        "the requested $(P6_CALIBRATION_REGRESSION_LEARNING_RATE).",
+    )
     coverages, datasets, corpus_identifier = assert_calibration_inputs(
         options.protocol,
         expert_path,
     )
     initial_apprentice = deepcopy(apprentice)
 
-    for strength in P6_CALIBRATION_STRENGTHS[options.protocol]
+    for strength in calibration_strengths(options.protocol, options.group_channels)
         run_calibration_strength!(
             options.protocol,
             options.group_channels,

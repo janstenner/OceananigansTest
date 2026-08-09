@@ -81,7 +81,7 @@ else
     ffn_dim = 32
     drop_out = 0.00#1
 
-    learning_rate = 1e-4
+    learning_rate = 2e-4
     clip_grad = Inf
 end
 
@@ -167,7 +167,7 @@ function apprentice_kind_config(kind)
 end
 
 Base.@kwdef struct ApprenticeTrainingConfig
-    regularized_updates::Int = 8_000
+    regularized_updates::Int = randomIC ? 15_000 : 9_000
     post_pruning_finetune_updates::Int = 0
     batch_size::Int = randomIC ? 100 : 20
     proximal_interval::Int = 1

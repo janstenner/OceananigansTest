@@ -1,4 +1,4 @@
-# Package-6 one-seed calibration over three strengths and all four
+# Additive Package-6 one-seed calibration extension over all four
 # protocol/grouping combinations. This is plain Julia and works on Windows.
 
 const P6_CALIBRATION_PROJECT_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
@@ -16,10 +16,13 @@ function calibration_process_command(combination)
 end
 
 function run_strength_calibration_pilot(; preview::Bool = false)
-    println("Package-6 one-seed calibration pilot")
+    println("Package-6 additive strength-calibration extension")
     println("  combinations: 4")
-    println("  strengths per combination: 3")
-    println("  total runs: 12")
+    println("  new strengths: Fixed GC 3; Fixed SC 3; Varying GC 2; Varying SC 2")
+    println("  new runs: 10")
+    println("  regression learning rate: 2e-4")
+    println("  updates: Fixed 9,000; Varying 15,000")
+    println("  existing 6,000/10,000-update runs remain untouched")
     println("  execution: sequential fresh Julia processes")
     println()
 
@@ -33,7 +36,7 @@ function run_strength_calibration_pilot(; preview::Bool = false)
             run(command)
         end
     end
-    preview || println("All 12 Package-6 calibration runs are complete.")
+    preview || println("All 10 additive Package-6 calibration runs are complete.")
     return nothing
 end
 

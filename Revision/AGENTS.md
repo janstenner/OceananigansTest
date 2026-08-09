@@ -39,7 +39,9 @@ Sparse Sensing paper.
 - `VaryingIC_Corpus/plots/`: Generated split overview images.
 - `Expert_Apprentice_Distillation/Expert_Apprentice.jl`: Shared revision copy
   of the MAT expert-apprentice implementation used as the Package-6/7/8
-  training starting point.
+  training starting point. Future Fixed and Varying apprentice regressions use
+  learning rate `2e-4`; their default regularized budgets are 9,000 and 15,000
+  updates respectively.
 - `Expert_Apprentice_Distillation/DistillationCorpus.jl`: Directly includable
   Fixed-/Varying-IC teacher-rollout shard generation, atomic persistence,
   expert discovery, in-memory split merge, and lossless global-to-local MAT
@@ -53,10 +55,26 @@ Sparse Sensing paper.
   pilot with strict corpus/expert provenance checks and a scoped Pareto
   archive. It requires neither Bash nor tmux.
 - `GO_Sensitivity/run_strength_calibration_pilot.jl`: Plain-Julia Package-6
-  one-seed calibration orchestrator for three strengths across Fixed/Varying
-  IC and grouped/separate channels. It launches fresh Julia processes for the
-  four include-time configurations; its worker helper owns the individual
-  resumable Pareto runs.
+  additive one-seed calibration orchestrator across Fixed/Varying IC and
+  grouped/separate channels. It preserves the completed 6,000/10,000-update
+  baseline and launches only ten additional runs in fresh Julia processes.
+  New Fixed runs use 9,000 updates, new Varying runs 15,000, and all use a
+  regression learning rate of `2e-4`. Run identities include phase, learning
+  rate, and budget.
+- `GO_Sensitivity/inspect_strength_calibration_pilot.jl`: PlotlyJS inspector
+  that combines complete baseline and additive-extension blocks and exports
+  four strength-colored, point-only active-group versus
+  autoregressive-validation-MSE plots and highlights each combination's pooled
+  nondominated checkpoints. Its default mode then launches the closed-loop
+  calibration-test workers; `closed_loop_test=false` keeps inspection strictly
+  on validation data.
+- `GO_Sensitivity/inspect_strength_calibration_test_worker.jl`: Internal fresh-
+  process worker that evaluates every retained per-strength calibration Pareto
+  candidate plus the MAT expert for one protocol/grouping combination. Fixed
+  uses its one shared episode; Varying uses all eight predeclared test episodes.
+  Episode caches, reward-curve plots, return box plots, CSV, and aggregate JLD2
+  results are explicitly marked as calibration test diagnostics that must not
+  drive scientific candidate selection.
 - `GO_Sensitivity/inspect_fixed_pilot.jl`: Lightweight result inspector that
   prints the native GO trajectory and archived Pareto points and exports CSV
   summaries plus a PlotlyJS active-groups/validation-MSE plot. Its default
