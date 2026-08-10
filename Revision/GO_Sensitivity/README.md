@@ -4,6 +4,68 @@ This directory owns the Package-6 experiment orchestration. Shared apprentice
 training, distillation-corpus loading, mask generation, and Pareto storage stay
 in `Revision/Expert_Apprentice_Distillation`.
 
+## Package-6 production study
+
+The production study is SC-only and contains 30 GO runs plus six paired GR
+references. Fixed and Varying both use GO strengths `0.0015`, `0.003`,
+`0.006`, `0.01`, and `0.03`; GR uses `0.00004` and `0.0001`, respectively.
+Three new apprentice/batch seed pairs come from `StableRNG(20260810)`. Fixed
+runs use 35,000 updates, Varying runs 50,000, regression learning rate `2e-4`,
+and validation every 25 updates from update 0. Package 6 uses native sparsity
+only: no thresholding, fine-tuning, or result-dependent stopping.
+
+Preview the 36 training and two analysis sessions from the project root:
+
+```bash
+bash Revision/GO_Sensitivity/launch_study_tmux.sh --preview
+```
+
+Start the complete study:
+
+```bash
+bash Revision/GO_Sensitivity/launch_study_tmux.sh
+```
+
+Useful restricted launches are:
+
+```bash
+bash Revision/GO_Sensitivity/launch_study_tmux.sh --protocol fixed
+bash Revision/GO_Sensitivity/launch_study_tmux.sh --protocol varying
+bash Revision/GO_Sensitivity/launch_study_tmux.sh --analysis-only
+bash Revision/GO_Sensitivity/launch_study_tmux.sh --results-dir /path/to/results/study
+```
+
+`systemd-inhibit` is enabled by default, matching the other server studies.
+Use `--no-systemd-inhibit` only when the server environment intentionally does
+not need or provide it. Every tmux session closes when its process exits.
+
+Short results live at paths such as
+`results/study/fixed/go/s01/r01` and `results/study/varying/gr/r03`.
+Each launch writes logs, `jobs.tsv`, launch metadata, and a JLD2 study manifest
+below `results/study/launches/<launch-id>/`. Complete runs are identity-checked
+and skipped; interrupted runs resume. Failed runs remain explicitly failed and
+require `--retry-failed` after their cause has been repaired.
+
+The Fixed and Varying analysis workers start concurrently with training and
+wait for their 18 runs. They audit configurations, pairings, corpus/expert
+identity, hashes, budgets, and evaluation coverage; compute the complete
+offline stability metric set; write compact SVGs, an interactive 3D HTML plot,
+CSV/JLD2 metrics, and an English `report.md`; then freeze the validation-only
+GO candidate manifest before launching any terminal test episode. Fixed uses
+one shared 200-step test episode and Varying all eight existing test episodes.
+GR is an offline reference and is never test-selected.
+
+Run the implementation tests locally with:
+
+```powershell
+julia --startup-file=no --project=. .\Revision\GO_Sensitivity\test_package6_study.jl
+julia --startup-file=no --project=. .\Revision\GO_Sensitivity\test_package6_wait_worker.jl
+julia --startup-file=no --project=. .\Revision\GO_Sensitivity\test_package6_plot_smoke.jl
+```
+
+The technical calibration below is retained as internal provenance. It is not
+part of the Package-6 scientific result and is not mentioned in the paper.
+
 ## One-seed strength calibration
 
 The new calibration reruns the complete frozen strength grid with one common
@@ -105,15 +167,15 @@ include("Revision/GO_Sensitivity/inspect_strength_calibration_pilot.jl")
 inspect_strength_calibration_pilot(closed_loop_test = false)
 ```
 
-### Test-split warning
+### Calibration test-split rule
 
-The default closed-loop diagnostic consumes and exposes the Varying test split.
-Its result files are marked `scientific_selection_allowed = false`; they must
-not be used to choose strengths or candidates. Once these curves have been
-viewed, the current eight episodes are no longer an untouched final Package-8
-test set. A later final held-out claim therefore requires newly generated and
-frozen test bases (and matching expert rollout shards), or the present split
-must be reported explicitly as an exploratory diagnostic split.
+The calibration diagnostic did not select candidates or change training. Its
+result files remain marked `scientific_selection_allowed = false`. Production
+strengths were fixed from the offline loss/validation behavior, and Package-6
+production selection is performed only on validation matching and native SC
+sparsity. The existing test episodes are therefore used only as terminal,
+selection-inert checks; observing their returns must not trigger a later
+strength, checkpoint, mask, or training decision.
 
 ## Fixed-IC technical pilot
 

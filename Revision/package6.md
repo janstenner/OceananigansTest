@@ -1,554 +1,202 @@
-# Paket 6 — Minimale GO-Sensitivitätsstudie auf RBC-Daten
+# Paket 6 — SC-GO-Sensitivitäts- und Stabilitätsstudie
 
-Stand: 2026-08-09
+Stand: 2026-08-10
 
-## Ziel
+## Ziel und Abgrenzung
 
-Paket 6 ist eine kleine, vollständig offline durchführbare Sensitivitätsstudie auf echten RBC-Teacher-Rollouts.
-Es ist weder eine Toy-Studie noch eine zweite vollständige Apprentice-Ergebnisstudie.
+Paket 6 ist eine eigenständige wissenschaftliche Studie auf den echten
+RBC-Teacher-Rollouts. Es untersucht ausschließlich Separate-Channel-Gruppierung
+(`group_channels=false`) und native Regularisierer-Sparsity. Die technische
+Strength-Kalibrierung war interne Vorarbeit zur Festlegung eines übersichtlichen,
+Pareto-relevanten Strength-Grids; sie wird im Paper nicht erwähnt und gehört
+nicht zu den Produktionsresultaten.
 
-Die zentrale Frage lautet:
+Ein Run wird nicht durch seinen letzten Checkpoint repräsentiert. GO und GR
+können sich wiederholt an einen guten Sparsity-/Matching-Bereich annähern, aus
+ihm herausspringen und sich wieder erholen. Deshalb bleiben sämtliche
+Validation-Evaluationen erhalten und werden als Trainingsverlauf, wissenschaftliche
+Front sowie Stabilitätsprozess ausgewertet.
 
-> Erzeugt GO bei moderater Änderung seiner Regularisierungsstärke wiederholt einen brauchbaren empirischen Pareto-Bereich zwischen Expert Matching und Anzahl aktiver Inputs, und ist dieser erreichbare Bereich über Apprentice-Seeds hinreichend stabil?
+Paket 7 und 8 ergänzen später Channel-Coupled- und Separate-Channel-Varianten,
+Hard Thresholding und weitere Regularisierer. Paket 6 wählt kein finales
+Paper-Modell aus.
 
-Ein GO- oder GR-Run wird dabei nicht durch einen einzelnen Endcheckpoint repräsentiert.
-Jeder Run liefert über seinen Trainingsverlauf eine Menge von Kandidaten
+## Eingefrorenes Trainingsprotokoll
 
-$$
-\mathcal S
-=
-\left\{
-\left(
-N_{\mathrm{active}}^{(t)},
-L_{\mathrm{match,val}}^{(t)}
-\right)
-\right\}_{t\in\mathcal T},
-$$
+Für Fixed und Varying gelten dieselben fünf GO-Stärken:
 
-wobei $N_{\mathrm{active}}^{(t)}$ die Anzahl aktiver Inputs und $L_{\mathrm{match,val}}^{(t)}$ das Expert Matching auf dem Validation Set am ausgewerteten Trainingsschritt $t$ bezeichnet.
+```text
+0.0015, 0.003, 0.006, 0.01, 0.03
+```
 
-## 1. Motivation für ein Pareto-Archiv
-
-GO und GR drücken Expert-Matching-Fehler und Gewichte nicht monoton auf einen praktisch konvergierten Endzustand.
-Während des Trainings können Expert Matching, Anzahl aktiver Inputs oder beide Größen sprunghaft schlechter und später wieder besser werden.
-Ein Run kann sich daher mehrfach an einen guten Performance-Sparsity-Trade-off annähern und wieder davon entfernen.
-
-Der aktuelle Trainingspunkt darf deshalb nicht mit dem Ergebnis des gesamten Runs gleichgesetzt werden.
-Stattdessen führt jeder Run ein externes Pareto-Archiv über alle regelmäßig ausgewerteten Checkpoints.
-
-Das Archiv verschlechtert sich im Zeitverlauf nicht.
-Ein neuer Kandidat erweitert oder verbessert die bisherige empirische Front, oder er wird von einem früheren Kandidaten dominiert.
-
-Das Pareto-Verfahren ist eine nachgelagerte Archivierungs- und Auswahlstrategie.
-Es wird nicht behauptet, dass GO oder GR selbst Multi-Objective-Pareto-Optimierer sind.
-
-## 2. Voraussetzungen einfrieren
-
-Paket 6 beginnt erst, nachdem die MAT-Stabilitätsstudie und die Expertwahl abgeschlossen sind.
-Vor Beginn werden folgende Bestandteile festgeschrieben:
-
-- die verwendete MAT-Apprentice-Architektur
-- der Fixed-IC-Expert
-- der Varying-IC-Expert
-- die Observation- und Action-Normalisierung
-- die Trainingsdatenformate
-- die Gruppenkonstruktion
-- der maximale Apprentice-Trainingsumfang
-- das Auswertungsintervall für Pareto-Kandidaten
-
-Dadurch untersucht Paket 6 tatsächlich GO und nicht gleichzeitig wechselnde Architekturen oder Experts.
-Die für Paket 6 erzeugten Teacher-Daten werden anschließend unverändert in Paket 7 und 8 weiterverwendet.
-
-## 3. Variierter Parameter
-
-Variiert wird ausschließlich die multiplikative GO-Stärke
-`regularization_strength`.
-Die geordnete Gewichtsfolge
-
-$$
-\lambda_i = \frac{i-1}{n}
-$$
-
-bleibt unverändert.
-Ihre Form, die Proximalfrequenz und alle anderen Optimierungsparameter bleiben konstant.
-
-Im bestehenden Code sind die bisherigen GO-Referenzwerte:
-
-- Fixed IC: `0.09`
-- Varying IC: `0.025`
-
-Vor dem Produktionssweep wird die vollständige bisher untersuchte
-Strength-Menge in einem homogenen technischen Ein-Seed-Block neu gerechnet:
-
-| Protokoll | Gruppierung | Stärken | Updates |
-|---|---|---|---:|
-| Fixed IC | channel-coupled | 0.003, 0.006, 0.01, 0.03, 0.06, 0.09 | 35.000 |
-| Fixed IC | separate-channel | 0.0015, 0.003, 0.006, 0.01, 0.02, 0.03 | 35.000 |
-| Varying IC | channel-coupled | 0.003, 0.008, 0.025, 0.04, 0.06 | 50.000 |
-| Varying IC | separate-channel | 0.003, 0.008, 0.025, 0.04, 0.06 | 50.000 |
-
-Damit bleiben insbesondere die Fixed-Stärken `0.01` und `0.03` Teil der
-Kalibrierung, obwohl sie in der vorigen Auswertung nicht in die Pareto-Menge
-eingingen. Alle 22 Läufe verwenden denselben Apprentice-Seed und dieselbe
-Regressions-Lernrate `2e-4`. Phase, Lernrate und Budget sind Bestandteil der
-Run-Identität. Die älteren 6.000/9.000/10.000/15.000-Update-Blöcke werden nicht
-mit dem neuen Block zusammen ausgewertet. Sämtliche Kalibrierungsläufe bleiben
-technische Kalibrierung und sind kein Teil der wissenschaftlichen
-Sensitivitätsauswertung.
-
-Anhand der Kalibrierung wird pro Protokoll ein Satz aus fünf geordneten
-Produktionsstärken festgelegt. Die Abstände müssen keine Verdopplungen sein.
-Die fünf Werte werden vor Beginn der Produktionsruns dokumentiert und danach
-nicht anhand der Produktionsresultate erweitert oder verschoben.
-
-Die Bezeichnung ist methodenübergreifend: Sie beschreibt die Stärke des
-jeweiligen Regularisierers und keine mathematische Potenz.
-
-## 4. Experimentumfang
-
-Untersucht werden beide Datenprotokolle:
-
-- Fixed IC
-- Varying IC
-
-Beide Fälle werden einbezogen, weil der bestehende Code verschiedene GO-Stärken für sie verwendet.
-Eine reine Fixed-IC-Studie würde den Varying-IC-Wert nicht absichern.
-
-Das feste Apprentice-Trainingsbudget beträgt für sämtliche zukünftigen
-Methoden und Gruppierungsvarianten 35.000 Optimizer-Updates unter Fixed IC und
-50.000 Optimizer-Updates unter Varying IC. Die Regressions-Lernrate beträgt in
-beiden Protokollen `2e-4`. Diese Festlegungen gelten gemeinsam für Paket 6, 7
-und 8; ein Update bezeichnet in beiden Protokollen genau ein Optimizer-Update.
-
-Der experimentelle Sensitivitätssweep verwendet ausschließlich channel-coupled grouping.
-Dies ist die praktisch wichtigste Variante, bei der ein physischer Sensorort gemeinsam über seine Komponenten behandelt wird.
-Separate-channel grouping wird im Ein-Seed-Kalibrierungslauf technisch
-geprüft, erhält jedoch keinen eigenen vollständigen Sensitivitätssweep.
-
-## 5. Seeds und Paarung
-
-Jede GO-Stärke wird mit drei Apprentice-Seeds untersucht.
-Innerhalb eines Seeds bleiben über alle GO-Stärken identisch:
-
-- Netzinitialisierung
-- Reihenfolge der Trainingsdaten
-- Teacher-Daten
-- Trainingsbudget
-- Optimizer
-- Gruppierung
-- Batchaufteilung
-
-Damit wird innerhalb eines Seeds ausschließlich die GO-Stärke verändert.
-Der GO-Umfang beträgt
-
-$$
-2\ \text{Protokolle}
-\times
-5\ \text{GO-Stärken}
-\times
-3\ \text{Seeds}
-=
-30\ \text{GO-Runs}.
-$$
-
-## 6. GR als Referenz
-
-GR erhält keinen eigenen Sensitivitätssweep.
-Es wird mit seiner bisherigen nominalen Konfiguration als Referenz ausgeführt:
+GR wird als nominale Offline-Referenz geführt:
 
 - Fixed IC: `0.00004`
 - Varying IC: `0.0001`
-- jeweils drei mit den GO-Runs gepaarte Seeds
-- dieselben Daten und Trainingsbudgets
 
-Damit kommen sechs GR-Runs hinzu.
-Paket 6 umfasst nach der separaten technischen Kalibrierung insgesamt 36
-offline durchgeführte Produktionsruns.
-
-Jeder GR-Run erzeugt dasselbe Pareto-Archiv wie ein GO-Run.
-Der GR-Vergleich soll keine allgemeine Überlegenheit eines Verfahrens nachweisen.
-Er dient der Beantwortung folgender Fragen:
-
-- Ist die Streuung der erreichbaren GO-Fronten auffällig größer als bei GR?
-- Ist das Maskenverhalten von GO bei vergleichbaren Inputbudgets weniger reproduzierbar?
-- Liefert GO einen vergleichbaren oder erkennbar anderen erreichbaren Performance-Sparsity-Bereich?
-
-Lasso und Standard-GrOWL gehören nicht in Paket 6.
-Sie werden später gemeinsam mit den eigentlichen Baselines behandelt.
-
-## 7. Correctness-Audit vor den Produktionsruns
-
-Vor den Produktionsruns müssen kleine deterministische Tests bestätigen:
-
-1. Jede Inputzeile gehört genau zu der erwarteten Gruppe.
-2. Keine Gruppen überlappen sich unbeabsichtigt.
-3. Channel-coupled Gruppen enthalten alle vorgesehenen Komponenten eines Sensororts.
-4. Die Gruppennormen werden korrekt sortiert.
-5. Die GO-Gewichte werden den sortierten Normen korrekt zugeordnet.
-6. Die proximal veränderten Normen werden den ursprünglichen Gruppen korrekt zurückgegeben.
-7. Exakt auf null gesetzte Gruppen erzeugen die erwartete Maske.
-8. Alle Zufallsoperationen verwenden den Run-RNG.
-
-Die frühere zufällige Wiederherstellung von Nullgruppen ist entfernt. Ein fast
-vollständig geprunter Lauf wird als degeneriertes Ergebnis festgehalten und
-nicht nachträglich repariert.
-
-## 8. Training ohne manuelles Stoppen
-
-Alle 36 Produktionsruns erhalten das feste Maximalbudget von 35.000 Updates
-unter Fixed IC beziehungsweise 50.000 Updates unter Varying IC.
-Ergebnisabhängige Stopps werden für die Studie deaktiviert.
-Dies betrifft insbesondere:
-
-- Stoppen anhand der gesamten Weight Sum
-- Stoppen aufgrund manuell motivierter Loss-Verläufe
-- Stoppen anhand eines gewünschten Sparsity-Niveaus
-
-Ein technischer Sicherheitsstopp bleibt ausschließlich für folgende Fälle zulässig:
-
-- `NaN` oder `Inf`
-- ungültige Modellparameter
-- eindeutiger numerischer Zusammenbruch
-
-Ein stärker regularisierter Lauf darf nicht früher beendet werden, nur weil er schneller sparse wird.
-
-## 9. Kandidatenerzeugung und Pareto-Archiv pro Run
-
-Jeder Run wird in einem vorab festgelegten festen Intervall auf dem zugehörigen Validation Set ausgewertet.
-Das Intervall muss klein genug sein, um die Sprünge zwischen gutem Expert Matching und hoher Sparsity zuverlässig abzubilden.
-
-Jeder Kandidat erhält mindestens folgende Metadaten:
-
-- Methode
-- GO-Stärke beziehungsweise GR-Konfiguration
-- IC-Protokoll
-- Apprentice-Seed
-- Trainingsschritt
-- Validation-Expert-Matching
-- Anzahl aktiver Inputs
-- binäre Maske
-- numerischer Status
-
-Ein Kandidat $A$ dominiert einen Kandidaten $B$, wenn
-
-$$
-N_{\mathrm{active}}^A \leq N_{\mathrm{active}}^B
-$$
-
-und
-
-$$
-L_{\mathrm{match,val}}^A \leq L_{\mathrm{match,val}}^B,
-$$
-
-wobei mindestens eine der beiden Ungleichungen strikt sein muss.
-
-Für die Archivierung gilt:
-
-- Ein dominierter neuer Kandidat wird vollständig in den Messwerten protokolliert, sein vollständiges Apprentice-Modell muss jedoch nicht gespeichert werden.
-- Ein nichtdominierter neuer Kandidat wird mit Modell und Maske in das Pareto-Archiv aufgenommen.
-- Dominiert ein neuer Kandidat ältere Pareto-Punkte, können deren vollständige Modelle aus dem aktiven Archiv entfernt werden.
-- Kleine Metadaten und Masken dürfen für die spätere Dynamik- und Stabilitätsanalyse erhalten bleiben.
-- Bei identischer Anzahl aktiver Inputs reicht für die geometrische Front der Kandidat mit dem kleinsten Validation-Expert-Matching.
-
-Ein innerhalb seines eigenen Runs dominierter Kandidat kann auch auf einer später gepoolten Front nicht mehr benötigt werden, solange sein Dominator erhalten bleibt.
-
-### Zuständigkeit und persistente Ablage
-
-Das jeweilige Experiment-Script besitzt die wissenschaftliche Policy. Es legt
-insbesondere fest:
-
-- ab welchem Gradient-Update Kandidaten gespeichert werden
-- in welchem Updateintervall Validation stattfindet
-- welche Hard-Threshold-Stufen zusätzlich evaluiert werden
-- wie oft physische Garbage Collection und Restart-Sicherung erfolgen
-- Run-ID, Outputpfad und vollständige Konfiguration
-
-Die gemeinsame `ParetoArchive`-Infrastruktur übernimmt dagegen Mechanik und
-Konsistenz: Dominanz, atomare JLD2-Schreibvorgänge, Manifest, Wiederaufbau,
-referenzbasierte Löschung und `resume/latest.jld2`.
-
-Alle Kandidaten eines Trainingsschritts teilen genau einen Modellcheckpoint.
-Ihre kleinen Messwert- und Maskendatensätze bleiben unabhängig davon erhalten,
-ob sie die aktuelle Front erreichen. Nur wenn mindestens ein Kandidat des
-Schritts nichtdominiert ist, wird das zugehörige Modell dauerhaft geschrieben.
-Die logische Front wird bei jeder Validation neu bestimmt; unreferenzierte
-Modelldateien werden periodisch, beim Abschluss und beim Wiederanlauf bereinigt.
-
-Die persistente Reihenfolge lautet: zunächst Modellcheckpoint, dann
-Evaluation-Datei, dann aktualisiertes Manifest, erst danach Löschung nicht mehr
-referenzierter Modelle. Dadurch verweist ein veröffentlichtes Manifest nie auf
-einen noch nicht geschriebenen neuen Kandidaten.
-
-## 10. Native Sparsity und Hard Thresholding bleiben getrennt
-
-Paket 6 evaluiert und archiviert bereits alle später in Paket 7 und 8
-benötigten Hard-Threshold-Stufen. Dadurch müssen identische Apprentice-
-Checkpoints später nicht erneut ausgewertet oder gespeichert werden.
-
-Für seine GO-Sensitivitätsauswertung verwendet Paket 6 jedoch ausschließlich
-den Kandidaten `:native`, also genau die Gruppen, die der Regularisierer selbst
-auf null gesetzt hat. Die Hard-Threshold-Kandidaten tragen einen getrennten
-Kandidatentyp und einen getrennten Pareto-Scope. Sie können daher keinen
-nativen Frontpunkt samt Modell aus dem Archiv verdrängen und fließen nicht in
-diese Sensitivitätsfront ein. Damit bleiben
-Regularisierungseffekt und nachträgliche Maskenextraktion wissenschaftlich
-getrennt, obwohl beide technisch im selben Archiv liegen.
-
-## 11. Drei Ebenen der Pareto-Auswertung
-
-### A. Pareto-Front pro Run
-
-Für jede Kombination aus IC-Protokoll, Methode, Regularisierungsstärke und Seed wird eine eigene Front gebildet.
-Sie beschreibt den während eines einzelnen Trainingslaufs erreichbaren Trade-off.
-
-### B. Pareto-Front pro Regularisierungsstärke
-
-Die drei Seed-Fronten einer GO-Stärke werden zusammengeführt.
-Dabei bleibt sichtbar:
-
-- welche Teile der gepoolten Front von welchem Seed stammen
-- ob ein guter Bereich nur durch einen einzelnen glücklichen Seed erreicht wurde
-- wie stark sich die Seed-Fronten überlappen
-- welchen Sparsity-Bereich die jeweilige GO-Stärke innerhalb des festen Budgets erreicht
-
-Für GR wird dieselbe gepoolte Referenzfront erzeugt.
-
-### C. Gemeinsame Front über alle GO-Stärken
-
-Die Kandidaten aller fünf GO-Produktionsstärken werden anschließend zusammengeführt.
-Jeder Punkt behält seine Kennzeichnung für GO-Stärke, Seed und Trainingsschritt.
-
-Diese Front zeigt:
-
-- welche GO-Stärke zu welchem Bereich beiträgt
-- ob eine Stärke die anderen weitgehend dominiert
-- ob verschiedene Stärken komplementäre konservative und aggressive Bereiche abdecken
-
-Die gemeinsame Front dient in Paket 6 der Sensitivitätsanalyse.
-Sie bestimmt noch nicht das finale Paper-Modell.
-
-## 12. Messgrößen
-
-### Primäre Messgrößen
-
-Für jeden ausgewerteten Kandidaten werden zwei Hauptgrößen berechnet:
-
-1. **Expert Matching auf dem Validation Set:** mittlere quadratische Abweichung zwischen den vorhergesagten Aktionsmitteln von Expert und Apprentice.
-2. **Gesamtzahl aktiver Inputs:** Anzahl der nach Gruppierung und Maskenbildung tatsächlich beibehaltenen Inputs.
-
-Für Fixed IC sind Training-, Validation- und Testdaten entsprechend dem festgelegten Protokoll identisch.
-Das Expert Matching ist dort keine Generalisierungsmessung, sondern eine kontrollierte Optimierungs- und Sensitivitätsmessung.
-
-Für Varying IC wird das Expert Matching auf dem separaten Validation-Split berechnet.
-Die wissenschaftliche Paket-6-Sensitivitätsauswertung verwendet die Testbasen
-nicht. Eine separate Ein-Seed-Kalibrierungsdiagnostik darf auf ausdrücklichen
-Wunsch alle erhaltenen Pareto-Kandidaten geschlossen auf dem bisherigen
-Testsplit ausrollen, ist aber mit `scientific_selection_allowed = false`
-gekennzeichnet und darf weder Stärke noch Kandidaten bestimmen. Nach Ansicht
-dieser Diagnose gilt der Split nicht mehr als unangetasteter finaler Testsplit.
-
-### Sekundäre Messgrößen
-
-Zusätzlich werden gespeichert:
-
-- Trainingsloss über den Trainingsverlauf
-- Validation-Expert-Matching über den Trainingsverlauf
-- aktive Inputs über den Trainingsverlauf
-- Gruppennormen
-- finale und archivierte binäre Masken
-- Jaccard-Ähnlichkeit der Masken zwischen Seeds bei vergleichbaren Inputbudgets
-- Auswahlhäufigkeit jedes Sensororts beziehungsweise Kanals
-- Erreichbarkeitsrate vorab definierter Inputbudgets
-- Anzahl und Art numerischer Fehlläufe
-- Laufzeit
-
-## 13. Auswertung
-
-### A. Trajektorien und Run-Fronten
-
-Für ausgewählte Runs werden alle Checkpointpunkte und die jeweils nichtdominierten Punkte gemeinsam gezeigt.
-Dadurch wird sichtbar, wie der aktuelle Trainingspunkt wiederholt an die empirische Front heranläuft und von ihr wegspringt.
-
-### B. Sensitivitäts- und Performance-Sparsity-Darstellung
-
-Es wird je ein Panel für Fixed IC und Varying IC erstellt.
-Die gemeinsame Darstellung verwendet:
-
-- x-Achse: Anzahl aktiver Inputs
-- y-Achse: Validation-Expert-Matching
-- Farbe: GO-Stärke
-- einzelne Punkte oder Linien: Run-Fronten der Apprentice-Seeds
-- gesonderte Referenzdarstellung für GR
-
-Zusätzlich wird pro GO-Stärke berichtet, welche Inputbereiche innerhalb des festen Budgets erreicht wurden.
-
-### C. Vergleich bei festen Inputbudgets
-
-Vor der Auswertung werden konservative, mittlere und aggressive Inputbereiche festgelegt.
-Für jeden Seed wird der beste Frontpunkt im jeweiligen Bereich bestimmt.
-
-Pro Bereich werden berichtet:
-
-- bestes Validation-Expert-Matching pro Seed
-- Median oder Mittelwert mit Streuung
-- tatsächlich erreichte Anzahl aktiver Inputs
-- Anteil der Runs, die den Bereich überhaupt erreicht haben
-
-Ein nicht erreichter Bereich wird als Ergebnis ausgewiesen und nicht durch Extrapolation ersetzt.
-
-### D. Maskenstabilität
-
-Masken werden nur bei vergleichbaren Inputbudgets miteinander verglichen.
-Eine Tabelle oder Matrix berichtet:
-
-- mittlere paarweise Jaccard-Ähnlichkeit
-- minimale und maximale Jaccard-Ähnlichkeit
-- Auswahlhäufigkeit der Sensororte
-- getrennte Werte nach GO-Stärke, Inputbereich und IC-Protokoll
-
-Dadurch wird vermieden, die geringe Jaccard-Ähnlichkeit zweier Masken primär durch stark unterschiedliche Maskengrößen zu erklären.
-
-## 14. Entscheidungsregel
-
-GO bleibt eine reguläre Hauptmethode, wenn:
-
-- der Correctness-Audit bestanden ist
-- die nominalen Runs ohne numerische Fehlschläge enden
-- die GO-Stärke den erreichbaren Sparsity-Bereich nachvollziehbar beeinflusst
-- mindestens ein Bereich mit brauchbarem Expert Matching und deutlicher Inputreduktion wiederholt über Seeds erreicht wird
-- gute Frontpunkte nicht ausschließlich aus einem einzelnen glücklichen Seed stammen
-- die Streuung und Maskenstabilität gegenüber GR nicht fundamental schlechter sind
-
-Ein schlechter Endcheckpoint allein ist kein Ausschlussgrund, wenn der Run zuvor reproduzierbar brauchbare nichtdominierte Kandidaten erzeugt hat.
-
-GO wird sekundär oder explorativ behandelt, wenn:
-
-- Gruppensortierung oder Rückzuordnung nicht zuverlässig funktionieren
-- identische Konfigurationen stark erratische Fronten liefern
-- die Regularisierungsstärke keinen nachvollziehbaren Einfluss auf den erreichbaren Sparsity-Bereich besitzt
-- brauchbares Expert Matching nur bei praktisch dichter Maske möglich ist
-- gute Frontpunkte nur aus einzelnen zufälligen Ausnahmeruns stammen
-- das Ergebnis maßgeblich von zufälliger Nullgruppenwiederherstellung abhängt
-
-Die numerische Akzeptanzgrenze für brauchbares Expert Matching und die Inputbereiche werden vor Beginn der Produktionsruns festgelegt.
-
-Falls eine GO-Stärke die anderen über Seeds hinweg weitgehend dominiert, wird diese Konfiguration in Paket 7 und 8 übernommen.
-Falls verschiedene Stärken komplementäre Frontbereiche abdecken, werden höchstens eine konservative und eine aggressive Stärke weitergeführt.
-
-## 15. Festgelegter Cut
-
-Paket 6 umfasst:
-
-- zwei RBC-Datenprotokolle
-- channel-coupled grouping
-- fünf GO-Stärken, festgelegt nach einer separaten homogenen
-  Ein-Seed-Kalibrierung über die vollständige bisherige Strength-Menge
-- drei Apprentice-Seeds
-- eine nominale GR-Referenz
-- Pareto-Archive über regelmäßig ausgewertete Trainingscheckpoints
-- ausschließlich Offline-Auswertung für die eigentliche Sensitivitätsstudie
-- keine Testdaten
-- alle später benötigten Hard-Threshold-Stufen werden mit ausgewertet und
-  archiviert, aber nicht für die GO-Sensitivitätsauswertung verwendet
-- keine Closed-Loop-Simulation pro Sensitivitätspunkt
-- ein gecachter deterministischer Fixed-IC-Closed-Loop-Vergleich zwischen MAT
-  und dem bestmatchenden nativen Kandidaten ist als technischer Pilotdiagnostik
-  zulässig, aber kein Ergebnis der Paket-6-Sensitivitätsstudie
-- keine Toy-Probleme
-- keine Lasso- oder Standard-GrOWL-Sweeps
-
-Der Produktionsumfang beträgt 30 GO-Runs und 6 GR-Runs. Die 22 technischen
-Kalibrierungsläufe zählen nicht als wissenschaftliche Paket-6-Runs.
-Die teuren Closed-Loop-Auswertungen folgen erst in Paket 7 und 8 für wenige Pareto-Kandidaten.
-
-## Festgelegte Zählweise aktiver Inputs
-
-Die Pareto-Zielgröße ist die Anzahl global eindeutiger, beibehaltener
-Sensor-Kanal-Paare nach Auflösung der überlappenden lokalen Fenster. Zusätzlich
-wird die kanalübergreifend zusammengefasste Anzahl aktiver physischer
-Sensororte als Diagnosewert gespeichert.
-
-## Offene Punkte für die Implementierungsplanung
-
-Die folgenden acht Punkte werden vor den Produktionsruns gemeinsam festgelegt.
-Punkt 1 blockiert nicht die vorbereitende Implementierung; bis die finalen
-Experts vorliegen, dürfen ausschließlich technische Smoke-Tests einen frisch
-initialisierten MAT als Test-Expert verwenden.
-
-1. **Experts und Apprentice-Architektur einfrieren.**
-   Für Fixed IC und Varying IC werden die finalen Expert-Checkpointpfade,
-   Checkpoint-IDs und die vollständige MAT-Apprentice-Konfiguration in einem
-   reproduzierbaren Manifest festgehalten.
-2. **RBC-Datenprotokoll vollständig spezifizieren.**
-   Festzulegen sind Rolloutanzahl und -länge, IC-Transformationen, Splitregeln,
-   Datenformat, Metadaten, Normalisierung sowie Speicherung oder Berechnung der
-   Teacher-Aktionsmittel. Fixed IC verwendet dieselbe einzelne Episode für
-   Training, Validation und Test. Varying IC verwendet strikt getrennte
-   Corpus-Basen für Training, Validation und Test.
-3. **Trainingsbudget und Bedeutung eines Trainingsschritts definieren.**
-   Festgelegt sind 35.000 Updates für Fixed IC und 50.000 Updates für Varying
-   IC. Ein Trainingsschritt ist in beiden Protokollen genau ein
-   Optimizer-Update. Batchgröße, verarbeitete Beispiele,
-   Proximalanwendungen sowie Checkpoint- und Validationintervalle werden
-   zusätzlich explizit angegeben.
-4. **Methodennamen eindeutig auf den Code abbilden.**
-   Festgelegt sind ausschließlich die kanonischen Symbole `:go`, `:gr`,
-   `:group_lasso` und `:growl`. Legacy-Symbole werden im Revision-Ordner nicht
-   unterstützt.
-5. **Gesamtzahl aktiver Inputs endgültig definieren.**
-   Zu entscheiden sind die Zusammenführung mehrfach vorkommender lokaler
-   Fensterzeilen, die Zählung von Sensor-Kanal-Paaren gegenüber physischen
-   Sensororten sowie die Behandlung möglicher Positionsinformationen.
-6. **Nullgruppen-Wiederherstellung endgültig behandeln.**
-   Festgelegt: Die zufällige Wiederherstellung ist entfernt. Degenerierte
-   Läufe werden als Ergebnis gespeichert und nicht repariert.
-7. **Expert-Matching mathematisch vollständig definieren.**
-   Festzulegen sind normalisierte oder physikalische Actions, die Gewichtung
-   über Zustände, Aktuatoren und Komponenten, der Umgang mit Rolloutlängen
-   sowie Teacher-forced gegenüber autoregressiver Apprentice-Auswertung.
-8. **Inputbereiche und numerische Akzeptanzkriterien vorab festlegen.**
-   Konservative, mittlere und aggressive Inputbereiche sowie die Begriffe
-   brauchbares Matching, wiederholte Erreichbarkeit und gegenüber GR nicht
-   fundamental schlechtere Stabilität erhalten vor Einsicht in die
-   Produktionsresultate numerische Definitionen.
-
-## Festlegung zum gemeinsamen Distillation-Corpus
-
-Die Teacher-Rollouts werden einmal in der gemeinsamen Infrastruktur unter
-`Revision/Expert_Apprentice_Distillation` erzeugt und anschließend von Paket 6,
-7 und 8 unverändert verwendet.
-
-Für Fixed IC erzeugt ein einzelner Worker genau eine deterministische
-200-Schritt-Episode. Derselbe gespeicherte Datensatz dient als Training-,
-Validation- und Testmenge.
-
-Für Varying IC verwendet das Training für jede Basis die vollständige
-Transformationsmenge aus beiden Spiegelungszuständen und allen 96 horizontalen
-Offsets. Validation und Test bleiben bewusst klein und verwenden pro Basis und
-Spiegelungszustand ausschließlich die beiden vorab festgelegten Offsets 0 und
-20. Ein Worker besitzt genau eine Kombination aus Split, Basis-Seed und
-Spiegelungszustand und erzeugt die zu seinem Split gehörenden Offsetepisoden mit
-jeweils 200 Kontrollschritten. Daraus folgen:
-
-| Split | Basen | Worker | Episoden | Zeitschritte |
-|---|---:|---:|---:|---:|
-| Training | 20 | 40 | 3.840 | 768.000 |
-| Validation | 1 | 2 | 4 | 800 |
-| Test | 2 | 4 | 8 | 1.600 |
-
-Die wissenschaftliche Paket-6-Auswertung verwendet ausschließlich Training und
-Validation. Der optionale Kalibrierungs-Testdiagnostiklauf ist davon strikt
-getrennt, verwendet jedoch die acht bisherigen Varying-Testepisoden. Sobald
-dessen Ergebnisse angesehen werden, erfordert eine spätere unabhängige
-Paket-8-Auswertung neu erzeugte und eingefrorene Testbasen samt zugehörigen
-Expert-Shards; andernfalls darf der bisherige Split nur als explorativer
-Diagnostiksplit bezeichnet werden.
-
-Gespeichert werden pro Zeitschritt das global eindeutige
-`3 × 48 × 8`-Sensortensor und die `1 × 12` Expert-Aktionsmittel als `Float32`.
-Die zwölf überlappenden lokalen MAT-Fenster werden nicht redundant gespeichert,
-sondern beim Laden bitgenau als `360 × 12`-Observation rekonstruiert. Damit
-benötigt der Varying-IC-Trainingscorpus ungefähr 3,33 GiB statt ungefähr
-12,4 GiB. Jeder Worker prüft vor der Generierung, dass die Rekonstruktion exakt
-mit der Observation des verwendeten Revision-MAT-Run-Files übereinstimmt.
+Weitere Festlegungen:
+
+- drei neue gepaarte Replicates;
+- deterministischer Seedplan aus `StableRNG(20260810)`;
+- der Kalibrierungsseed `600601` wird nicht wiederverwendet;
+- innerhalb eines Replicates teilen alle fünf GO-Runs und der GR-Run die
+  Apprentice-Initialisierung und Batchreihenfolge;
+- Regression-Lernrate `2e-4`;
+- 35.000 Fixed- beziehungsweise 50.000 Varying-Updates;
+- autoregressives Validation-Expert-Matching alle 25 Updates ab Update 0;
+- keine ergebnisabhängigen Stopps, kein Finetuning und kein Hard Thresholding;
+- ausschließlich Separate-Channel-Gruppen und native Masken.
+
+Der Umfang beträgt damit 30 GO- und sechs GR-Produktionsruns. Pro Protokoll
+laufen 15 GO- und drei GR-Worker unabhängig und vollständig parallel.
+
+## Persistenz und Resume
+
+Das gemeinsame Studienmodul `GO_Sensitivity/Package6Study.jl` besitzt Grid,
+GR-Werte, Seedplan, Budgets, kurze Run-IDs und Ergebnisstatus. Beispiele:
+
+```text
+results/study/fixed/go/s01/r01
+results/study/varying/go/s05/r03
+results/study/fixed/gr/r01
+```
+
+Jeder Trainingsworker persistiert atomar:
+
+- vollständige Konfiguration und Fingerprint;
+- initialen Apprentice-Parameterhash;
+- `running`, `complete` oder `failed`;
+- alle Evaluation-Shards und Masken;
+- das bestehende Pareto-Modellarchiv;
+- `resume/latest.jld2`;
+- Laufzeit- und Abschlusszusammenfassung.
+
+Ein vollständiger Run wird nach Identitätsprüfung übersprungen. Ein laufender
+Run wird aus dem letzten Resume-Checkpoint fortgesetzt. Ein fehlgeschlagener
+Run wird nicht stillschweigend ersetzt; nach Behebung der Ursache ist ein
+expliziter Neustart mit `--retry-failed` erforderlich.
+
+Das technische `ParetoArchive` verwaltet Modelle weiterhin kompatibel anhand
+aktiver globaler Eingänge. Die wissenschaftliche Paket-6-Auswertung berechnet
+ihre Fronten unabhängig davon ausdrücklich auf
+`(aktive SC-Gruppen, Validation-MSE)`.
+
+## Launcher und Analyseworker
+
+`GO_Sensitivity/launch_study_tmux.sh` unterstützt:
+
+- `--protocol all|fixed|varying`;
+- `--preview`;
+- `--analysis-only`;
+- `--results-dir PATH`;
+- `--no-systemd-inhibit`.
+
+Der Standardstart erzeugt 36 Trainingssessions und gleichzeitig zwei
+Analyse-/Wartesessions. Ein Einzelprotokoll erzeugt 18 Trainingssessions und
+eine Analysesession. Alle tmux-Sessions schließen sich nach Prozessende selbst.
+Logs, `jobs.tsv`, Launch-Metadaten und das JLD2-Studienmanifest liegen unter
+`results/study/launches/<launch-id>/`.
+
+Der Fixed- beziehungsweise Varying-Analyseworker pollt alle 60 Sekunden für
+höchstens 14 Tage. Er bricht bei einem explizit fehlgeschlagenen Run mit
+`failure_report.md` ab und kann nach Reparatur beziehungsweise Neustart des
+Trainingsworkers erneut gestartet werden.
+
+## Audit
+
+Vor jeder Auswertung verlangt der Analyseworker exakt 15 GO- und drei GR-Runs
+des Protokolls und prüft:
+
+- Run- und Config-Fingerprints;
+- Expert- und Corpus-Identitäten;
+- SC-only, native Sparsity, Strengths, Lernrate und Budget;
+- vollständige Evaluation-Abdeckung von Update 0 bis zum Endbudget;
+- Apprentice- und Batchseed-Paarung;
+- identische initiale Parameterhashes innerhalb jedes Replicates;
+- verschiedene Seeds zwischen den Replicates;
+- numerischen Status und Abschlusszusammenfassung.
+
+## Offline-Metriken
+
+Der Analyseworker berechnet für GO und GR:
+
+- Fronten pro Run, pro Strength und global;
+- empirische Attainment-Grenzen für 1/3, 2/3 und 3/3 Seeds über
+  Gruppenzahlen `0:96`;
+- erste Hitting Times, Validation-MSE und Reachability für jede Gruppenzahl,
+  hervorgehoben bei `48`, `24`, `12`, `6`, `3` und `1`;
+- Front-Regret zur finalen eigenen und zur gepoolten Strength-Front;
+- Frontnähe als MSE von höchstens `1.10 ×` Front-Envelope bei gleicher oder
+  höherer Sparsity;
+- Late-Training-Fenster von 10 %, 20 % (primär) und 30 %;
+- frontnahe Belegung, medianen und 90%-Regret, Exkursionen, Recovery-Zeiten
+  und ungelöste Endexkursionen;
+- Gruppen-, MSE- und gemeinsame Reset-Ereignisse einschließlich Raten pro
+  1.000 Updates und Sprungamplituden;
+- monotone Archivkonvergenz und Updates bis 90 % beziehungsweise 100 % der
+  finalen Front-Envelope-Abdeckung;
+- deskriptive Strength-Trends und Spearman-Rangkorrelation innerhalb jedes
+  gepaarten Seeds, ohne Signifikanzüberhöhung bei drei Seeds;
+- Jaccard-Ähnlichkeit globaler Sensor-Kanal-Masken bei exakt gemeinsamen
+  Front-Gruppenzahlen;
+- Auswahlhäufigkeiten der pro Run sparsesten Maske mit Validation-MSE
+  `≤ 0.01`;
+- numerische Fehlläufe, Laufzeiten, Frontgrößen, beste MSE-Punkte und
+  sparseste archivierte Punkte.
+
+GR wird in sämtlichen Offline-Metriken als Referenz geführt, nimmt aber nicht
+an der Testkandidatenauswahl teil.
+
+## Validation-basierte Kandidatenauswahl und terminaler Test
+
+Die Testauswahl erfolgt ausschließlich aus der gepoolten nativen GO-Front:
+
+- `C_match`: kleinster Validation-MSE;
+- `C_sparse`: wenigste aktive SC-Gruppen unter allen Frontpunkten mit
+  Validation-MSE `≤ 0.01`;
+- Tie-Breaker: niedrigerer MSE, früheres Update, lexikographische Run-ID;
+- sind beide Kandidaten identisch oder existiert kein zusätzlicher
+  qualifizierter Punkt, wird nur `C_match` getestet.
+
+Das Kandidatenmanifest wird atomar und unveränderlich geschrieben, bevor der
+erste Rollout startet. Ein wiederholter Analyseaufruf verwendet dasselbe
+Manifest; eine abweichende neu berechnete Auswahl ist ein Fehler.
+
+Fixed verwendet die gemeinsame 200-Schritt-Testepisode. Varying verwendet die
+acht bestehenden Testepisoden. Nur `C_match`, gegebenenfalls `C_sparse`, und
+der Expert werden ausgerollt. Das Testset ist ein terminaler Funktionscheck:
+Es beeinflusst weder Training noch Strength- oder Kandidatenauswahl. Seine
+Ergebnisse lösen keine nachträgliche Entscheidung aus und sind damit für
+dieses festgelegte Paket-6-Protokoll valide.
+
+## Artefakte
+
+Pro Protokoll entstehen:
+
+- kompakter Pareto-SVG mit Seed- und gepoolten Fronten sowie
+  Attainment-Grenzen;
+- ausgedünnte Strength-/Seed-Trajektorien für aktive Gruppen und Log-MSE;
+- Archivkonvergenz-, Frontnähe-/Exkursions- und Hitting-Time-Plots;
+- Masken-Jaccard-Heatmaps und Sensor-/Kanalauswahlkarten;
+- interaktiver 3D-HTML-Plot über Gruppen, Log-MSE und Updates;
+- Test-Rewardkurven und für Varying ein Return-Boxplot;
+- vollständige CSV- und JLD2-Metriken;
+- das eingefrorene Kandidatenmanifest;
+- ein ausführliches englisches `report.md` mit Audit, Tabellen,
+  Kandidatenprovenienz, Plotlinks und Testresultaten.
+
+Die Rohdaten bleiben vollständig erhalten. Die Paper-nahen SVGs zeigen nur
+Fronten und aggregierte Kurven. Diagnostische Trajektorien werden gleichmäßig
+ausgedünnt; Front- und Resetpunkte bleiben zwingend erhalten.
+
+## Abnahme
+
+Die Implementierung enthält Tests für Jobmanifest, Seedpaarung, kurze Pfade,
+Dominanz, Fronten, Attainment, Regret, Frontnähe, Exkursionen, Recovery,
+Archivabdeckung, Jaccard, Kandidatenauswahl, Workerstatus, Timeout,
+Manifest-Unveränderlichkeit und Plot-/Persistenz-Smoke-Tests. Der Launcher
+liefert im Preview 38 Sessions für `all` und 19 pro Einzelprotokoll.
+
+Paket 6 ist abgeschlossen, wenn beide Protokollreports den Audit bestehen,
+die terminalen Testchecks ohne Auswahlrückwirkung vorliegen und alle
+maschinenlesbaren Artefakte reproduzierbar erzeugt wurden.

@@ -56,12 +56,13 @@ Die vollständige Matrix enthält, soweit die jeweilige Methode nach Paket 6 im 
 - Standard-GrOWL mit channel-coupled grouping
 - Standard-GrOWL mit separate-channel grouping
 
-Die aus Paket 6 übernommenen GO-Stärken werden nicht erneut anhand von
-Testresultaten angepasst. Die optionale geschlossene Kalibrierungsdiagnostik
-auf den bisherigen acht Varying-Testepisoden ist ausdrücklich nicht für diese
-Auswahl zulässig. Sobald ihre Resultate angesehen wurden, benötigt Paket 8 für
-eine echte Held-out-Aussage einen neu erzeugten und vorab eingefrorenen
-Testsplit samt Expert-Rollouts.
+Die aus Paket 6 übernommenen GO-Stärken werden nicht anhand von Testresultaten
+angepasst. Die Paket-6-Kandidaten wurden ausschließlich über
+Validation-Expert-Matching und native SC-Sparsity ausgewählt; der anschließende
+Testset-Check war terminal und auswahl-inert. Auch in Paket 7/8 werden
+Training, Strength-, Checkpoint-, Masken- und Thresholdauswahl vollständig
+ohne Testdaten abgeschlossen und atomar eingefroren, bevor Testrollouts
+beginnen.
 Falls Paket 6 eine einzelne GO-Stärke auswählt, wird nur diese weitergeführt.
 Falls eine konservative und eine aggressive Stärke komplementäre Pareto-Bereiche abdecken, dürfen höchstens diese beiden weitergeführt werden.
 
@@ -91,7 +92,8 @@ Für Varying IC werden die drei Corpus-Splits strikt getrennt verwendet:
 
 - Trainingbasen ausschließlich für Expert-Rollouts und Apprentice-Training
 - Validationbasis ausschließlich für Offline-Pareto-Messungen und Closed-loop-Validation
-- Testbasen ausschließlich für die einmalige finale Evaluation der ausgewählten Modelle
+- Testbasen ausschließlich für terminale, auswahl-inerte Evaluationen bereits
+  eingefrorener Modelle
 
 Jeder Rollout speichert mindestens:
 
@@ -104,7 +106,9 @@ Jeder Rollout speichert mindestens:
 - Kontrollschritt
 - Simulationszeit
 
-Die Testbasen werden weder für Hyperparameterwahl noch für Checkpoint-, Masken-, Threshold- oder GO-Power-Auswahl verwendet.
+Die Testbasen werden weder für Hyperparameterwahl noch für Checkpoint-, Masken-,
+Threshold- oder GO-Power-Auswahl verwendet. Bereits betrachtete terminale
+Paket-6-Testresultate dürfen ebenfalls keine Paket-7/8-Entscheidung auslösen.
 
 ## 5. Wiederverwendung der Runs aus Paket 6
 
@@ -112,22 +116,26 @@ Alle kompatiblen Paket-6-Kandidaten werden mit ihren vollständigen Metadaten in
 
 Insbesondere werden wiederverwendet:
 
-- GO mit channel-coupled grouping unter Fixed IC
-- GO mit channel-coupled grouping unter Varying IC
-- die nativen GR-Referenzkandidaten mit channel-coupled grouping unter Fixed IC
-- die nativen GR-Referenzkandidaten mit channel-coupled grouping unter Varying IC
+- GO mit separate-channel grouping unter Fixed IC
+- GO mit separate-channel grouping unter Varying IC
+- die nativen GR-Referenzkandidaten mit separate-channel grouping unter Fixed IC
+- die nativen GR-Referenzkandidaten mit separate-channel grouping unter Varying IC
 - die in Paket 6 erzeugten Run-, Parameter- und gepoolten Pareto-Metadaten
 
 Ein Paket-6-Run wird nur erneut ausgeführt, wenn:
 
 - seine Konfiguration nicht mit der finalen Produktionskonfiguration übereinstimmt
 - erforderliche Metadaten fehlen
-- für eine spätere Threshold-Expansion benötigte Checkpoints nicht gespeichert wurden
+- eine neue Paket-7/8-Konfiguration ausdrücklich zusätzliches Thresholding
+  oder Channel-Coupled-Gruppierung benötigt
 - ein technischer Fehler die Wiederverwendung verhindert
 
-GO-Kandidaten aus Paket 6 sind ohne zusätzliche Threshold-Expansion direkt wiederverwendbar.
-Für GR muss geprüft werden, ob die in Paket 7 und 8 gewünschte kleine Threshold-Expansion aus den gespeicherten Checkpoints erzeugt werden kann.
-Falls Paket 6 dafür nicht genügend Basischeckpoints erhalten hat, werden ausschließlich die betroffenen GR-Runs erneut mit vollständiger Kandidatenerzeugung ausgeführt.
+Die nativen SC-Kandidaten aus Paket 6 sind direkt wiederverwendbar. Paket 6
+hat absichtlich keine Threshold-Kandidaten erzeugt. Benötigt Paket 7/8 für GO,
+GR oder andere Regularisierer eine Threshold-Expansion oder eine
+Channel-Coupled-Variante, wird diese als neue, klar getrennte
+Produktionskonfiguration erzeugt; sie wird nicht nachträglich als Bestandteil
+des Paket-6-Sweeps ausgegeben.
 
 ## 6. Apprentice-Training und Checkpointauswertung
 

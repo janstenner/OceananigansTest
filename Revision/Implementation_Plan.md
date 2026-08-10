@@ -133,9 +133,12 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Keine Toy-Studie, sondern eine kleine kontrollierte Sensitivitätsstudie direkt auf den für die Apprentice-Distillation verwendeten RBC-Daten.
   - Variation der wesentlichen GO-Regularisierungseinstellung in einem kleinen vorab festgelegten Bereich.
   - Wiederholung über mehrere Apprentice-Seeds.
-  - Auswertung von Expert Matching, Gesamtzahl aktiver Inputs, Maskenstabilität und numerischen Fehlläufen.
+  - Auswertung von Validation-Expert-Matching, aktiven SC-Gruppen,
+    Trainingsstabilität, Maskenstabilität und numerischen Fehlläufen.
   - Vergleich mit GR unter demselben Auswertungsprotokoll.
-  - Prüfung der GO-Gruppensortierung, Rückzuordnung und channel-coupled Gruppierung als Teil der Studie.
+  - Der wissenschaftliche Paket-6-Sweep verwendet ausschließlich
+    Separate-Channel-Gruppierung. Channel-Coupled, Thresholding und weitere
+    Regularisierer folgen in Paket 7/8.
 
   Implementierungsstand:
 
@@ -165,9 +168,8 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     wobei alle Masken eines Trainingsschritts genau ein Modell teilen.
     Dominierte Modelle werden referenzbasiert periodisch und final bereinigt;
     der Restart-Checkpoint liegt getrennt unter `resume/latest.jld2`.
-  - Paket 6 erzeugt bereits die später benötigten Hard-Threshold-Kandidaten,
-    wertet für seine GO-Sensitivitätsfrage jedoch ausschließlich native
-    Regularisierer-Sparsity aus.
+  - Paket 6 erzeugt ausschließlich native SC-Kandidaten. Hard-Threshold-
+    Kandidaten werden erst in Paket 7/8 ergänzt.
   - Ein reiner Julia-Runner unter `Revision/GO_Sensitivity` führt lokal den
     Fixed-IC-Technikpilot mit Expert-/Corpus-Provenienzprüfung, Resume und
     getrennten nativen beziehungsweise Hard-Threshold-Pareto-Scopes aus. Der
@@ -201,11 +203,10 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Episoden werden identitätsgeprüft gecacht. Diese Auswertung ist als
     `calibration_test_diagnostic` gekennzeichnet und darf keine Stärke oder
     Kandidatenauswahl bestimmen.
-  - Sobald die Varying-Testdiagnostik angesehen wurde, sind die derzeitigen
-    acht Testepisoden nicht mehr unangetastet. Vor einer finalen Paket-8-
-    Held-out-Aussage müssen deshalb neue Testbasen samt Expert-Rollouts erzeugt
-    und eingefroren werden; alternativ ist der bisherige Split ausdrücklich
-    nur als explorativer Diagnostiksplit zu berichten.
+  - Die technische Kalibrierung bleibt interne Vorarbeit und wird im Paper
+    nicht erwähnt. Ihre Testdiagnostik traf keine Auswahlentscheidung; die
+    Produktionsauswahl von Paket 6 wird ausschließlich anhand des
+    Validation-Expert-Matchings und der nativen SC-Sparsity eingefroren.
   - Ein leichtgewichtiger Fixed-Pilot-Inspector gibt Trainingsmetadaten, den
     vollständigen nativen GO-Verlauf, den finalen Thresholdvergleich und das
     erhaltene Pareto-Archiv aus und exportiert diese Daten als Text, CSV und
@@ -219,12 +220,35 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     werden identitätsgeprüft als JLD2 gecacht; Rewardvergleich, CSV und
     PlotlyJS-Kurve werden im Analyseordner gespeichert. Dies ist ein technischer
     Einzelvergleich und kein Closed-Loop-Sweep über Sensitivitätspunkte.
-  - Fixed- und Varying-Corpus für Training, Validation und Test sowie finale
-    Experts sind vorhanden. Die aus der Kalibrierung abgeleiteten fünf
-    GO-Produktionsstärken, Thresholdstufen und numerischen Akzeptanzbereiche
-    stehen noch aus. Das Apprentice-Trainingsbudget ist mit 35.000 Updates für
-    Fixed IC und 50.000 Updates für Varying IC sowie einer Regressions-Lernrate
-    von `2e-4` für Paket 6 bis 8 festgelegt.
+  - Die Produktionsstärken sind für Fixed und Varying auf
+    `0.0015/0.003/0.006/0.01/0.03` festgelegt. Drei neue Seedpaare werden aus
+    `StableRNG(20260810)` erzeugt; GO und GR teilen innerhalb eines Replicates
+    Initialisierung und Batchreihenfolge. GR verwendet `0.00004` unter Fixed
+    und `0.0001` unter Varying.
+  - `Package6Study.jl` und `run_study_worker.jl` implementieren die 30 GO- und
+    sechs GR-Produktionsruns mit kurzen Pfaden, atomarem Status,
+    Konfigurationsfingerprint, initialem Parameterhash, Resume und expliziter
+    Fehlerbehandlung. Fixed läuft 35.000, Varying 50.000 Updates; beide nutzen
+    Lernrate `2e-4` und Validation alle 25 Updates ab Update 0.
+  - `launch_study_tmux.sh` startet standardmäßig 36 Trainings- und zwei
+    Analyse-/Wartesessions gleichzeitig. Er unterstützt Protokollauswahl,
+    Preview, Analysis-only, Result-Root und optionales Abschalten von
+    `systemd-inhibit`; Launchlogs und maschinenlesbare Manifeste liegen unter
+    `results/study/launches/<launch-id>/`.
+  - Der protokollspezifische Analyseworker auditiert jeweils 15 GO- und drei
+    GR-Runs, berechnet Run-/Strength-/globale Fronten, Attainment, Hitting
+    Times, Regret, Frontnähe, Exkursionen, Recovery, Resets,
+    Archivkonvergenz, Strength-Trends und Maskenstabilität und erzeugt kompakte
+    SVGs, einen interaktiven 3D-Plot, CSV/JLD2 und einen englischen Report.
+  - `C_match` und gegebenenfalls `C_sparse` werden ausschließlich aus der
+    gepoolten nativen GO-Validation-Front ausgewählt und vor jedem Testrollout
+    atomar eingefroren. Fixed verwendet danach die gemeinsame 200-Schritt-
+    Testepisode, Varying die acht bestehenden Testepisoden. Nur die
+    eingefrorenen GO-Kandidaten und der Expert werden getestet; Testergebnisse
+    verändern keine Auswahl oder Trainingsentscheidung.
+  - Synthetische Metrik-, Pairing-, Status-, Timeout-, Kandidatenmanifest- und
+    Plot-Smoke-Tests sind implementiert. Der Launcher-Preview wurde mit 38
+    Sessions für beide beziehungsweise 19 für ein Protokoll verifiziert.
 
   Abschluss:
 

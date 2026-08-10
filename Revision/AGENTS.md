@@ -63,6 +63,26 @@ Sparse Sensing paper.
 - `GO_Sensitivity/launch_tmux.sh`: Server launcher that submits the same 22
   cases concurrently as one self-closing tmux session per strength, with
   independent logs, resumable workers, and systemd inhibition by default.
+- `GO_Sensitivity/Package6Study.jl` and `Package6Analysis.jl`: Frozen SC-only
+  Package-6 production grid, deterministic paired seed plan, short job paths,
+  atomic status helpers, and pure stability/selection metrics.
+- `GO_Sensitivity/run_study_worker.jl`: One resumable native-SC GO or GR
+  production run with strict expert/corpus provenance, configuration
+  fingerprint, initial apprentice hash, evaluation shards, and explicit
+  running/complete/failed status.
+- `GO_Sensitivity/launch_study_tmux.sh`: Production launcher for 36 training
+  sessions plus two concurrent analysis/wait sessions. It writes per-launch
+  logs and machine-readable manifests and supports protocol restriction,
+  preview, analysis-only restarts, result-root override, and optional
+  systemd-inhibit suppression.
+- `GO_Sensitivity/analyze_study_worker.jl` and
+  `run_study_test_worker.jl`: Per-protocol completion audit, full offline
+  stability analysis, compact/static and interactive plots, immutable
+  validation-only GO candidate freeze, selection-inert terminal test rollouts,
+  CSV/JLD2 metrics, and English report generation.
+- `GO_Sensitivity/test_package6_*.jl`: Synthetic manifest, pairing, metric,
+  wait-state, timeout, candidate-freeze, persistence, and plot smoke tests for
+  the production pipeline.
 - `GO_Sensitivity/inspect_strength_calibration_pilot.jl`: PlotlyJS inspector
   that accepts only complete homogeneous long-budget blocks and exports
   four strength-colored, point-only active-group versus
