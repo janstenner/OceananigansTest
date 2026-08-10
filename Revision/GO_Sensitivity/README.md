@@ -73,6 +73,11 @@ short-budget runs are ignored. Every validation checkpoint is an unconnected
 strength-colored circle. Larger black-outlined diamonds mark the pooled
 nondominated checkpoints. The y-axis is logarithmic.
 
+Relocated server results may contain an absolute server-side `expert_path`.
+When that path is unavailable, the closed-loop worker falls back to the local
+`Expert_Apprentice_Distillation/experts/<protocol>/agent.jld2` checkpoint and
+requires its SHA-256 identifier to match the expert recorded in every run.
+
 By default, and only after all four long-budget blocks are complete, the
 inspector evaluates every retained Pareto candidate in closed loop together
 with the MAT expert. Fixed IC uses the shared 200-step episode. Varying IC uses

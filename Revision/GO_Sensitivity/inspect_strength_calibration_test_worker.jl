@@ -253,13 +253,38 @@ function resolve_calibration_candidate_checkpoint(candidate)
     return abspath(local_path)
 end
 
+function resolve_calibration_expert_checkpoint(
+    protocol::Symbol,
+    recorded_path::AbstractString,
+)
+    isfile(recorded_path) && return abspath(recorded_path)
+
+    local_path = normpath(joinpath(
+        @__DIR__,
+        "..",
+        "Expert_Apprentice_Distillation",
+        "experts",
+        string(protocol),
+        "agent.jld2",
+    ))
+    isfile(local_path) || error(
+        "Expert checkpoint is missing at both the recorded and local paths: " *
+        "'$recorded_path' and '$local_path'.",
+    )
+    println("  Recorded server expert is unavailable; using local checkpoint: $local_path")
+    return abspath(local_path)
+end
+
 function configure_calibration_test_runtime!(options, loaded)
     expert_identifiers = unique(string(run.config[:expert_identifier]) for run in loaded.runs)
     expert_paths = unique(string(run.config[:expert_path]) for run in loaded.runs)
     length(expert_identifiers) == 1 || error("Calibration runs use different experts.")
     length(expert_paths) == 1 || error("Calibration runs use different expert paths.")
-    expert_path = only(expert_paths)
-    isfile(expert_path) || error("Expert checkpoint is missing: $expert_path")
+    expected_expert_identifier = only(expert_identifiers)
+    expert_path = resolve_calibration_expert_checkpoint(
+        options.protocol,
+        only(expert_paths),
+    )
     group_channels = options.grouping === :grouped_channels
     output_directory = joinpath(
         P6_CALIBRATION_TEST_DIAGNOSTIC_ROOT,
@@ -280,8 +305,16 @@ function configure_calibration_test_runtime!(options, loaded)
         "Expert_Apprentice_Distillation",
         "Expert_Apprentice.jl",
     ))
+    expert_metadata = Base.invokelatest(
+        () -> getfield(@__MODULE__, :DISTILLATION_EXPERT_METADATA),
+    )
+    loaded_expert_identifier = string(expert_metadata[:identifier])
+    loaded_expert_identifier == expected_expert_identifier || error(
+        "Local expert '$loaded_expert_identifier' does not match the calibration " *
+        "expert '$expected_expert_identifier'.",
+    )
     return (
-        expert_identifier = only(expert_identifiers),
+        expert_identifier = expected_expert_identifier,
         output_directory,
     )
 end

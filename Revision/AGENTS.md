@@ -74,6 +74,9 @@ Sparse Sensing paper.
   process worker that evaluates every retained per-strength calibration Pareto
   candidate plus the MAT expert for one protocol/grouping combination. Fixed
   uses its one shared episode; Varying uses all eight predeclared test episodes.
+  Relocated results fall back from an unavailable recorded server expert path
+  to the protocol-specific local expert only after enforcing the recorded
+  SHA-256 expert identity.
   Episode caches, reward-curve plots, return box plots, CSV, and aggregate JLD2
   results are explicitly marked as calibration test diagnostics that must not
   drive scientific candidate selection.
