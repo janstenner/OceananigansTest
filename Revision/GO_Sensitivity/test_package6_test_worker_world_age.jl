@@ -45,8 +45,14 @@ using .Package6TestWorkerWorldAgeHarness
     ])
     @test fixed_options.parallel_test
     candidates = [Dict{Symbol, Any}(:candidate_id => "one"), Dict{Symbol, Any}(:candidate_id => "two")]
-    @test length(Package6TestWorkerWorldAgeHarness.parallel_episode_specs(:fixed, candidates)) == 3
-    @test length(Package6TestWorkerWorldAgeHarness.parallel_episode_specs(:varying, candidates)) == 24
+    fixed_specs = Package6TestWorkerWorldAgeHarness.parallel_episode_specs(:fixed, candidates)
+    varying_specs = Package6TestWorkerWorldAgeHarness.parallel_episode_specs(:varying, candidates)
+    @test length(fixed_specs) == 3
+    @test length(varying_specs) == 24
+    @test fixed_specs[1] == (controller_index = 0, case_index = 1)
+    @test fixed_specs[end] == (controller_index = 2, case_index = 1)
+    @test varying_specs[1] == (controller_index = 0, case_index = 1)
+    @test varying_specs[end] == (controller_index = 2, case_index = 8)
 
     Package6TestWorkerWorldAgeHarness.install_mock_runtime!()
     episode = Package6TestWorkerWorldAgeHarness.run_episode(

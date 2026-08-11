@@ -180,7 +180,7 @@ test_case_count(protocol) = protocol === :fixed ? 1 : 8
 
 function parallel_episode_specs(protocol, candidates)
     return [
-        (controller_index, case_index)
+        (; controller_index, case_index)
         for controller_index in 0:length(candidates)
         for case_index in 1:test_case_count(protocol)
     ]
