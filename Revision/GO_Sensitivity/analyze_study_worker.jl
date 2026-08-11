@@ -668,6 +668,8 @@ function analyze_study(options)
     manifest = freeze_candidate_manifest(options, audit, metrics)
     test_result = run_terminal_test(options, manifest)
     report = write_report(options, audit, metrics, paths, manifest, test_result)
+    failure_report = joinpath(analysis_directory(options), "analysis_failure_report.md")
+    isfile(failure_report) && rm(failure_report)
     write_status!(
         joinpath(analysis_directory(options), "status.jld2");
         state = :complete,

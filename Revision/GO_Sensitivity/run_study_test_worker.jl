@@ -45,19 +45,30 @@ end
 
 function test_cases(protocol)
     protocol === :fixed && return [nothing]
-    split = CORPUS[:test]
+    corpus = Base.invokelatest(() -> getfield(@__MODULE__, :CORPUS))
+    split = corpus[:test]
     base_seeds = sort!(Int.(collect(keys(split))))
     length(base_seeds) == 2 || error("Expected two Varying-IC test bases, found $(length(base_seeds)).")
     return vec([(split = :test, base_seed, mirror, offset) for base_seed in base_seeds, mirror in (false, true), offset in (0, 20)])
 end
 
 function initialize_case!(protocol, case)
-    RL.reset!(env)
+    runtime_rl = getfield(@__MODULE__, :RL)
+    runtime_env = getfield(@__MODULE__, :env)
+    initialize_episode = getfield(@__MODULE__, :generate_random_init)
+    Base.invokelatest(runtime_rl.reset!, runtime_env)
     if protocol === :fixed
-        generate_random_init()
+        Base.invokelatest(initialize_episode)
     else
-        generate_random_init(; split = case.split, base_seed = case.base_seed, mirror = case.mirror, offset = case.offset)
+        Base.invokelatest(
+            initialize_episode;
+            split = case.split,
+            base_seed = case.base_seed,
+            mirror = case.mirror,
+            offset = case.offset,
+        )
     end
+    return nothing
 end
 
 function normalize_action(action)
@@ -69,15 +80,17 @@ end
 
 function run_episode(protocol, case, action_function)
     initialize_case!(protocol, case)
+    runtime_env = getfield(@__MODULE__, :env)
+    nusselt_function = getfield(@__MODULE__, :state_Nu)
     rewards = Vector{Float64}(undef, TEST_STEPS)
     nusselt = Vector{Float64}(undef, TEST_STEPS)
     actions = Matrix{Float32}(undef, TEST_STEPS, 12)
     for step in 1:TEST_STEPS
-        action = action_function()
+        action = Base.invokelatest(action_function)
         actions[step, :] .= normalize_action(action)
-        env(action)
-        rewards[step] = mean(Float64.(env.reward))
-        nusselt[step] = Float64(state_Nu(env))
+        Base.invokelatest(runtime_env, action)
+        rewards[step] = mean(Float64.(runtime_env.reward))
+        nusselt[step] = Float64(Base.invokelatest(nusselt_function, runtime_env))
         isfinite(rewards[step]) && isfinite(nusselt[step]) || error("Non-finite test result at step $step.")
     end
     return (; rewards, global_nusselt = nusselt, actions)
@@ -154,7 +167,8 @@ function evaluate_controller!(output, results_root, protocol, cases, expert_iden
     if !isnothing(candidate)
         loaded = JLD2.load(candidate_checkpoint(candidate, results_root, protocol))
         candidate_model = loaded["model_payload"]
-        Flux.testmode!(candidate_model)
+        runtime_flux = getfield(@__MODULE__, :Flux)
+        Base.invokelatest(runtime_flux.testmode!, candidate_model)
         input_mask = Float32.(candidate[:mask])
     end
     episodes = Dict{String, Any}()
@@ -164,9 +178,19 @@ function evaluate_controller!(output, results_root, protocol, cases, expert_iden
         if isnothing(episode)
             println("  $controller_id: $(case_identifier(case))")
             action_function = if isnothing(candidate)
-                () -> RL.prob(agent.policy, env).μ
+                runtime_rl = getfield(@__MODULE__, :RL)
+                runtime_agent = getfield(@__MODULE__, :agent)
+                runtime_env = getfield(@__MODULE__, :env)
+                () -> Base.invokelatest(runtime_rl.prob, runtime_agent.policy, runtime_env).μ
             else
-                () -> RL.prob(candidate_model, env.state .* input_mask, nothing).μ[:, :, 1]
+                runtime_rl = getfield(@__MODULE__, :RL)
+                runtime_env = getfield(@__MODULE__, :env)
+                () -> Base.invokelatest(
+                    runtime_rl.prob,
+                    candidate_model,
+                    runtime_env.state .* input_mask,
+                    nothing,
+                ).μ[:, :, 1]
             end
             episode = run_episode(protocol, case, action_function)
             save_cache(path, episode; controller_id, expert_identifier, protocol, case)
@@ -265,7 +289,10 @@ function run_test_worker(options)
     ENV["REVISION_RUN_DIRECTORY"] = joinpath(output, "runtime")
     ENV["DISTILLATION_OUTPUT_DIRECTORY"] = joinpath(output, "apprentice_output")
     include(joinpath(DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
-    loaded_identifier = string(DISTILLATION_EXPERT_METADATA[:identifier])
+    expert_metadata = Base.invokelatest(
+        () -> getfield(@__MODULE__, :DISTILLATION_EXPERT_METADATA),
+    )
+    loaded_identifier = string(expert_metadata[:identifier])
     loaded_identifier == expert_identifier || error("Local expert $loaded_identifier does not match study expert $expert_identifier.")
     cases = test_cases(options.protocol)
     expert_episodes = evaluate_controller!(output, options.results_root, options.protocol, cases, expert_identifier)

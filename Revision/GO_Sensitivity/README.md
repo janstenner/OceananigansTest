@@ -61,6 +61,7 @@ Run the implementation tests locally with:
 julia --startup-file=no --project=. .\Revision\GO_Sensitivity\test_package6_study.jl
 julia --startup-file=no --project=. .\Revision\GO_Sensitivity\test_package6_wait_worker.jl
 julia --startup-file=no --project=. .\Revision\GO_Sensitivity\test_package6_plot_smoke.jl
+julia --startup-file=no --project=. .\Revision\GO_Sensitivity\test_package6_test_worker_world_age.jl
 ```
 
 The technical calibration below is retained as internal provenance. It is not
