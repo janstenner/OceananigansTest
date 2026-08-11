@@ -13,6 +13,7 @@ systemd_inhibit_what="${SYSTEMD_INHIBIT_WHAT:-sleep:idle:shutdown}"
 
 preview=false
 analysis_only=false
+parallel_test=false
 use_systemd_inhibit=true
 protocol_selection=all
 submitted=0
@@ -32,6 +33,7 @@ Options:
   --protocol VALUE       Select all, fixed, or varying (default: all).
   --preview              Print planned sessions without writing or launching.
   --analysis-only        Start only the selected analysis/wait session(s).
+  --parallel-test        Run every terminal test episode in its own process.
   --results-dir PATH     Override the result root.
   --no-systemd-inhibit   Do not wrap processes in systemd-inhibit.
   --help                 Show this help.
@@ -45,6 +47,7 @@ while (($#)); do
     case "$1" in
         --preview) preview=true ;;
         --analysis-only) analysis_only=true ;;
+        --parallel-test) parallel_test=true ;;
         --no-systemd-inhibit|--no-inhibit) use_systemd_inhibit=false ;;
         --protocol)
             (($# >= 2)) || { echo "Missing value after --protocol." >&2; exit 2; }
@@ -168,9 +171,13 @@ for protocol in "${protocols[@]}"; do
         done
     fi
     session="p6_${protocol_tag}_analyze"
-    start_session "${session}" analysis "${protocol}" none 0 0 \
-        "${julia_binary}" "--startup-file=no" "--project=${project_root}" "${analysis_worker}" \
+    analysis_command=(
+        "${julia_binary}" "--startup-file=no" "--project=${project_root}" "${analysis_worker}"
         --protocol "${protocol}" --results-dir "${results_directory}"
+    )
+    [[ "${parallel_test}" == false ]] || analysis_command+=(--parallel-test)
+    start_session "${session}" analysis "${protocol}" none 0 0 \
+        "${analysis_command[@]}"
 done
 
 if [[ "${preview}" == true ]]; then
@@ -185,6 +192,7 @@ mv "${job_manifest}.tmp" "${job_manifest}"
     echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "protocol=${protocol_selection}"
     echo "analysis_only=${analysis_only}"
+    echo "parallel_test=${parallel_test}"
     echo "systemd_inhibit=${use_systemd_inhibit}"
     echo "planned_sessions=${planned}"
     echo "submitted_sessions=${submitted}"

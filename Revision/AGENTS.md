@@ -75,11 +75,12 @@ Sparse Sensing paper.
   logs and machine-readable manifests and supports protocol restriction,
   preview, analysis-only restarts, result-root override, and optional
   systemd-inhibit suppression.
-- `GO_Sensitivity/analyze_study_worker.jl` and
-  `run_study_test_worker.jl`: Per-protocol completion audit, full offline
+- `GO_Sensitivity/analyze_study_worker.jl`, `run_study_test_worker.jl`, and
+  `run_study_test_episode_worker.jl`: Per-protocol completion audit, full offline
   stability analysis, compact/static and interactive plots, immutable
   validation-only GO candidate freeze, selection-inert terminal test rollouts,
-  CSV/JLD2 metrics, and English report generation.
+  optional process-isolated per-episode parallel execution, resumable episode
+  caches/statuses, CSV/JLD2 metrics, and English report generation.
 - `GO_Sensitivity/test_package6_*.jl`: Synthetic manifest, pairing, metric,
   wait-state, timeout, candidate-freeze, persistence, and plot smoke tests for
   the production pipeline.

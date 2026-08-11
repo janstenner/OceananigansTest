@@ -40,6 +40,14 @@ end
 using .Package6TestWorkerWorldAgeHarness
 
 @testset "Package 6 dynamically loaded test runtime" begin
+    fixed_options = Package6TestWorkerWorldAgeHarness.parse_arguments([
+        "--protocol", "fixed", "--parallel-test",
+    ])
+    @test fixed_options.parallel_test
+    candidates = [Dict{Symbol, Any}(:candidate_id => "one"), Dict{Symbol, Any}(:candidate_id => "two")]
+    @test length(Package6TestWorkerWorldAgeHarness.parallel_episode_specs(:fixed, candidates)) == 3
+    @test length(Package6TestWorkerWorldAgeHarness.parallel_episode_specs(:varying, candidates)) == 24
+
     Package6TestWorkerWorldAgeHarness.install_mock_runtime!()
     episode = Package6TestWorkerWorldAgeHarness.run_episode(
         :fixed,
@@ -50,6 +58,31 @@ using .Package6TestWorkerWorldAgeHarness
     @test episode.global_nusselt == collect(1.0:Package6TestWorkerWorldAgeHarness.TEST_STEPS)
     @test size(episode.actions) == (Package6TestWorkerWorldAgeHarness.TEST_STEPS, 12)
     @test length(Package6TestWorkerWorldAgeHarness.test_cases(:varying)) == 8
+
+    mktempdir() do output
+        data = (candidates, expert_identifier = "mock_expert")
+        cache = Package6TestWorkerWorldAgeHarness.cache_path(
+            output,
+            "expert",
+            data.expert_identifier,
+            nothing,
+        )
+        Package6TestWorkerWorldAgeHarness.save_cache(
+            cache,
+            episode;
+            controller_id = "expert",
+            expert_identifier = data.expert_identifier,
+            protocol = :fixed,
+            case = nothing,
+        )
+        Package6TestWorkerWorldAgeHarness.write_status!(
+            Package6TestWorkerWorldAgeHarness.episode_status_path(output, 0, 1);
+            state = :complete,
+            controller_id = "expert",
+            case = nothing,
+        )
+        @test !isnothing(Package6TestWorkerWorldAgeHarness.completed_episode_status(output, data, 0, 1))
+    end
 end
 
 println("Package 6 test-worker world-age regression test passed.")

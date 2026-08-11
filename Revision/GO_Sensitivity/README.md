@@ -32,6 +32,7 @@ Useful restricted launches are:
 bash Revision/GO_Sensitivity/launch_study_tmux.sh --protocol fixed
 bash Revision/GO_Sensitivity/launch_study_tmux.sh --protocol varying
 bash Revision/GO_Sensitivity/launch_study_tmux.sh --analysis-only
+bash Revision/GO_Sensitivity/launch_study_tmux.sh --analysis-only --parallel-test
 bash Revision/GO_Sensitivity/launch_study_tmux.sh --results-dir /path/to/results/study
 ```
 
@@ -54,6 +55,13 @@ CSV/JLD2 metrics, and an English `report.md`; then freeze the validation-only
 GO candidate manifest before launching any terminal test episode. Fixed uses
 one shared 200-step test episode and Varying all eight existing test episodes.
 GR is an offline reference and is never test-selected.
+
+`--parallel-test` gives every controller/case terminal test episode its own
+Julia process. With two frozen GO candidates this launches three Fixed and 24
+Varying episode processes (27 total when both protocol analyses reach the test
+stage). Episode-specific status files and logs make this mode resumable;
+already complete valid caches are reused. It trades higher peak memory use for
+lower wall-clock time.
 
 Run the implementation tests locally with:
 

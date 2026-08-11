@@ -23,7 +23,7 @@ function analysis_usage(io::IO = stdout)
     println(io, """
     Usage: julia --project=. analyze_study_worker.jl --protocol fixed|varying
            [--results-dir PATH] [--poll-seconds N] [--timeout-seconds N]
-           [--skip-test]
+           [--skip-test] [--parallel-test]
 
     The production launcher uses a 60-second poll and a 14-day timeout.
     --skip-test is intended only for offline replotting and automated tests.
@@ -37,6 +37,7 @@ function parse_arguments(arguments)
         "poll_seconds" => P6_POLL_SECONDS,
         "timeout_seconds" => P6_TIMEOUT_SECONDS,
         "skip_test" => false,
+        "parallel_test" => false,
     )
     index = 1
     while index <= length(arguments)
@@ -46,6 +47,9 @@ function parse_arguments(arguments)
             return nothing
         elseif argument == "--skip-test"
             values["skip_test"] = true
+            index += 1
+        elseif argument == "--parallel-test"
+            values["parallel_test"] = true
             index += 1
         elseif startswith(argument, "--")
             index == length(arguments) && error("Missing value after $argument.")
@@ -64,6 +68,7 @@ function parse_arguments(arguments)
         poll_seconds = parse(Int, string(values["poll_seconds"])),
         timeout_seconds = parse(Int, string(values["timeout_seconds"])),
         skip_test = Bool(values["skip_test"]),
+        parallel_test = Bool(values["parallel_test"]),
     )
 end
 
@@ -495,6 +500,7 @@ end
 function run_terminal_test(options, manifest_path)
     options.skip_test && return nothing
     command = `$(Base.julia_cmd()) --startup-file=no --project=$PROJECT_ROOT $(joinpath(@__DIR__, "run_study_test_worker.jl")) --protocol $(string(options.protocol)) --results-dir $(options.results_root) --manifest $manifest_path`
+    options.parallel_test && (command = `$command --parallel-test`)
     run(command)
     result = joinpath(analysis_directory(options), "test", "test_results.jld2")
     isfile(result) || error("Terminal test worker exited without $result.")
