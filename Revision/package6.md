@@ -43,6 +43,9 @@ Weitere Festlegungen:
   Apprentice-Initialisierung und Batchreihenfolge;
 - Regression-Lernrate `2e-4`;
 - 35.000 Fixed- beziehungsweise 50.000 Varying-Updates;
+- Trainingsbatchgröße 50 für die vollständige Fixed-Wiederholung und weiterhin
+  100 für Varying; Validation-Batchgröße 200 (der vollständige gemeinsame
+  Fixed-Corpus) beziehungsweise 512 (Varying);
 - autoregressives Validation-Expert-Matching alle 25 Updates ab Update 0;
 - keine ergebnisabhängigen Stopps, kein Finetuning und kein Hard Thresholding;
 - ausschließlich Separate-Channel-Gruppen und native Masken.

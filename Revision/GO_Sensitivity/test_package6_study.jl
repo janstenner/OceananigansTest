@@ -27,6 +27,8 @@ record(groups, mse, update; id = "c$update", run = "run", mask = BitVector([true
     @test all(short_path_components, jobs)
     @test length(study_jobs(:fixed)) == 18
     @test length(analysis_jobs(:fixed)) == 1
+    @test P6_TRAINING_BATCH_SIZE == Dict(:fixed => 50, :varying => 100)
+    @test P6_VALIDATION_BATCH_SIZE == Dict(:fixed => 200, :varying => 512)
     @test Set(job.regularization_strength for job in jobs if job.method === :go) == Set(P6_STRENGTHS)
     for protocol in (:fixed, :varying), replicate in 1:3
         paired = filter(job -> job.protocol === protocol && job.replicate == replicate, jobs)

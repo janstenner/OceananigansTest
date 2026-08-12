@@ -9,6 +9,7 @@ using StableRNGs
 export P6_SCHEMA_VERSION, P6_MASTER_SEED, P6_STRENGTHS, P6_GR_STRENGTH,
        P6_UPDATES, P6_EVALUATION_INTERVAL, P6_RESUME_INTERVAL,
        P6_GARBAGE_COLLECTION_INTERVAL, P6_REGRESSION_LEARNING_RATE,
+       P6_TRAINING_BATCH_SIZE, P6_VALIDATION_BATCH_SIZE,
        P6_REPLICATES, P6_POLL_SECONDS, P6_TIMEOUT_SECONDS,
        normalize_protocol, seed_plan, seed_plan_hash, study_jobs, analysis_jobs,
        job_for, run_id, run_relative_path, run_directory, status_path,
@@ -24,6 +25,8 @@ const P6_EVALUATION_INTERVAL = 25
 const P6_RESUME_INTERVAL = 100
 const P6_GARBAGE_COLLECTION_INTERVAL = 5
 const P6_REGRESSION_LEARNING_RATE = 2e-4
+const P6_TRAINING_BATCH_SIZE = Dict(:fixed => 50, :varying => 100)
+const P6_VALIDATION_BATCH_SIZE = Dict(:fixed => 200, :varying => 512)
 const P6_REPLICATES = 1:3
 const P6_POLL_SECONDS = 60
 const P6_TIMEOUT_SECONDS = 14 * 24 * 60 * 60

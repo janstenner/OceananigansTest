@@ -223,6 +223,8 @@ function validate_complete_run_without_runtime(options, previous)
         Int(config[:regularized_updates]) == expected_updates,
         Int(config[:evaluation_interval]) == P6_EVALUATION_INTERVAL,
         Float64(config[:regression_learning_rate]) == P6_REGRESSION_LEARNING_RATE,
+        Int(config[:batch_size]) == P6_TRAINING_BATCH_SIZE[job.protocol],
+        Int(config[:validation_batch_size]) == P6_VALIDATION_BATCH_SIZE[job.protocol],
         Bool(config[:group_channels]) == false,
         length(string(config[:initial_apprentice_parameter_hash])) == 64,
     )
@@ -249,11 +251,11 @@ function run_loaded_study_worker(options, directory, expert_path)
     training_config = ApprenticeTrainingConfig(
         regularized_updates = updates,
         post_pruning_finetune_updates = 0,
-        batch_size = job.protocol === :fixed ? 20 : 100,
+        batch_size = P6_TRAINING_BATCH_SIZE[job.protocol],
         proximal_interval = 1,
         reweight_interval = 10,
         regularization_strength = job.regularization_strength,
-        validation_batch_size = job.protocol === :fixed ? 200 : 512,
+        validation_batch_size = P6_VALIDATION_BATCH_SIZE[job.protocol],
         validation_prediction_mode = :autoregressive,
         diagnostic_teacher_forced = false,
     )
