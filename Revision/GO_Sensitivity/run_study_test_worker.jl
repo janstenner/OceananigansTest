@@ -12,6 +12,10 @@ const PROJECT_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const DISTILLATION_DIRECTORY = joinpath(PROJECT_ROOT, "Revision", "Expert_Apprentice_Distillation")
 const TEST_EPISODE_WORKER = joinpath(@__DIR__, "run_study_test_episode_worker.jl")
 
+latest_runtime_binding(name::Symbol) = Base.invokelatest(
+    () -> getfield(@__MODULE__, name),
+)
+
 function ensure_test_plotly_loaded!()
     isdefined(@__MODULE__, :PlotlyJS) || Base.eval(@__MODULE__, :(using PlotlyJS))
     return nothing
@@ -58,7 +62,7 @@ end
 
 function test_cases(protocol)
     protocol === :fixed && return [nothing]
-    corpus = Base.invokelatest(() -> getfield(@__MODULE__, :CORPUS))
+    corpus = latest_runtime_binding(:CORPUS)
     split = corpus[:test]
     base_seeds = sort!(Int.(collect(keys(split))))
     length(base_seeds) == 2 || error("Expected two Varying-IC test bases, found $(length(base_seeds)).")
@@ -66,9 +70,9 @@ function test_cases(protocol)
 end
 
 function initialize_case!(protocol, case)
-    runtime_rl = getfield(@__MODULE__, :RL)
-    runtime_env = getfield(@__MODULE__, :env)
-    initialize_episode = getfield(@__MODULE__, :generate_random_init)
+    runtime_rl = latest_runtime_binding(:RL)
+    runtime_env = latest_runtime_binding(:env)
+    initialize_episode = latest_runtime_binding(:generate_random_init)
     Base.invokelatest(runtime_rl.reset!, runtime_env)
     if protocol === :fixed
         Base.invokelatest(initialize_episode)
@@ -93,8 +97,8 @@ end
 
 function run_episode(protocol, case, action_function)
     initialize_case!(protocol, case)
-    runtime_env = getfield(@__MODULE__, :env)
-    nusselt_function = getfield(@__MODULE__, :state_Nu)
+    runtime_env = latest_runtime_binding(:env)
+    nusselt_function = latest_runtime_binding(:state_Nu)
     rewards = Vector{Float64}(undef, TEST_STEPS)
     nusselt = Vector{Float64}(undef, TEST_STEPS)
     actions = Matrix{Float32}(undef, TEST_STEPS, 12)
@@ -168,9 +172,7 @@ function configure_test_runtime!(options, expert_path, expert_identifier, output
     ENV["REVISION_RUN_DIRECTORY"] = joinpath(output, "runtime", runtime_tag)
     ENV["DISTILLATION_OUTPUT_DIRECTORY"] = joinpath(output, "apprentice_output", runtime_tag)
     include(joinpath(DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
-    expert_metadata = Base.invokelatest(
-        () -> getfield(@__MODULE__, :DISTILLATION_EXPERT_METADATA),
-    )
+    expert_metadata = latest_runtime_binding(:DISTILLATION_EXPERT_METADATA)
     loaded_identifier = string(expert_metadata[:identifier])
     loaded_identifier == expert_identifier || error("Local expert $loaded_identifier does not match study expert $expert_identifier.")
     return nothing
@@ -214,6 +216,35 @@ function completed_episode_status(output, data, controller_index, case_index)
     return status
 end
 
+function run_loaded_single_test_episode(options, data, output, status_path, controller, controller_index, case_index)
+    cases = test_cases(options.protocol)
+    1 <= case_index <= length(cases) || error("Invalid case index $case_index for $(options.protocol).")
+    case = cases[case_index]
+    episodes = evaluate_controller!(
+        output,
+        options.results_root,
+        options.protocol,
+        [case],
+        data.expert_identifier;
+        candidate = controller.candidate,
+    )
+    path = cache_path(output, controller.id, data.expert_identifier, case)
+    haskey(episodes, case_identifier(case)) || error("Episode cache was not produced for $(case_identifier(case)).")
+    write_status!(
+        status_path;
+        state = :complete,
+        protocol = options.protocol,
+        controller_id = controller.id,
+        controller_index,
+        case_index,
+        case,
+        cache_path = path,
+        completed_at = string(Dates.now()),
+    )
+    println("Terminal test episode complete: $(controller.id) / $(case_identifier(case))")
+    return path
+end
+
 function run_single_test_episode(options, controller_index, case_index)
     data = load_test_manifest(options)
     output = joinpath(options.results_root, string(options.protocol), "analysis", "test")
@@ -231,32 +262,16 @@ function run_single_test_episode(options, controller_index, case_index)
     try
         runtime_tag = @sprintf("c%02d_e%02d", controller_index, case_index)
         configure_test_runtime!(options, data.expert_path, data.expert_identifier, output; runtime_tag)
-        cases = test_cases(options.protocol)
-        1 <= case_index <= length(cases) || error("Invalid case index $case_index for $(options.protocol).")
-        case = cases[case_index]
-        episodes = evaluate_controller!(
+        return Base.invokelatest(
+            run_loaded_single_test_episode,
+            options,
+            data,
             output,
-            options.results_root,
-            options.protocol,
-            [case],
-            data.expert_identifier;
-            candidate = controller.candidate,
-        )
-        path = cache_path(output, controller.id, data.expert_identifier, case)
-        haskey(episodes, case_identifier(case)) || error("Episode cache was not produced for $(case_identifier(case)).")
-        write_status!(
-            status_path;
-            state = :complete,
-            protocol = options.protocol,
-            controller_id = controller.id,
+            status_path,
+            controller,
             controller_index,
             case_index,
-            case,
-            cache_path = path,
-            completed_at = string(Dates.now()),
         )
-        println("Terminal test episode complete: $(controller.id) / $(case_identifier(case))")
-        return path
     catch error_value
         write_status!(
             status_path;
@@ -366,7 +381,7 @@ function evaluate_controller!(output, results_root, protocol, cases, expert_iden
     if !isnothing(candidate)
         loaded = JLD2.load(candidate_checkpoint(candidate, results_root, protocol))
         candidate_model = loaded["model_payload"]
-        runtime_flux = getfield(@__MODULE__, :Flux)
+        runtime_flux = latest_runtime_binding(:Flux)
         Base.invokelatest(runtime_flux.testmode!, candidate_model)
         input_mask = Float32.(candidate[:mask])
     end
@@ -377,13 +392,13 @@ function evaluate_controller!(output, results_root, protocol, cases, expert_iden
         if isnothing(episode)
             println("  $controller_id: $(case_identifier(case))")
             action_function = if isnothing(candidate)
-                runtime_rl = getfield(@__MODULE__, :RL)
-                runtime_agent = getfield(@__MODULE__, :agent)
-                runtime_env = getfield(@__MODULE__, :env)
+                runtime_rl = latest_runtime_binding(:RL)
+                runtime_agent = latest_runtime_binding(:agent)
+                runtime_env = latest_runtime_binding(:env)
                 () -> Base.invokelatest(runtime_rl.prob, runtime_agent.policy, runtime_env).μ
             else
-                runtime_rl = getfield(@__MODULE__, :RL)
-                runtime_env = getfield(@__MODULE__, :env)
+                runtime_rl = latest_runtime_binding(:RL)
+                runtime_env = latest_runtime_binding(:env)
                 () -> Base.invokelatest(
                     runtime_rl.prob,
                     candidate_model,
@@ -397,6 +412,24 @@ function evaluate_controller!(output, results_root, protocol, cases, expert_iden
         episodes[case_identifier(case)] = episode
     end
     return episodes
+end
+
+function run_loaded_sequential_test(options, data, output)
+    sequential_cases = test_cases(options.protocol)
+    sequential_controllers = NamedTuple[]
+    for controller_index in 0:length(data.candidates)
+        controller = controller_description(data.candidates, controller_index)
+        episodes = evaluate_controller!(
+            output,
+            options.results_root,
+            options.protocol,
+            sequential_cases,
+            data.expert_identifier;
+            candidate = controller.candidate,
+        )
+        push!(sequential_controllers, (; controller..., episodes))
+    end
+    return sequential_cases, sequential_controllers
 end
 
 episode_matrix(episodes, cases, field) = reduce(vcat, [permutedims(Float64.(episodes[case_identifier(case)][field])) for case in cases])
@@ -509,21 +542,7 @@ function run_test_worker(options)
         load_parallel_test_outputs(options, data, output)
     else
         configure_test_runtime!(options, data.expert_path, data.expert_identifier, output)
-        sequential_cases = test_cases(options.protocol)
-        sequential_controllers = NamedTuple[]
-        for controller_index in 0:length(data.candidates)
-            controller = controller_description(data.candidates, controller_index)
-            episodes = evaluate_controller!(
-                output,
-                options.results_root,
-                options.protocol,
-                sequential_cases,
-                data.expert_identifier;
-                candidate = controller.candidate,
-            )
-            push!(sequential_controllers, (; controller..., episodes))
-        end
-        sequential_cases, sequential_controllers
+        Base.invokelatest(run_loaded_sequential_test, options, data, output)
     end
     return finalize_test_results(options, data, output, cases, controllers)
 end

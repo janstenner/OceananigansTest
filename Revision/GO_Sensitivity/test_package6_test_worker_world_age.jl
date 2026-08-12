@@ -35,6 +35,11 @@ function install_mock_runtime!()
     return nothing
 end
 
+function install_and_run_mock_episode()
+    install_mock_runtime!()
+    return run_episode(:fixed, nothing, () -> zeros(Float32, 12))
+end
+
 end
 
 using .Package6TestWorkerWorldAgeHarness
@@ -54,12 +59,9 @@ using .Package6TestWorkerWorldAgeHarness
     @test varying_specs[1] == (controller_index = 0, case_index = 1)
     @test varying_specs[end] == (controller_index = 2, case_index = 8)
 
-    Package6TestWorkerWorldAgeHarness.install_mock_runtime!()
-    episode = Package6TestWorkerWorldAgeHarness.run_episode(
-        :fixed,
-        nothing,
-        () -> zeros(Float32, 12),
-    )
+    # This deliberately loads RL/env and consumes them in the same precompiled
+    # caller, matching the Julia-1.12 failure mode of the real test worker.
+    episode = Package6TestWorkerWorldAgeHarness.install_and_run_mock_episode()
     @test length(episode.rewards) == Package6TestWorkerWorldAgeHarness.TEST_STEPS
     @test episode.global_nusselt == collect(1.0:Package6TestWorkerWorldAgeHarness.TEST_STEPS)
     @test size(episode.actions) == (Package6TestWorkerWorldAgeHarness.TEST_STEPS, 12)
