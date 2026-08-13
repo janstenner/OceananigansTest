@@ -265,6 +265,9 @@ function atomic_jldsave(path::AbstractString; values...)
 end
 
 function acquire_lock(path::AbstractString; wait_seconds::Real = 0.0)
+    # A fresh result root does not exist before the first manifest/worker lock.
+    # `mkdir(path)` only creates the final component, so ensure its parent first.
+    mkpath(dirname(path))
     deadline = time() + Float64(wait_seconds)
     while true
         try
