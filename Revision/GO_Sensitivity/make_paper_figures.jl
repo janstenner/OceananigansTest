@@ -13,7 +13,7 @@ using .Package6Study
 
 const PROTOCOLS = (:fixed, :varying)
 const PROTOCOL_NAMES = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
-const QUALITY_THRESHOLDS = Dict(:fixed => 1e-3, :varying => 1e-2)
+const QUALITY_THRESHOLDS = Dict(:fixed => 1e-2, :varying => 1e-2)
 const QUALITY_TARGETS = (12, 6, 3, 2)
 const HITTING_TARGETS = (48, 24, 12, 6, 3, 1)
 const CONTROLLER_ORDER = ("expert", "C_match", "C_sparse")
@@ -451,11 +451,15 @@ function common_layout(; width, height, title, showlegend = true)
         font = attr(family = "Arial, sans-serif", size = 14, color = "#303030"),
         margin = attr(l = 85, r = 35, t = 105, b = 75),
         showlegend = showlegend,
-        legend = attr(
-            orientation = "h", x = 0.5, xanchor = "center", y = -0.10, yanchor = "top",
-            bgcolor = "rgba(255,255,255,0.92)", bordercolor = "#CFCFCF", borderwidth = 1,
-            font = attr(size = 12),
-        ),
+        legend = row_legend(-0.10),
+    )
+end
+
+function row_legend(y)
+    return attr(
+        orientation = "h", x = 0.5, xanchor = "center", y = y, yanchor = "top",
+        bgcolor = "rgba(255,255,255,0.92)", bordercolor = "#CFCFCF", borderwidth = 1,
+        font = attr(size = 12),
     )
 end
 
@@ -466,7 +470,7 @@ function preserved_subplot_axis(plot_handle, key::Symbol, styling)
     return attr(; fields...)
 end
 
-function add_attainment_band!(plot_handle, data, method, row, col; showlegend)
+function add_attainment_band!(plot_handle, data, method, row, col; showlegend, legend_id = "legend")
     color = method == "go" ? GO_COLOR : GR_COLOR
     display = uppercase(method)
     by_required = Dict(required => Dict(
@@ -480,13 +484,13 @@ function add_attainment_band!(plot_handle, data, method, row, col; showlegend)
         add_trace!(plot_handle, scatter(
             x = shared, y = [by_required[1][groups] for groups in shared], mode = "lines",
             line = attr(color = rgba(color, 0.45), width = 0.8), hoverinfo = "skip",
-            showlegend = false, legendgroup = "$(method)_attainment",
+            showlegend = false, legendgroup = "$(method)_attainment", legend = legend_id,
         ); row, col)
         add_trace!(plot_handle, scatter(
             x = shared, y = [by_required[3][groups] for groups in shared], mode = "lines",
             line = attr(color = rgba(color, 0.45), width = 0.8), fill = "tonexty",
             fillcolor = rgba(color, 0.12), name = "$display attainment 1/3-3/3",
-            showlegend = showlegend, legendgroup = "$(method)_attainment",
+            showlegend = showlegend, legendgroup = "$(method)_attainment", legend = legend_id,
         ); row, col)
     end
     majority = sort([(groups, value) for (groups, value) in by_required[2] if isfinite(value)]; by = first)
@@ -495,12 +499,12 @@ function add_attainment_band!(plot_handle, data, method, row, col; showlegend)
             x = first.(majority), y = last.(majority), mode = "lines",
             line = attr(color = color, width = 1.6, dash = "dot"),
             name = "$display attainment 2/3", showlegend = showlegend,
-            legendgroup = "$(method)_attainment_majority",
+            legendgroup = "$(method)_attainment_majority", legend = legend_id,
         ); row, col)
     end
 end
 
-function add_pareto_panel!(plot_handle, data, row, col; showlegend)
+function add_pareto_panel!(plot_handle, data, row, col; showlegend, legend_id = "legend")
     run_ids = sort(unique(string_value(item, :front_id) for item in data.fronts if string_value(item, :front_scope) == "run"))
     for run_id in run_ids
         selected = sort([item for item in data.fronts if string_value(item, :front_scope) == "run" && string_value(item, :front_id) == run_id]; by = item -> int_value(item, :active_groups))
@@ -510,11 +514,11 @@ function add_pareto_panel!(plot_handle, data, row, col; showlegend)
             x = [int_value(item, :active_groups) for item in selected],
             y = [float_value(item, :validation_matching) for item in selected],
             mode = "lines", line = attr(color = method == "go" ? rgba(GO_COLOR, 0.16) : rgba(GR_COLOR, 0.22), width = 0.8),
-            hoverinfo = "skip", showlegend = false,
+            hoverinfo = "skip", showlegend = false, legend = legend_id,
         ); row, col)
     end
     for method in ("go", "gr")
-        add_attainment_band!(plot_handle, data, method, row, col; showlegend)
+        add_attainment_band!(plot_handle, data, method, row, col; showlegend, legend_id)
         selected = sort([item for item in data.fronts if string_value(item, :front_scope) == "global_method" && string_value(item, :method) == method]; by = item -> int_value(item, :active_groups))
         color = method == "go" ? GO_COLOR : GR_COLOR
         add_trace!(plot_handle, scatter(
@@ -522,7 +526,7 @@ function add_pareto_panel!(plot_handle, data, row, col; showlegend)
             y = [float_value(item, :validation_matching) for item in selected],
             mode = "lines+markers", name = "$(uppercase(method)) pooled front",
             line = attr(color = color, width = 3), marker = attr(color = color, size = 7),
-            legendgroup = "$(method)_pooled", showlegend = showlegend,
+            legendgroup = "$(method)_pooled", showlegend = showlegend, legend = legend_id,
         ); row, col)
     end
     candidate_styles = Dict(
@@ -537,12 +541,12 @@ function add_pareto_panel!(plot_handle, data, row, col; showlegend)
             x = [Int(candidate[:active_groups])], y = [Float64(candidate[:validation_matching])],
             mode = "markers", name = role, showlegend = showlegend,
             marker = attr(symbol = style.symbol, color = style.color, size = style.size, line = attr(color = "white", width = 1.2)),
-            legendgroup = role,
+            legendgroup = role, legend = legend_id,
         ); row, col)
     end
 end
 
-function add_response_panel!(plot_handle, data, response, row, col; showlegend)
+function add_response_panel!(plot_handle, data, response, row, col; showlegend, legend_id = "legend", legend_labels = nothing)
     qualified_groups = Int[item.active_groups for item in response.rows if item.reached]
     maximum_group = isempty(qualified_groups) ? 1 : maximum(qualified_groups)
     missing_level = maximum_group + max(2, ceil(Int, 0.15 * maximum_group))
@@ -551,20 +555,20 @@ function add_response_panel!(plot_handle, data, response, row, col; showlegend)
         selected = sort(filter(item -> item.replicate == replicate, response.rows); by = item -> item.strength)
         trend = only(filter(item -> item.replicate == replicate, response.trends))
         rho_text = isfinite(trend.spearman_rho) ? @sprintf("%.3f", trend.spearman_rho) : "NA"
-        label = "Replicate $replicate: ρ=$rho_text (n=$(trend.qualified_strengths))"
+        label = isnothing(legend_labels) ? "Replicate $replicate: ρ=$rho_text (n=$(trend.qualified_strengths))" : legend_labels[replicate]
         add_trace!(plot_handle, scatter(
             x = [item.strength for item in selected],
             y = [item.reached ? Float64(item.active_groups) : NaN for item in selected],
             mode = "lines+markers", connectgaps = false, name = label,
             line = attr(color = REPLICATE_COLORS[replicate], width = 2),
             marker = attr(color = REPLICATE_COLORS[replicate], size = 8, symbol = ("circle", "square", "diamond")[replicate]),
-            legendgroup = "replicate_$replicate", showlegend = showlegend,
+            legendgroup = "replicate_$replicate", showlegend = showlegend, legend = legend_id,
         ); row, col)
         missing_strengths = [item.strength for item in selected if !item.reached]
         isempty(missing_strengths) || add_trace!(plot_handle, scatter(
             x = missing_strengths, y = fill(missing_level, length(missing_strengths)),
             mode = "markers", name = "Threshold not reached", legendgroup = "not_reached",
-            showlegend = showlegend && replicate == 1,
+            showlegend = showlegend && replicate == 1, legend = legend_id,
             marker = attr(color = NEUTRAL_COLOR, size = 9, symbol = "x"),
         ); row, col)
     end
@@ -574,16 +578,31 @@ end
 function make_main_figure(data_by_protocol, metrics, output)
     plot_handle = make_subplots(
         rows = 2, cols = 2,
-        horizontal_spacing = 0.10, vertical_spacing = 0.15,
+        horizontal_spacing = 0.10, vertical_spacing = 0.23,
         subplot_titles = reshape([
             "A  Fixed IC: Pareto attainment", "B  Varying IC: Pareto attainment",
             "C  Fixed IC: strength-sparsity response", "D  Varying IC: strength-sparsity response",
         ], :, 1),
     )
-    add_pareto_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true)
-    add_pareto_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false)
-    fixed_response = add_response_panel!(plot_handle, data_by_protocol[:fixed], metrics.responses[:fixed], 2, 1; showlegend = true)
-    varying_response = add_response_panel!(plot_handle, data_by_protocol[:varying], metrics.responses[:varying], 2, 2; showlegend = false)
+    add_pareto_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true, legend_id = "legend")
+    add_pareto_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false, legend_id = "legend")
+    response_legend_labels = Dict(replicate => begin
+        fixed = only(filter(item -> item.replicate == replicate, metrics.responses[:fixed].trends))
+        varying = only(filter(item -> item.replicate == replicate, metrics.responses[:varying].trends))
+        @sprintf(
+            "Replicate %d: ρ_fixed=%.3f (n=%d), ρ_varying=%.3f (n=%d)",
+            replicate, fixed.spearman_rho, fixed.qualified_strengths,
+            varying.spearman_rho, varying.qualified_strengths,
+        )
+    end for replicate in P6_REPLICATES)
+    fixed_response = add_response_panel!(
+        plot_handle, data_by_protocol[:fixed], metrics.responses[:fixed], 2, 1;
+        showlegend = true, legend_id = "legend2", legend_labels = response_legend_labels,
+    )
+    varying_response = add_response_panel!(
+        plot_handle, data_by_protocol[:varying], metrics.responses[:varying], 2, 2;
+        showlegend = false, legend_id = "legend2", legend_labels = response_legend_labels,
+    )
 
     fixed_ticks = collect(0:2:fixed_response.maximum_group)
     fixed_ticktext = string.(fixed_ticks)
@@ -591,19 +610,22 @@ function make_main_figure(data_by_protocol, metrics, output)
         push!(fixed_ticks, fixed_response.missing_level)
         push!(fixed_ticktext, "NR")
     end
+    fixed_top = fixed_response.has_missing ? fixed_response.missing_level + 0.6 : fixed_response.maximum_group + 1
     varying_top = varying_response.has_missing ? varying_response.missing_level + 0.5 : varying_response.maximum_group + 1
-    layout = common_layout(width = 1400, height = 1040, title = "Package 6: sensitivity, reproducibility, and Pareto performance")
+    layout = common_layout(width = 1400, height = 1120, title = "Package 6: sensitivity, reproducibility, and Pareto performance")
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Active SC groups")),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true)),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups")),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true)),
         :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS), ticktext = string.(P6_STRENGTHS))),
-        :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE <= 0.001)"; range = [0, fixed_response.missing_level + 0.6], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
+        :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE <= 0.01)"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
         :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS), ticktext = string.(P6_STRENGTHS))),
         :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Active groups (MSE <= 0.01)"; range = [0, varying_top])),
+        :legend => row_legend(0.505),
+        :legend2 => row_legend(-0.085),
     )))
-    PlotlyJS.savefig(plot_handle, output; width = 1400, height = 1040)
+    PlotlyJS.savefig(plot_handle, output; width = 1400, height = 1120)
     return output
 end
 
@@ -672,7 +694,7 @@ function make_terminal_figure(data_by_protocol, output)
     return output
 end
 
-function add_hitting_panel!(plot_handle, data, row, col; showlegend)
+function add_hitting_panel!(plot_handle, data, row, col; showlegend, legend_id = "legend")
     for (strength_index, strength) in enumerate(P6_STRENGTHS)
         values = Float64[]
         for target in HITTING_TARGETS
@@ -689,6 +711,7 @@ function add_hitting_panel!(plot_handle, data, row, col; showlegend)
             name = @sprintf("GO strength %.4g", strength), legendgroup = "strength_$strength_index",
             line = attr(color = STRENGTH_COLORS[strength_index], width = 2),
             marker = attr(color = STRENGTH_COLORS[strength_index], size = 6), showlegend = showlegend,
+            legend = legend_id,
         ); row, col)
     end
     gr_values = Float64[]
@@ -703,6 +726,7 @@ function add_hitting_panel!(plot_handle, data, row, col; showlegend)
         name = "GR reference", legendgroup = "gr_reference",
         line = attr(color = NEUTRAL_COLOR, width = 2.4, dash = "dash"),
         marker = attr(color = NEUTRAL_COLOR, size = 7), showlegend = showlegend,
+        legend = legend_id,
     ); row, col)
 end
 
@@ -712,7 +736,7 @@ function reset_rate(row, reset_type)
     return float_value(row, key)
 end
 
-function add_reset_panel!(plot_handle, data, row, col; showlegend)
+function add_reset_panel!(plot_handle, data, row, col; showlegend, legend_id = "legend")
     offsets = (-0.10, 0.0, 0.10)
     for reset_type in (:group, :mse, :joint)
         color = RESET_COLORS[reset_type]
@@ -723,7 +747,7 @@ function add_reset_panel!(plot_handle, data, row, col; showlegend)
             values = [reset_rate(item, reset_type) for item in selected]
             append_x = [strength_index + offsets[index] for index in eachindex(values)]
             add_trace!(plot_handle, scatter(
-                x = append_x, y = values, mode = "markers", showlegend = false,
+                x = append_x, y = values, mode = "markers", showlegend = false, legend = legend_id,
                 marker = attr(color = rgba(color, 0.55), size = 6, symbol = ("circle", "square", "diamond")),
                 hovertemplate = "Seed %{customdata}<br>rate=%{y:.3f}<extra></extra>", customdata = collect(1:3),
             ); row, col)
@@ -733,16 +757,17 @@ function add_reset_panel!(plot_handle, data, row, col; showlegend)
             x = collect(1:5), y = medians, mode = "lines+markers",
             name = RESET_LABELS[reset_type], legendgroup = "reset_$reset_type",
             line = attr(color = color, width = 2.2), marker = attr(color = color, size = 8), showlegend = showlegend,
+            legend = legend_id,
         ); row, col)
         gr = sort([item for item in data.resets if string_value(item, :method) == "gr"]; by = item -> int_value(item, :replicate))
         gr_values = [reset_rate(item, reset_type) for item in gr]
         add_trace!(plot_handle, scatter(
             x = [6 + offsets[index] for index in eachindex(gr_values)], y = gr_values,
-            mode = "markers", showlegend = false,
+            mode = "markers", showlegend = false, legend = legend_id,
             marker = attr(color = rgba(color, 0.55), size = 6, symbol = ("circle", "square", "diamond")),
         ); row, col)
         add_trace!(plot_handle, scatter(
-            x = [6.0], y = [median(gr_values)], mode = "markers", showlegend = false,
+            x = [6.0], y = [median(gr_values)], mode = "markers", showlegend = false, legend = legend_id,
             marker = attr(color = color, size = 11, symbol = "diamond-open", line = attr(color = color, width = 2)),
         ); row, col)
     end
@@ -773,7 +798,7 @@ function archive_series(data, method, strength_index, grid)
     )
 end
 
-function add_archive_panel!(plot_handle, data, row, col; showlegend)
+function add_archive_panel!(plot_handle, data, row, col; showlegend, legend_id = "legend")
     grid = collect(range(0.0, 1.0; length = 51))
     specifications = [("go", index, @sprintf("GO %.4g", P6_STRENGTHS[index]), STRENGTH_COLORS[index], "solid") for index in 1:5]
     push!(specifications, ("gr", 0, "GR reference", NEUTRAL_COLOR, "dash"))
@@ -781,40 +806,40 @@ function add_archive_panel!(plot_handle, data, row, col; showlegend)
         series = archive_series(data, method, strength_index, grid)
         add_trace!(plot_handle, scatter(
             x = grid, y = series.low, mode = "lines", line = attr(color = rgba(color, 0.20), width = 0.5),
-            hoverinfo = "skip", showlegend = false, legendgroup = "archive_$(method)_$strength_index",
+            hoverinfo = "skip", showlegend = false, legendgroup = "archive_$(method)_$strength_index", legend = legend_id,
         ); row, col)
         add_trace!(plot_handle, scatter(
             x = grid, y = series.high, mode = "lines", line = attr(color = rgba(color, 0.20), width = 0.5),
             fill = "tonexty", fillcolor = rgba(color, 0.10), hoverinfo = "skip",
-            showlegend = false, legendgroup = "archive_$(method)_$strength_index",
+            showlegend = false, legendgroup = "archive_$(method)_$strength_index", legend = legend_id,
         ); row, col)
         add_trace!(plot_handle, scatter(
             x = grid, y = series.median, mode = "lines", name = label,
             line = attr(color = color, width = method == "gr" ? 2.5 : 2.0, dash = dash),
-            showlegend = showlegend, legendgroup = "archive_$(method)_$strength_index",
+            showlegend = showlegend, legendgroup = "archive_$(method)_$strength_index", legend = legend_id,
         ); row, col)
     end
 end
 
 function make_supplement_figure(data_by_protocol, output)
     plot_handle = make_subplots(
-        rows = 3, cols = 2, horizontal_spacing = 0.10, vertical_spacing = 0.10,
+        rows = 3, cols = 2, horizontal_spacing = 0.10, vertical_spacing = 0.15,
         subplot_titles = reshape([
             "A  Fixed IC: first hitting times", "B  Varying IC: first hitting times",
             "C  Fixed IC: reset rates", "D  Varying IC: reset rates",
             "E  Fixed IC: archive convergence", "F  Varying IC: archive convergence",
         ], :, 1),
     )
-    add_hitting_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true)
-    add_hitting_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false)
-    add_reset_panel!(plot_handle, data_by_protocol[:fixed], 2, 1; showlegend = true)
-    add_reset_panel!(plot_handle, data_by_protocol[:varying], 2, 2; showlegend = false)
-    add_archive_panel!(plot_handle, data_by_protocol[:fixed], 3, 1; showlegend = true)
-    add_archive_panel!(plot_handle, data_by_protocol[:varying], 3, 2; showlegend = false)
+    add_hitting_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true, legend_id = "legend")
+    add_hitting_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false, legend_id = "legend")
+    add_reset_panel!(plot_handle, data_by_protocol[:fixed], 2, 1; showlegend = true, legend_id = "legend2")
+    add_reset_panel!(plot_handle, data_by_protocol[:varying], 2, 2; showlegend = false, legend_id = "legend2")
+    add_archive_panel!(plot_handle, data_by_protocol[:fixed], 3, 1; showlegend = true, legend_id = "legend3")
+    add_archive_panel!(plot_handle, data_by_protocol[:varying], 3, 2; showlegend = false, legend_id = "legend3")
 
     strength_ticktext = [string(value) for value in P6_STRENGTHS]
     push!(strength_ticktext, "GR ref")
-    layout = common_layout(width = 1450, height = 1600, title = "Package 6 supplementary stability diagnostics")
+    layout = common_layout(width = 1450, height = 1750, title = "Package 6 supplementary stability diagnostics")
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Target active SC groups"; reversed = true, tickmode = "array", tickvals = collect(HITTING_TARGETS), ticktext = string.(HITTING_TARGETS))),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Median first update")),
@@ -828,8 +853,11 @@ function make_supplement_figure(data_by_protocol, output)
         :yaxis5 => preserved_subplot_axis(plot_handle, :yaxis5, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
         :xaxis6 => preserved_subplot_axis(plot_handle, :xaxis6, paper_axis("Normalized training progress"; range = [0, 1])),
         :yaxis6 => preserved_subplot_axis(plot_handle, :yaxis6, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
+        :legend => row_legend(0.70),
+        :legend2 => row_legend(0.315),
+        :legend3 => row_legend(-0.10),
     )))
-    PlotlyJS.savefig(plot_handle, output; width = 1450, height = 1600)
+    PlotlyJS.savefig(plot_handle, output; width = 1450, height = 1750)
     return output
 end
 
@@ -910,7 +938,7 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
     path = joinpath(output_dir, "paper_metrics.md")
     open(path, "w") do io
         println(io, "# Package 6 paper metrics\n")
-        println(io, "This report is generated deterministically from the completed Package-6 analysis products. Fixed IC uses the quality threshold `MSE <= 0.001`; Varying IC uses `MSE <= 0.01`. No training, validation, candidate selection, or rollout is performed by the paper-figure script.\n")
+        println(io, "This report is generated deterministically from the completed Package-6 analysis products. Fixed IC and Varying IC both use the quality threshold `MSE <= 0.01`. No training, validation, candidate selection, or rollout is performed by the paper-figure script.\n")
 
         println(io, "## 1. Empirical attainment across seeds\n")
         println(io, "`1/3`, `2/3`, and `3/3` are the best validation-MSE envelopes attained by at least one, two, or all three paired replicates at group budget `B`. The log spread is `log(L_3/3 / L_1/3)`; smaller finite values mean less seed sensitivity.\n")
@@ -923,7 +951,7 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
         end
 
         println(io, "\n## 2. Predictable strength-sparsity response\n")
-        println(io, "For each strength and paired replicate, the response is the sparsest run-front point satisfying the protocol-specific quality threshold. `NR` means that the run never placed a point below that threshold in its Pareto archive. Spearman rho correlates the ranks of strength and active-group count over qualifying strengths only. `rho = -1` is a perfectly monotone decrease; magnitude, spacing, and MSE are not encoded. Values based on `n=2` are descriptive but weak evidence.\n")
+        println(io, "For each strength and paired replicate, the response is the sparsest run-front point satisfying the protocol-specific quality threshold. `NR` means that the run never placed a point below that threshold in its Pareto archive. Spearman rho correlates the ranks of strength and active-group count over qualifying strengths only. `rho = -1` is a perfectly monotone decrease; magnitude, spacing, and MSE are not encoded. All current correlations use the complete five-strength grid.\n")
         println(io, "| Protocol | Replicate | Qualifying strengths | Spearman rho |")
         println(io, "|---|---:|---:|---:|")
         for protocol in PROTOCOLS, row in metrics.responses[protocol].trends
