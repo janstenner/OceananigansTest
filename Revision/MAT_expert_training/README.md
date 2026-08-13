@@ -26,6 +26,11 @@ preview exactly 21 tmux sessions:
 bash Revision/MAT_expert_training/launch_tmux.sh --preview
 ```
 
+The validation identity check permits an absolute score difference of `1e-5`
+for last-digit Julia/CUDA/hardware variation. Both the frozen and observed
+scores and their delta are recorded; run ID, protocol, seeds, episode count,
+algorithm, status, and checkpoint hashes are still checked exactly.
+
 Start the 20 training workers and one waiting test/export worker:
 
 ```bash

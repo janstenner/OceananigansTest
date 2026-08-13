@@ -33,7 +33,10 @@ function main(arguments)
     for candidate in records
         println(
             "  $(candidate.protocol) rank $(candidate.rank): $(candidate.run_id), " *
-            "validation=$(candidate.validation_score), checkpoint_sha256=$(candidate.checkpoint_sha256)",
+            "frozen_validation=$(candidate.validation_score), " *
+            "observed_validation=$(candidate.observed_validation_score), " *
+            "delta=$(candidate.validation_score_delta), " *
+            "checkpoint_sha256=$(candidate.checkpoint_sha256)",
         )
     end
     println("Fixed stop: completed episode reward > $(MATExpertTraining.FIXED_THRESHOLD)")

@@ -44,6 +44,10 @@ const VARYING_THRESHOLD = -610.0
 const VARYING_WINDOW = 100
 const TEST_EPISODE_STEPS = 200
 const PROTOCOLS = (:fixed, :varying)
+# Validation returns can differ in their last Float32-derived digits across
+# Julia/CUDA/hardware environments. This tolerance is still orders of magnitude
+# below the smallest score gap in either frozen ranking.
+const VALIDATION_SCORE_ATOL = 1e-5
 
 const CANDIDATES = (
     (
@@ -410,13 +414,22 @@ function verified_candidate_record(candidate, source_results_directory)
     score.algorithm === :mat || error("Selected validation is not MAT.")
     score.run_seed == candidate.run_seed || error("Selected validation run-seed mismatch.")
     score.ic_seed == candidate.ic_seed || error("Selected validation IC-seed mismatch.")
-    isapprox(score.validation_mean, candidate.validation_score; atol = 1e-10) || error(
+    score_delta = score.validation_mean - candidate.validation_score
+    isapprox(
+        score.validation_mean,
+        candidate.validation_score;
+        atol = VALIDATION_SCORE_ATOL,
+        rtol = 0.0,
+    ) || error(
         "Selected validation score $(score.validation_mean) does not match frozen score " *
-        "$(candidate.validation_score).",
+        "$(candidate.validation_score) within absolute tolerance " *
+        "$VALIDATION_SCORE_ATOL (delta=$score_delta).",
     )
     candidate.protocol === :varying && length(source.trace) != ORIGINAL_EPISODES[:varying] &&
         error("Selected Varying checkpoint has an incomplete IC trace.")
     return merge(candidate, (
+        observed_validation_score = score.validation_mean,
+        validation_score_delta = score_delta,
         checkpoint_path = abspath(checkpoint),
         checkpoint_sha256 = source_hash(checkpoint),
         validation_path = abspath(validation),
