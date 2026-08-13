@@ -31,6 +31,14 @@ Sparse Sensing paper.
   incremental collection for package 4.
 - `MAT_IPPO_Comparison/README.md`: Server workflow, restart, import,
   validation, storage, and collection instructions for package 4.
+- `MAT_expert_training/`: Validation-ranked all-ten MAT continuation for
+  Fixed and Varying IC, protocol-wide episode-boundary stop coordination,
+  atomic resume/final checkpoints, persistent 21-session tmux launch,
+  winner-only test-set reward/score evaluation, and compact winner publication
+  into the tracked Expert-Apprentice Distillation checkpoints.
+- `MAT_expert_training/README.md` and `PLAN.md`: Launch, monitoring, fixed
+  `episode_reward > -555.0` and Varying rolling-100 `> -610.0` rules, exact
+  selected source candidates, resume semantics, and test-result layout.
 - `VaryingIC_Corpus/VaryingICCorpus.jl`: Persistent generation, visualization,
   and sampling of independently seeded Rayleigh--Bénard basis snapshots for
   varying-initial-condition experiments.
