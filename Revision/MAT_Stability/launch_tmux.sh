@@ -1,145 +1,158 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-project_root="$(cd "${script_directory}/../.." && pwd)"
-runner="${script_directory}/run_worker.jl"
-results_directory="${MAT_STABILITY_RESULTS_DIR:-${script_directory}/results}"
-julia_binary="${JULIA_BIN:-julia}"
-
-preview=false
-worker_dry_run=false
-overwrite=false
-protocol_selection=all
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+JULIA_BIN="${JULIA_BIN:-julia}"
+RESULTS_DIR="${MAT_STABILITY_RESULTS_DIR:-$SCRIPT_DIR/results}"
+PROTOCOL="all"
+PREVIEW=false
+WORKER_DRY_RUN=false
+OVERWRITE=false
 
 usage() {
     cat <<'EOF'
-Usage: launch_tmux.sh [--protocol all|fixed|varying] [options]
+Usage: Revision/MAT_Stability/launch_tmux.sh [options]
 
-Starts five detached tmux sessions per selected protocol.
-The default selection "all" starts:
-  mat_fixed_01 ... mat_fixed_05
-  mat_varying_01 ... mat_varying_05
+Creates one independent tmux worker per protocol, replicate, and MAT
+configuration. A complete launch starts 15 Fixed-IC and 15 Varying-IC workers.
 
 Options:
-  --protocol VALUE   Select all, fixed, or varying workers (default: all).
-  --preview          Print the planned sessions without starting them.
-  --dry-run-workers  Start zero-episode verification workers in separate sessions.
-  --overwrite        Pass --overwrite to every worker.
-  --help             Show this message.
+  --protocol all|fixed|varying  Default: all.
+  --results-dir PATH            Override the MAT Stability result directory.
+  --preview                     Print the frozen plan and commands; start nothing.
+  --dry-run-workers             Start zero-episode verification workers.
+  --overwrite                   Re-run already complete matching results.
+  --help                        Show this message.
 
-Environment:
-  JULIA_BIN                 Julia executable (default: julia)
-  MAT_STABILITY_RESULTS_DIR Result root
+Set JULIA_BIN if Julia is not available as `julia` on PATH.
 EOF
 }
 
 while (($#)); do
     case "$1" in
-        --preview)
-            preview=true
-            ;;
-        --dry-run-workers)
-            worker_dry_run=true
-            ;;
-        --overwrite)
-            overwrite=true
-            ;;
         --protocol)
-            (($# >= 2)) || {
-                echo "Missing value after --protocol." >&2
-                exit 2
-            }
-            protocol_selection="$2"
-            shift
+            (($# >= 2)) || { echo "Missing value after --protocol." >&2; exit 2; }
+            PROTOCOL="$2"
+            shift 2
             ;;
-        --help)
-            usage
-            exit 0
+        --results-dir|--results_dir)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            RESULTS_DIR="$2"
+            shift 2
             ;;
-        *)
-            echo "Unknown argument: $1" >&2
-            usage >&2
-            exit 2
-            ;;
+        --preview) PREVIEW=true; shift ;;
+        --dry-run-workers|--dry_run_workers) WORKER_DRY_RUN=true; shift ;;
+        --overwrite) OVERWRITE=true; shift ;;
+        --help) usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
-    shift
 done
 
-case "${protocol_selection}" in
-    all)
-        protocols=(fixed varying)
-        ;;
-    fixed)
-        protocols=(fixed)
-        ;;
-    varying)
-        protocols=(varying)
-        ;;
-    *)
-        echo "Invalid protocol '${protocol_selection}'; use all, fixed, or varying." >&2
-        exit 2
-        ;;
-esac
-
-command -v tmux >/dev/null 2>&1 || {
-    echo "tmux was not found in PATH." >&2
-    exit 1
+[[ "$PROTOCOL" =~ ^(all|fixed|varying)$ ]] || {
+    echo "--protocol must be all, fixed, or varying." >&2
+    exit 2
 }
-command -v "${julia_binary}" >/dev/null 2>&1 || {
-    echo "Julia executable '${julia_binary}' was not found." >&2
+command -v "$JULIA_BIN" >/dev/null || {
+    echo "Julia executable not found: $JULIA_BIN" >&2
     exit 1
 }
 
-log_directory="${results_directory}/logs"
-mkdir -p "${log_directory}"
-first_session=""
-
-for protocol in "${protocols[@]}"; do
-    for replicate in 1 2 3 4 5; do
-        printf -v replicate_padded "%02d" "${replicate}"
-        if [[ "${worker_dry_run}" == true ]]; then
-            session="mat_dry_${protocol}_${replicate_padded}"
-        else
-            session="mat_${protocol}_${replicate_padded}"
-        fi
-        [[ -z "${first_session}" ]] && first_session="${session}"
-        logfile="${log_directory}/${session}.log"
-
-        command_parts=(
-            "${julia_binary}"
-            "--startup-file=no"
-            "--project=${project_root}"
-            "${runner}"
-            "--protocol" "${protocol}"
-            "--replicate" "${replicate}"
-            "--results-dir" "${results_directory}"
-        )
-        [[ "${worker_dry_run}" == true ]] && command_parts+=("--dry-run")
-        [[ "${overwrite}" == true ]] && command_parts+=("--overwrite")
-        printf -v worker_command "%q " "${command_parts[@]}"
-        printf -v quoted_logfile "%q" "${logfile}"
-        shell_command="set -o pipefail; ${worker_command}2>&1 | tee -a ${quoted_logfile}"
-        printf -v quoted_shell_command "%q" "${shell_command}"
-        tmux_command="bash -lc ${quoted_shell_command}"
-
-        if tmux has-session -t "=${session}" 2>/dev/null; then
-            echo "Skipping active tmux session ${session}"
-            continue
-        fi
-
-        if [[ "${preview}" == true ]]; then
-            echo "Would start ${session}: ${worker_command}"
-        else
-            tmux new-session -d -s "${session}" "${tmux_command}"
-            echo "Started ${session}; log: ${logfile}"
-        fi
-    done
-done
-
-if [[ "${preview}" == false ]]; then
-    echo
-    echo "All requested workers were submitted."
-    echo "Inspect sessions with: tmux ls"
-    echo "Attach with:          tmux attach -t ${first_session}"
+if [[ "$PREVIEW" == true ]]; then
+    MANIFEST="$(mktemp)"
+    trap 'rm -f "$MANIFEST"' EXIT
+else
+    LAUNCH_ID="$(date -u +%Y%m%dT%H%M%SZ)_$$"
+    LAUNCH_DIR="$RESULTS_DIR/launches/$LAUNCH_ID"
+    mkdir -p "$LAUNCH_DIR"
+    MANIFEST="$LAUNCH_DIR/jobs.tsv"
 fi
+
+PREPARE=(
+    "$JULIA_BIN" --startup-file=no "--project=$PROJECT_ROOT"
+    "$SCRIPT_DIR/prepare_runs.jl"
+    --protocol "$PROTOCOL"
+    --results-dir "$RESULTS_DIR"
+    --jobs-file "$MANIFEST"
+)
+[[ "$WORKER_DRY_RUN" == true ]] && PREPARE+=(--dry-run)
+[[ "$PREVIEW" == true ]] && PREPARE+=(--preview)
+[[ "$OVERWRITE" == true ]] && PREPARE+=(--overwrite)
+"${PREPARE[@]}"
+
+mapfile -t JOBS < <(tail -n +2 "$MANIFEST")
+if ((${#JOBS[@]} == 0)); then
+    echo "No pending MAT Stability jobs."
+    exit 0
+fi
+
+worker_command() {
+    local row="$1" protocol replicate config run_seed ic_seed episode_target result_path command
+    IFS=$'\t' read -r protocol replicate config run_seed ic_seed episode_target result_path <<<"$row"
+    local command_parts=(
+        "$JULIA_BIN" --startup-file=no "--project=$PROJECT_ROOT"
+        "$SCRIPT_DIR/run_worker.jl"
+        --protocol "$protocol"
+        --replicate "$replicate"
+        --config "$config"
+        --results-dir "$RESULTS_DIR"
+    )
+    [[ "$WORKER_DRY_RUN" == true ]] && command_parts+=(--dry-run)
+    [[ "$OVERWRITE" == true ]] && command_parts+=(--overwrite)
+    printf -v command '%q ' "${command_parts[@]}"
+    printf '%s' "$command"
+}
+
+session_name() {
+    local row="$1" protocol replicate config run_seed ic_seed episode_target result_path
+    IFS=$'\t' read -r protocol replicate config run_seed ic_seed episode_target result_path <<<"$row"
+    printf -v replicate '%02d' "$replicate"
+    if [[ "$WORKER_DRY_RUN" == true ]]; then
+        printf 'mat_dry_%s_%s_%s' "$protocol" "$replicate" "$config"
+    else
+        printf 'mat_%s_%s_%s' "$protocol" "$replicate" "$config"
+    fi
+}
+
+if [[ "$PREVIEW" == true ]]; then
+    echo
+    echo "Preview only; no run plan was persisted and no tmux session was started."
+    for row in "${JOBS[@]}"; do
+        printf '%s: ' "$(session_name "$row")"
+        worker_command "$row"
+        echo
+    done
+    exit 0
+fi
+
+command -v tmux >/dev/null || {
+    echo "tmux is required to launch workers." >&2
+    exit 1
+}
+
+FIRST_SESSION=""
+STARTED_COUNT=0
+for row in "${JOBS[@]}"; do
+    IFS=$'\t' read -r protocol replicate config run_seed ic_seed episode_target result_path <<<"$row"
+    session="$(session_name "$row")"
+    logfile="$LAUNCH_DIR/${protocol}_$(printf '%02d' "$replicate")_${config}.log"
+    command="$(worker_command "$row")"
+    printf -v quoted_logfile '%q' "$logfile"
+    shell_command="set -o pipefail; ${command}2>&1 | tee -a ${quoted_logfile}"
+    printf -v quoted_shell_command '%q' "$shell_command"
+
+    if tmux has-session -t "=$session" 2>/dev/null; then
+        echo "Skipping active tmux session $session"
+        continue
+    fi
+    tmux new-session -d -s "$session" "bash -lc $quoted_shell_command"
+    [[ -z "$FIRST_SESSION" ]] && FIRST_SESSION="$session"
+    STARTED_COUNT=$((STARTED_COUNT + 1))
+    echo "Started $session; log: $logfile"
+done
+
+echo
+echo "Started $STARTED_COUNT independent tmux workers for ${#JOBS[@]} pending jobs."
+echo "They survive SSH disconnects and close when their single job finishes."
+[[ -n "$FIRST_SESSION" ]] && echo "Attach with: tmux attach -t $FIRST_SESSION"
+echo "Logs and worker manifest: $LAUNCH_DIR"

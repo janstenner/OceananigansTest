@@ -149,14 +149,16 @@ Run files must never generate or mutate corpus entries.
 
 ## MAT Stability Experiment
 
-`MAT_Stability/run_worker.jl` owns one protocol/replicate and initializes the
-three MAT configurations `python_like`, `modified_half`, and `modified_full`
-sequentially. A deterministic seed plan supplies the same policy seed and, for
-Varying IC, the same IC-sampling seed to all three configurations in a
-replicate. The fixed and varying budgets are exactly 2,000 and 4,000 completed
-episodes per configuration, respectively.
+`MAT_Stability/prepare_runs.jl` freezes five deterministic run/IC seed pairs and
+the complete Varying-IC selection sequence in `results/run_plan.jld2` before
+launch. `MAT_Stability/run_worker.jl` owns one
+protocol/replicate/configuration. The three configuration workers in a
+replicate load the same policy seed and explicit IC sequence from that plan.
+The fixed and varying budgets are exactly 2,000 and 4,000 completed episodes
+per configuration, respectively.
 
-The worker must preserve the paired-design checks: common parameter arrays,
+The package must preserve the paired-design checks: every worker records the
+initial hashes/probes and the collector verifies that common parameter arrays,
 policy RNG probes, and IC probes are equal across all three configurations;
 the complete initial networks of `modified_half` and `modified_full` are
 byte-identical; Varying-IC selection traces are equal within a replicate.
@@ -164,10 +166,10 @@ Separate value-chain parameters must match the main chain initially without
 sharing mutable arrays.
 
 Each completed configuration is written atomically to a descriptive JLD2 path.
-Per-replicate lock directories prevent duplicate workers, and matching complete
-files are skipped on restart. Failed configurations retain their error and
-partial histories. Production launch uses detached tmux sessions so workers
-survive SSH disconnects.
+Per-result lock directories prevent duplicate workers, and matching complete
+files are omitted from later manifests. Failed configurations retain their
+error and partial histories. Production launch uses 15 detached tmux sessions
+per selected protocol so workers survive SSH disconnects.
 
 `MAT_Stability/launch_tmux.sh` must support selecting all workers, only Fixed
 IC, or only Varying IC. `MAT_Stability/collect_results.jl` collects whichever

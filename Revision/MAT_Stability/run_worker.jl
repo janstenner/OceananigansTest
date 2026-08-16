@@ -7,11 +7,12 @@ function usage(io::IO = stdout)
         """
         Usage:
           julia --project=. Revision/MAT_Stability/run_worker.jl \\
-              --protocol fixed|varying --replicate 1:5 [options]
+              --protocol fixed|varying --replicate 1:5 \\
+              --config python_like|modified_half|modified_full [options]
 
         Options:
           --episodes N       Override the protocol default (2000 fixed, 4000 varying).
-          --dry-run          Build and verify all configs without training episodes.
+          --dry-run          Build and verify the selected config without training episodes.
           --overwrite        Replace already complete matching result files.
           --results-dir DIR  Override Revision/MAT_Stability/results.
           --help             Show this message.
@@ -23,6 +24,7 @@ function parse_arguments(arguments)
     options = Dict{String, Any}(
         "protocol" => nothing,
         "replicate" => nothing,
+        "config" => nothing,
         "episodes" => nothing,
         "dry_run" => false,
         "overwrite" => false,
@@ -39,7 +41,13 @@ function parse_arguments(arguments)
             options["dry_run"] = true
         elseif argument == "--overwrite"
             options["overwrite"] = true
-        elseif argument in ("--protocol", "--replicate", "--episodes", "--results-dir")
+        elseif argument in (
+            "--protocol",
+            "--replicate",
+            "--config",
+            "--episodes",
+            "--results-dir",
+        )
             index == length(arguments) && error("Missing value after $argument.")
             value = arguments[index + 1]
             key = replace(argument[3:end], "-" => "_")
@@ -53,6 +61,7 @@ function parse_arguments(arguments)
 
     isnothing(options["protocol"]) && error("--protocol is required.")
     isnothing(options["replicate"]) && error("--replicate is required.")
+    isnothing(options["config"]) && error("--config is required.")
     options["replicate"] = parse(Int, options["replicate"])
     if !isnothing(options["episodes"])
         options["episodes"] = parse(Int, options["episodes"])
@@ -65,6 +74,7 @@ function main(arguments = ARGS)
     isnothing(options) && return
 
     keywords = (
+        config = options["config"],
         episodes = options["episodes"],
         dry_run = options["dry_run"],
         overwrite = options["overwrite"],

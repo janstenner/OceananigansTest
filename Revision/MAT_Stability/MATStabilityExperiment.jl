@@ -10,9 +10,11 @@ using SHA
 using Sockets
 using StableRNGs
 
-export MAT_CONFIGS, run_worker, seed_plan
+export MAT_CONFIGS, DEFAULT_EPISODES, DEFAULT_RESULTS_DIRECTORY, prepare_jobs,
+       run_worker, seed_plan, result_path, plan_path
 
 const SCHEMA_VERSION = 1
+const PLAN_SCHEMA_VERSION = 1
 const SEED_PLAN_MASTER = 20260730
 const REPLICATES = 1:5
 const DEFAULT_EPISODES = Dict(:fixed => 2_000, :varying => 4_000)
@@ -45,6 +47,11 @@ const REVISION_DIRECTORY = normpath(joinpath(@__DIR__, ".."))
 const PROJECT_ROOT = normpath(joinpath(REVISION_DIRECTORY, ".."))
 const RL_ROOT = normpath(joinpath(dirname(pathof(RL)), ".."))
 const DEFAULT_RESULTS_DIRECTORY = joinpath(@__DIR__, "results")
+const CORPUS_PATH = joinpath(
+    REVISION_DIRECTORY,
+    "VaryingIC_Corpus",
+    "varying_ic_corpus.jld2",
+)
 const LOADED_PROTOCOL = Ref{Union{Nothing, Symbol}}(nothing)
 const SNAPSHOT_GLOBALS = (
     :Ra,
@@ -102,6 +109,24 @@ function normalize_protocol(protocol)::Symbol
     return normalized
 end
 
+function selected_protocols(value)
+    selection = Symbol(lowercase(string(value)))
+    selection === :all && return [:fixed, :varying]
+    return [normalize_protocol(selection)]
+end
+
+function config_for(name)
+    normalized = Symbol(lowercase(string(name)))
+    matches = [config for config in MAT_CONFIGS if config.name === normalized]
+    length(matches) == 1 || throw(
+        ArgumentError(
+            "Unknown MAT configuration '$name'. Use " *
+            join(string.(getproperty.(MAT_CONFIGS, :name)), ", ") * ".",
+        ),
+    )
+    return only(matches)
+end
+
 function seed_plan(replicate::Integer)
     replicate in REPLICATES || throw(
         ArgumentError("Replicate must be in $(first(REPLICATES)):$(last(REPLICATES))."),
@@ -115,6 +140,199 @@ function seed_plan(replicate::Integer)
         ic_seed = rand(planner, 1:2_000_000_000)
     end
     return (; run_seed, ic_seed)
+end
+
+plan_path(results_directory::AbstractString) = joinpath(results_directory, "run_plan.jld2")
+
+result_path(results_directory::AbstractString, protocol, replicate::Integer, config) = joinpath(
+    results_directory,
+    string(normalize_protocol(protocol)),
+    @sprintf("replicate_%02d", replicate),
+    string(config_for(config).name) * ".jld2",
+)
+
+function normalize_trace(raw)
+    return [
+        (
+            split = Symbol(item.split),
+            base_seed = Int(item.base_seed),
+            mirror = Bool(item.mirror),
+            offset = Int(item.offset),
+        ) for item in raw
+    ]
+end
+
+function training_seeds()
+    raw = JLD2.load(CORPUS_PATH, "corpus")
+    split = haskey(raw, :train) ? raw[:train] : raw["train"]
+    return sort!(Int.(collect(keys(split))))
+end
+
+function varying_schedule(
+    ic_seed::Integer,
+    episode_count::Integer,
+    seeds = training_seeds(),
+)
+    rng = StableRNG(Int(ic_seed))
+    return [
+        (
+            split = :train,
+            base_seed = rand(rng, seeds),
+            mirror = rand(rng, Bool),
+            offset = rand(rng, 0:95),
+        ) for _ in 1:episode_count
+    ]
+end
+
+function expected_plan()
+    training_seed_values = training_seeds()
+    entries = [
+        begin
+            seeds = seed_plan(replicate)
+            (
+                replicate = Int(replicate),
+                run_seed = seeds.run_seed,
+                ic_seed = seeds.ic_seed,
+                varying_trace = varying_schedule(
+                    seeds.ic_seed,
+                    DEFAULT_EPISODES[:varying],
+                    training_seed_values,
+                ),
+            )
+        end for replicate in REPLICATES
+    ]
+    return Dict{String, Any}(
+        "schema_version" => PLAN_SCHEMA_VERSION,
+        "seed_plan_master" => SEED_PLAN_MASTER,
+        "replicates" => collect(REPLICATES),
+        "configs" => collect(getproperty.(MAT_CONFIGS, :name)),
+        "default_episodes" => copy(DEFAULT_EPISODES),
+        "entries" => entries,
+        "created_at" => string(now()),
+    )
+end
+
+function validate_plan(plan; verify_varying_trace::Bool = false)
+    Int(plan["schema_version"]) == PLAN_SCHEMA_VERSION || error(
+        "Unsupported MAT-stability plan schema.",
+    )
+    Int(plan["seed_plan_master"]) == SEED_PLAN_MASTER || error(
+        "MAT-stability plan uses a different seed-plan master.",
+    )
+    Symbol.(collect(plan["configs"])) == collect(getproperty.(MAT_CONFIGS, :name)) || error(
+        "MAT-stability plan has different configurations.",
+    )
+    Int.(collect(plan["replicates"])) == collect(REPLICATES) || error(
+        "MAT-stability plan has different replicates.",
+    )
+    stored_episodes = plan["default_episodes"]
+    all(
+        Int(stored_episodes[protocol]) == episode_count
+        for (protocol, episode_count) in DEFAULT_EPISODES
+    ) || error("MAT-stability plan has different episode budgets.")
+    stored_entries = collect(plan["entries"])
+    length(stored_entries) == length(REPLICATES) || error(
+        "MAT-stability plan has the wrong number of replicate entries.",
+    )
+    training_seed_values = verify_varying_trace ? training_seeds() : Int[]
+    for (replicate, stored) in zip(REPLICATES, stored_entries)
+        seeds = seed_plan(replicate)
+        Int(stored.replicate) == replicate || error("Plan replicate order differs.")
+        Int(stored.run_seed) == seeds.run_seed || error("Plan run seed differs.")
+        Int(stored.ic_seed) == seeds.ic_seed || error("Plan IC seed differs.")
+        stored_trace = normalize_trace(stored.varying_trace)
+        length(stored_trace) == DEFAULT_EPISODES[:varying] || error(
+            "Plan Varying-IC trace has the wrong length for replicate $replicate.",
+        )
+        if verify_varying_trace
+            stored_trace == varying_schedule(
+                seeds.ic_seed,
+                DEFAULT_EPISODES[:varying],
+                training_seed_values,
+            ) || error(
+                "Plan Varying-IC trace differs for replicate $replicate.",
+            )
+        end
+    end
+    return plan
+end
+
+function atomic_jldsave(path::AbstractString; values...)
+    mkpath(dirname(path))
+    temporary_path = path * ".tmp.$(getpid()).$(time_ns())"
+    try
+        JLD2.jldsave(temporary_path; values...)
+        mv(temporary_path, path; force = true)
+    finally
+        isfile(temporary_path) && rm(temporary_path; force = true)
+    end
+    return path
+end
+
+function acquire_lock(path::AbstractString)
+    mkpath(dirname(path))
+    try
+        mkdir(path)
+    catch error_value
+        isdir(path) || rethrow(error_value)
+        error(
+            "Lock '$path' already exists. Another process may be active; " *
+            "remove it only after checking running workers.",
+        )
+    end
+    open(joinpath(path, "owner.txt"), "w") do io
+        println(io, "pid=$(getpid())")
+        println(io, "host=$(gethostname())")
+        println(io, "started_at=$(now())")
+    end
+    return path
+end
+
+function load_or_create_plan(
+    results_directory::AbstractString;
+    preview::Bool = false,
+    verify_varying_trace::Bool = false,
+)
+    path = plan_path(results_directory)
+    if isfile(path)
+        return validate_plan(
+            JLD2.load(path, "plan");
+            verify_varying_trace,
+        )
+    end
+    plan = expected_plan()
+    preview && return plan
+    lock = acquire_lock(path * ".lock")
+    try
+        if isfile(path)
+            return validate_plan(
+                JLD2.load(path, "plan");
+                verify_varying_trace,
+            )
+        end
+        atomic_jldsave(path; plan)
+        return validate_plan(plan; verify_varying_trace = true)
+    finally
+        rm(lock; recursive = true, force = true)
+    end
+end
+
+function find_plan_entry(results_directory::AbstractString, replicate::Integer)
+    path = plan_path(results_directory)
+    isfile(path) || error(
+        "Frozen MAT-stability plan '$path' is missing. Run prepare_runs.jl or " *
+        "launch_tmux.sh before starting workers.",
+    )
+    plan = validate_plan(JLD2.load(path, "plan"))
+    matches = [entry for entry in plan["entries"] if Int(entry.replicate) == replicate]
+    length(matches) == 1 || error("Expected one plan entry for replicate $replicate.")
+    entry = only(matches)
+    return (
+        replicate = Int(entry.replicate),
+        run_seed = Int(entry.run_seed),
+        ic_seed = Int(entry.ic_seed),
+        varying_trace = normalize_trace(entry.varying_trace),
+    )
 end
 
 function run_file_path(protocol::Symbol)
@@ -267,7 +485,7 @@ function configure_agent!(config, protocol::Symbol, seeds)
     return
 end
 
-function initial_condition_probe(protocol::Symbol)
+function initial_condition_probe(protocol::Symbol, planned_trace)
     if protocol === :fixed
         result = Base.invokelatest(generate_random_init)
         return (
@@ -279,27 +497,42 @@ function initial_condition_probe(protocol::Symbol)
         )
     end
 
+    isempty(planned_trace) && error("Varying-IC plan has no episodes.")
+    choice = first(planned_trace)
     result, split, base_seed, mirror, offset = Base.invokelatest(
         generate_random_init;
-        split = :train,
-        rng = deepcopy(initial_condition_rng),
+        split = choice.split,
+        base_seed = choice.base_seed,
+        mirror = choice.mirror,
+        offset = choice.offset,
     )
-    return (; state_hash = array_hash(result), split, base_seed, mirror, offset)
+    observed = (; split, base_seed, mirror, offset)
+    observed == choice || error("Run file did not reproduce the planned IC probe.")
+    return merge((; state_hash = array_hash(result)), observed)
 end
 
-function configure_episode_initializer!(protocol::Symbol, ic_trace)
+function configure_episode_initializer!(protocol::Symbol, ic_trace, planned_trace)
     if protocol === :fixed
         hook.generate_random_init = () -> Base.invokelatest(generate_random_init)
         return
     end
 
     hook.generate_random_init = () -> begin
+        index = length(ic_trace) + 1
+        index <= length(planned_trace) || error(
+            "Varying-IC plan exhausted after $(length(planned_trace)) episodes.",
+        )
+        choice = planned_trace[index]
         result, split, base_seed, mirror, offset = Base.invokelatest(
             generate_random_init;
-            split = :train,
-            rng = initial_condition_rng,
+            split = choice.split,
+            base_seed = choice.base_seed,
+            mirror = choice.mirror,
+            offset = choice.offset,
         )
-        push!(ic_trace, (; split, base_seed, mirror, offset))
+        observed = (; split, base_seed, mirror, offset)
+        observed == choice || error("Run file did not reproduce planned Varying IC $choice.")
+        push!(ic_trace, observed)
         return result
     end
     return
@@ -480,8 +713,9 @@ end
 
 function read_result_metadata(path::AbstractString)
     return JLD2.jldopen(path, "r") do file
+        status = string(read(file, "status"))
         (
-            status = read(file, "status"),
+            status,
             protocol = Symbol(read(file, "protocol")),
             replicate = Int(read(file, "replicate")),
             config_name = Symbol(read(file, "config_name")),
@@ -489,11 +723,16 @@ function read_result_metadata(path::AbstractString)
             ic_seed = Int(read(file, "ic_seed")),
             episode_target = Int(read(file, "episode_target")),
             episodes_completed = Int(read(file, "episodes_completed")),
-            shared_initial_hash = read(file, "shared_initial_hash"),
-            full_initial_hash = read(file, "full_initial_hash"),
-            policy_rng_probe = read(file, "policy_rng_probe"),
-            initial_condition_probe = read(file, "initial_condition_probe"),
-            initial_condition_trace = read(file, "initial_condition_trace"),
+            shared_initial_hash = status == "complete" ?
+                read(file, "shared_initial_hash") : nothing,
+            full_initial_hash = status == "complete" ? read(file, "full_initial_hash") : nothing,
+            policy_rng_probe = status == "complete" ? read(file, "policy_rng_probe") : nothing,
+            initial_condition_probe = status == "complete" ?
+                read(file, "initial_condition_probe") : nothing,
+            initial_condition_trace = status == "complete" ?
+                read(file, "initial_condition_trace") : NamedTuple[],
+            source_hashes = status == "complete" && haskey(file, "source_hashes") ?
+                read(file, "source_hashes") : nothing,
         )
     end
 end
@@ -512,84 +751,66 @@ function validate_existing_result(metadata, protocol, replicate, config, seeds, 
         "Existing result is marked complete but contains " *
         "$(metadata.episodes_completed)/$episode_target episodes.",
     )
+    metadata.source_hashes == source_hashes(protocol) || return false
     return true
 end
 
-function check_pairing!(
-    metadata,
-    config,
-    protocol,
-    shared_hash_reference,
-    rng_probe_reference,
-    ic_probe_reference,
-    ic_trace_reference,
-    modified_half_full_hash,
+function prepare_jobs(;
+    protocol = :all,
+    results_directory::AbstractString = DEFAULT_RESULTS_DIRECTORY,
+    dry_run::Bool = false,
+    overwrite::Bool = false,
+    preview::Bool = false,
 )
-    if isnothing(shared_hash_reference)
-        shared_hash_reference = metadata.shared_initial_hash
-        rng_probe_reference = metadata.policy_rng_probe
-        ic_probe_reference = metadata.initial_condition_probe
-    else
-        metadata.shared_initial_hash == shared_hash_reference || error(
-            "Shared initial MAT parameters differ for config $(config.name).",
-        )
-        metadata.policy_rng_probe == rng_probe_reference || error(
-            "Policy RNG state differs for config $(config.name).",
-        )
-        metadata.initial_condition_probe == ic_probe_reference || error(
-            "Initial-condition probe differs for config $(config.name).",
-        )
-    end
-
-    if protocol === :varying
-        if isnothing(ic_trace_reference)
-            ic_trace_reference = metadata.initial_condition_trace
-        else
-            metadata.initial_condition_trace == ic_trace_reference || error(
-                "Varying-IC trace differs for config $(config.name).",
+    plan = load_or_create_plan(
+        results_directory;
+        preview,
+        verify_varying_trace = true,
+    )
+    result_root = dry_run ? joinpath(results_directory, "dry_run") : results_directory
+    jobs = NamedTuple[]
+    for selected_protocol in selected_protocols(protocol)
+        episode_target = dry_run ? 0 : DEFAULT_EPISODES[selected_protocol]
+        for entry in plan["entries"]
+            replicate = Int(entry.replicate)
+            seeds = (
+                run_seed = Int(entry.run_seed),
+                ic_seed = Int(entry.ic_seed),
             )
+            for config in MAT_CONFIGS
+                path = result_path(result_root, selected_protocol, replicate, config.name)
+                complete = false
+                if isfile(path) && !overwrite
+                    metadata = read_result_metadata(path)
+                    complete = validate_existing_result(
+                        metadata,
+                        selected_protocol,
+                        replicate,
+                        config,
+                        seeds,
+                        episode_target,
+                    )
+                end
+                complete && continue
+                push!(jobs, (
+                    protocol = selected_protocol,
+                    replicate,
+                    config_name = config.name,
+                    run_seed = seeds.run_seed,
+                    ic_seed = seeds.ic_seed,
+                    episode_target,
+                    path = abspath(path),
+                ))
+            end
         end
     end
-
-    if config.name === :modified_half
-        modified_half_full_hash = metadata.full_initial_hash
-    elseif config.name === :modified_full
-        metadata.full_initial_hash == modified_half_full_hash || error(
-            "modified_half and modified_full do not have identical initial networks.",
-        )
-    end
-
-    return (
-        shared_hash_reference,
-        rng_probe_reference,
-        ic_probe_reference,
-        ic_trace_reference,
-        modified_half_full_hash,
-    )
-end
-
-function acquire_worker_lock(directory::AbstractString)
-    lock_directory = joinpath(directory, ".worker.lock")
-    try
-        mkdir(lock_directory)
-    catch error_value
-        isdir(lock_directory) || rethrow(error_value)
-        error(
-            "Worker lock already exists at '$lock_directory'. " *
-            "Another worker may be active. Remove only stale locks after checking tmux.",
-        )
-    end
-    open(joinpath(lock_directory, "owner.txt"), "w") do io
-        println(io, "pid=$(getpid())")
-        println(io, "host=$(gethostname())")
-        println(io, "started_at=$(now())")
-    end
-    return lock_directory
+    return (; plan, jobs)
 end
 
 function run_worker(
     protocol_input,
     replicate::Integer;
+    config,
     episodes::Union{Nothing, Integer} = nothing,
     dry_run::Bool = false,
     overwrite::Bool = false,
@@ -603,152 +824,126 @@ function run_worker(
     replicate in REPLICATES || throw(
         ArgumentError("Replicate must be in $(first(REPLICATES)):$(last(REPLICATES))."),
     )
+    selected_config = config_for(config)
     episode_target = dry_run ? 0 : something(episodes, DEFAULT_EPISODES[protocol])
     episode_target >= 0 || throw(ArgumentError("episodes must be non-negative."))
-    seeds = seed_plan(replicate)
+    entry = find_plan_entry(results_directory, replicate)
+    seeds = (run_seed = entry.run_seed, ic_seed = entry.ic_seed)
+    planned_trace = if protocol === :varying
+        episode_target <= length(entry.varying_trace) || error(
+            "Requested $episode_target Varying episodes, but the frozen plan contains " *
+            "only $(length(entry.varying_trace)).",
+        )
+        entry.varying_trace[1:episode_target]
+    else
+        NamedTuple[]
+    end
 
     result_root = dry_run ? joinpath(results_directory, "dry_run") : results_directory
-    replicate_directory = joinpath(
-        result_root,
-        string(protocol),
-        @sprintf("replicate_%02d", replicate),
-    )
+    result_target = result_path(result_root, protocol, replicate, selected_config.name)
+    replicate_directory = dirname(result_target)
     mkpath(replicate_directory)
-    lock_directory = acquire_worker_lock(replicate_directory)
-    failures = Pair{Symbol, String}[]
+    lock_directory = acquire_lock(result_target * ".lock")
 
     try
+        if isfile(result_target) && !overwrite
+            existing = read_result_metadata(result_target)
+            if validate_existing_result(
+                existing,
+                protocol,
+                replicate,
+                selected_config,
+                seeds,
+                episode_target,
+            )
+                @printf("Skipping complete result %s\n", result_target)
+                return result_target
+            end
+        end
+
         include_run_file!(
             protocol,
             seeds.run_seed,
-            joinpath(replicate_directory, "_runfile"),
+            joinpath(replicate_directory, "_runfile_$(selected_config.name)"),
         )
 
-        shared_hash_reference = nothing
-        rng_probe_reference = nothing
-        ic_probe_reference = nothing
-        ic_trace_reference = nothing
-        modified_half_full_hash = nothing
-
-        for config in MAT_CONFIGS
-            result_path = joinpath(replicate_directory, string(config.name) * ".jld2")
-            metadata = nothing
-
-            if isfile(result_path) && !overwrite
-                existing = read_result_metadata(result_path)
-                if validate_existing_result(
-                    existing,
-                    protocol,
-                    replicate,
-                    config,
-                    seeds,
-                    episode_target,
-                )
-                    @printf("Skipping complete result %s\n", result_path)
-                    metadata = existing
-                end
-            end
-
-            if isnothing(metadata)
-                started_at = now()
-                ic_trace = NamedTuple[]
-                try
-                    @printf(
-                        "Starting %s/%02d/%s with run_seed=%d, ic_seed=%d, episodes=%d\n",
-                        protocol,
-                        replicate,
-                        config.name,
-                        seeds.run_seed,
-                        seeds.ic_seed,
-                        episode_target,
-                    )
-                    flush(stdout)
-
-                    configure_agent!(config, protocol, seeds)
-                    hashes = initial_hashes()
-                    hashes.value_chain_matches_main || error(
-                        "Separate value chain is not initialized from the main chain.",
-                    )
-                    hashes.value_chain_is_independent || error(
-                        "Separate value chain shares parameter arrays with the main chain.",
-                    )
-
-                    policy_rng_probe = rand(deepcopy(agent.policy.rng), UInt64, 4)
-                    ic_probe = initial_condition_probe(protocol)
-                    configure_episode_initializer!(protocol, ic_trace)
-
-                    progress_every = episode_target == 0 ? 0 : max(1, episode_target ÷ 20)
-                    elapsed_seconds = @elapsed Base.invokelatest(
-                        train_exact_episodes!,
-                        episode_target;
-                        progress_every,
-                    )
-
-                    atomic_save_complete(
-                        result_path;
-                        protocol,
-                        replicate,
-                        config,
-                        seeds,
-                        episode_target,
-                        elapsed_seconds,
-                        started_at,
-                        hashes,
-                        policy_rng_probe,
-                        ic_probe,
-                        ic_trace,
-                    )
-                    metadata = read_result_metadata(result_path)
-                    @printf("Completed and saved %s\n", result_path)
-                    flush(stdout)
-                catch error_value
-                    backtrace = catch_backtrace()
-                    error_message = sprint(showerror, error_value, backtrace)
-                    atomic_save_failure(
-                        result_path;
-                        protocol,
-                        replicate,
-                        config,
-                        seeds,
-                        episode_target,
-                        started_at,
-                        error_message,
-                    )
-                    push!(failures, config.name => error_message)
-                    @error "MAT stability config failed" protocol replicate config.name exception = (
-                        error_value,
-                        backtrace,
-                    )
-                    continue
-                end
-            end
-
-            (
-                shared_hash_reference,
-                rng_probe_reference,
-                ic_probe_reference,
-                ic_trace_reference,
-                modified_half_full_hash,
-            ) = check_pairing!(
-                metadata,
-                config,
+        started_at = now()
+        ic_trace = NamedTuple[]
+        try
+            @printf(
+                "Starting %s/%02d/%s with run_seed=%d, ic_seed=%d, episodes=%d\n",
                 protocol,
-                shared_hash_reference,
-                rng_probe_reference,
-                ic_probe_reference,
-                ic_trace_reference,
-                modified_half_full_hash,
+                replicate,
+                selected_config.name,
+                seeds.run_seed,
+                seeds.ic_seed,
+                episode_target,
             )
+            flush(stdout)
+
+            configure_agent!(selected_config, protocol, seeds)
+            hashes = initial_hashes()
+            hashes.value_chain_matches_main || error(
+                "Separate value chain is not initialized from the main chain.",
+            )
+            hashes.value_chain_is_independent || error(
+                "Separate value chain shares parameter arrays with the main chain.",
+            )
+
+            policy_rng_probe = rand(deepcopy(agent.policy.rng), UInt64, 4)
+            ic_probe = initial_condition_probe(protocol, entry.varying_trace)
+            configure_episode_initializer!(protocol, ic_trace, planned_trace)
+
+            progress_every = episode_target == 0 ? 0 : max(1, episode_target ÷ 20)
+            elapsed_seconds = @elapsed Base.invokelatest(
+                train_exact_episodes!,
+                episode_target;
+                progress_every,
+            )
+            protocol === :varying && ic_trace != planned_trace && error(
+                "Observed Varying-IC trace differs from the frozen plan.",
+            )
+
+            atomic_save_complete(
+                result_target;
+                protocol,
+                replicate,
+                config = selected_config,
+                seeds,
+                episode_target,
+                elapsed_seconds,
+                started_at,
+                hashes,
+                policy_rng_probe,
+                ic_probe,
+                ic_trace,
+            )
+            @printf("Completed and saved %s\n", result_target)
+            flush(stdout)
+        catch error_value
+            backtrace = catch_backtrace()
+            error_message = sprint(showerror, error_value, backtrace)
+            atomic_save_failure(
+                result_target;
+                protocol,
+                replicate,
+                config = selected_config,
+                seeds,
+                episode_target,
+                started_at,
+                error_message,
+            )
+            @error "MAT stability config failed" protocol replicate selected_config.name exception = (
+                error_value,
+                backtrace,
+            )
+            rethrow(error_value)
         end
     finally
         rm(lock_directory; recursive = true, force = true)
     end
 
-    isempty(failures) || error(
-        "Worker finished with failed configs: " *
-        join(["$(name): $(message)" for (name, message) in failures], "\n"),
-    )
-    return replicate_directory
+    return result_target
 end
 
 end
