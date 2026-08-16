@@ -1271,7 +1271,15 @@ function run_test_protocol_worker(;
                     score = Float64(cached["score"]),
                 )
             else
-                rewards = deterministic_test_rollout(protocol, case.choice)
+                # The protocol Run-File is included dynamically above and defines
+                # prepare_action/reward/environment methods in a newer world age.
+                # Enter the complete rollout through invokelatest, just as the
+                # training worker already does for train_one_episode!.
+                rewards = Base.invokelatest(
+                    deterministic_test_rollout,
+                    protocol,
+                    case.choice,
+                )
                 score = sum(rewards)
                 atomic_jldsave(
                     cache_path;
