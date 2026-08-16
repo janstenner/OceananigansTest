@@ -104,17 +104,15 @@ start_policy = ZeroPolicy(actionspace)
 update_freq = 400
 
 
-learning_rate = 3e-4
+learning_rate = 2e-4
 n_epochs = 4
 n_microbatches = 10
 logσ_is_network = false
 max_σ = 10000.0f0
-entropy_loss_weight = 0.0#1
-actor_loss_weight = 100.0
-critic_loss_weight = 0.003
+entropy_loss_weight = 0.0
 adaptive_weights = false
 clip_grad = 1.0
-target_kl = Inf
+target_kl = 0.1
 clip1 = false
 start_logσ = -0.8
 clip_range = 0.2f0
@@ -126,7 +124,7 @@ dim_model = 32
 head_num = 2
 head_dim = 16
 ffn_dim = 32
-drop_out = 0.00#1
+drop_out = 0.00
 
 betas = (0.9, 0.999)
 
@@ -543,8 +541,6 @@ function initialize_setup(;use_random_init = false)
                 logσ_is_network = logσ_is_network,
                 max_σ = max_σ,
                 entropy_loss_weight = entropy_loss_weight,
-                actor_loss_weight = actor_loss_weight,
-                critic_loss_weight = critic_loss_weight,
                 adaptive_weights = adaptive_weights,
                 clip_grad = clip_grad,
                 target_kl = target_kl,
