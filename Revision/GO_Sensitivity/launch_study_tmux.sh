@@ -8,13 +8,10 @@ analysis_worker="${script_directory}/analyze_study_worker.jl"
 manifest_worker="${script_directory}/prepare_study_manifest.jl"
 results_directory="${P6_STUDY_RESULTS_DIR:-${script_directory}/results/study}"
 julia_binary="${JULIA_BIN:-julia}"
-systemd_inhibit_binary="${SYSTEMD_INHIBIT_BIN:-systemd-inhibit}"
-systemd_inhibit_what="${SYSTEMD_INHIBIT_WHAT:-sleep:idle:shutdown}"
 
 preview=false
 analysis_only=false
 parallel_test=false
-use_systemd_inhibit=true
 protocol_selection=all
 submitted=0
 skipped=0
@@ -35,7 +32,6 @@ Options:
   --analysis-only        Start only the selected analysis/wait session(s).
   --parallel-test        Run every terminal test episode in its own process.
   --results-dir PATH     Override the result root.
-  --no-systemd-inhibit   Do not wrap processes in systemd-inhibit.
   --help                 Show this help.
 
 The analysis workers poll every 60 seconds for at most 14 days and terminate
@@ -48,7 +44,6 @@ while (($#)); do
         --preview) preview=true ;;
         --analysis-only) analysis_only=true ;;
         --parallel-test) parallel_test=true ;;
-        --no-systemd-inhibit|--no-inhibit) use_systemd_inhibit=false ;;
         --protocol)
             (($# >= 2)) || { echo "Missing value after --protocol." >&2; exit 2; }
             protocol_selection="$2"
@@ -75,12 +70,6 @@ esac
 if [[ "${preview}" == false ]]; then
     command -v tmux >/dev/null 2>&1 || { echo "tmux was not found in PATH." >&2; exit 1; }
     command -v "${julia_binary}" >/dev/null 2>&1 || { echo "Julia executable '${julia_binary}' was not found." >&2; exit 1; }
-    if [[ "${use_systemd_inhibit}" == true ]]; then
-        command -v "${systemd_inhibit_binary}" >/dev/null 2>&1 || {
-            echo "systemd-inhibit was not found; use --no-systemd-inhibit only when intentional." >&2
-            exit 1
-        }
-    fi
 fi
 
 launch_id="$(date -u +%Y%m%dT%H%M%SZ)_$$"
@@ -115,16 +104,6 @@ start_session() {
 
     planned=$((planned + 1))
     [[ -n "${first_session}" ]] || first_session="${session}"
-    if [[ "${use_systemd_inhibit}" == true ]]; then
-        command_parts=(
-            "${systemd_inhibit_binary}"
-            "--what=${systemd_inhibit_what}"
-            "--who=Oceananigans ${session}"
-            "--why=Paper revision Package 6 study worker"
-            "--mode=block"
-            "${command_parts[@]}"
-        )
-    fi
     printf -v worker_command "%q " "${command_parts[@]}"
     if [[ "${preview}" == true ]]; then
         echo "Would start ${session}: ${worker_command}"
@@ -193,7 +172,6 @@ mv "${job_manifest}.tmp" "${job_manifest}"
     echo "protocol=${protocol_selection}"
     echo "analysis_only=${analysis_only}"
     echo "parallel_test=${parallel_test}"
-    echo "systemd_inhibit=${use_systemd_inhibit}"
     echo "planned_sessions=${planned}"
     echo "submitted_sessions=${submitted}"
     echo "skipped_active_sessions=${skipped}"

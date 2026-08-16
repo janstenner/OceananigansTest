@@ -91,8 +91,7 @@ ihre Fronten unabhängig davon ausdrücklich auf
 - `--protocol all|fixed|varying`;
 - `--preview`;
 - `--analysis-only`;
-- `--results-dir PATH`;
-- `--no-systemd-inhibit`.
+- `--results-dir PATH`.
 
 Der Standardstart erzeugt 36 Trainingssessions und gleichzeitig zwei
 Analyse-/Wartesessions. Ein Einzelprotokoll erzeugt 18 Trainingssessions und

@@ -127,9 +127,9 @@ Die Produktionsausführung besteht aus 21 parallelen tmux-Sessions:
   Trainingscheckpoints wartet und anschließend die beiden Gewinner auf dem
   jeweiligen Testset auswertet.
 
-Jede Session schreibt ein eigenes Log, besitzt einen eindeutigen Lock, läuft
-standardmäßig unter `systemd-inhibit`, schließt sich nach Prozessende selbst
-und kann anhand atomarer Status- und Resume-Dateien neu gestartet werden.
+Jede Session schreibt ein eigenes Log, besitzt einen eindeutigen Lock, schließt
+sich nach Prozessende selbst und kann anhand atomarer Status- und Resume-Dateien
+neu gestartet werden.
 
 ## Testworker: Gewinner auf dem Testset
 

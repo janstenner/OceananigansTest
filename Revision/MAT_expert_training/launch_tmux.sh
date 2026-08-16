@@ -4,13 +4,10 @@ set -euo pipefail
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd "${script_directory}/../.." && pwd)"
 julia_binary="${JULIA_BIN:-julia}"
-systemd_inhibit_binary="${SYSTEMD_INHIBIT_BIN:-systemd-inhibit}"
-systemd_inhibit_what="${SYSTEMD_INHIBIT_WHAT:-sleep:idle:shutdown}"
 results_directory="${MAT_EXPERT_RESULTS_DIR:-${script_directory}/results}"
 source_results_directory="${MAT_IPPO_RESULTS_DIR:-${script_directory}/../MAT_IPPO_Comparison/results}"
 distillation_experts_directory="${DISTILLATION_EXPERTS_DIR:-${script_directory}/../Expert_Apprentice_Distillation/experts}"
 preview=false
-use_systemd_inhibit=true
 
 usage() {
     cat <<'EOF'
@@ -32,7 +29,6 @@ Options:
   --distillation-experts-dir PATH
                               Override tracked Distillation expert root.
   --preview                   Validate and print commands; start nothing.
-  --no-systemd-inhibit        Disable inhibition for local/debug runs.
   --help                      Show this message.
 
 Environment:
@@ -40,8 +36,6 @@ Environment:
   MAT_EXPERT_RESULTS_DIR     Expert-training result root
   MAT_IPPO_RESULTS_DIR       MAT-IPPO Package-4 result root
   DISTILLATION_EXPERTS_DIR   Tracked Distillation expert root
-  SYSTEMD_INHIBIT_BIN       systemd-inhibit executable
-  SYSTEMD_INHIBIT_WHAT      Locks to request (default: sleep:idle:shutdown)
 EOF
 }
 
@@ -61,10 +55,6 @@ while (($#)); do
             ;;
         --preview)
             preview=true
-            shift
-            ;;
-        --no-systemd-inhibit|--no-inhibit)
-            use_systemd_inhibit=false
             shift
             ;;
         --help)
@@ -100,13 +90,6 @@ if [[ "${preview}" == false ]]; then
         echo "tmux was not found in PATH." >&2
         exit 1
     }
-    if [[ "${use_systemd_inhibit}" == true ]]; then
-        command -v "${systemd_inhibit_binary}" >/dev/null 2>&1 || {
-            echo "systemd-inhibit executable '${systemd_inhibit_binary}' was not found." >&2
-            echo "Use --no-systemd-inhibit only if inhibition is intentionally unnecessary." >&2
-            exit 1
-        }
-    fi
 fi
 
 declare -a fixed_run_ids=(
@@ -140,21 +123,8 @@ if [[ "${preview}" == false ]]; then
     printf 'session\trole\tprotocol\trank\trun_id\tlog\n' > "${launch_directory}/jobs.tsv"
 fi
 
-build_wrapped_command() {
-    local role="$1"
-    local session="$2"
-    shift 2
+build_command() {
     local -a command_parts=("$@")
-    if [[ "${use_systemd_inhibit}" == true ]]; then
-        command_parts=(
-            "${systemd_inhibit_binary}"
-            "--what=${systemd_inhibit_what}"
-            "--who=Oceananigans MAT expert ${session}"
-            "--why=Paper revision MAT expert training and test worker"
-            "--mode=block"
-            "${command_parts[@]}"
-        )
-    fi
     printf '%q ' "${command_parts[@]}"
 }
 
@@ -167,7 +137,7 @@ start_session() {
     shift 5
     local logfile="${launch_directory}/${session}.log"
     local command
-    command="$(build_wrapped_command "${role}" "${session}" "$@")"
+    command="$(build_command "$@")"
 
     if [[ "${preview}" == true ]]; then
         echo "Would start ${session}: ${command}"

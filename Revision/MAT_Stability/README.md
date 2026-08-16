@@ -78,10 +78,6 @@ bash Revision/MAT_Stability/launch_tmux.sh
 Each worker runs its three configurations in sequence. Fixed IC uses exactly
 2,000 episodes per configuration; Varying IC uses exactly 4,000. The sessions
 are detached and therefore continue after the SSH connection is closed.
-Each Julia worker is started through `systemd-inhibit` and holds a blocking
-`sleep:idle:shutdown` inhibitor for exactly its process lifetime. Inspect the
-active locks with `systemd-inhibit --list`. For local systems without systemd,
-`--no-systemd-inhibit` disables the wrapper explicitly.
 
 Useful commands:
 
@@ -95,7 +91,6 @@ Set `JULIA_BIN=/path/to/julia` if `julia` is not on `PATH`. Set
 `MAT_STABILITY_RESULTS_DIR=/path/to/results` to store the result tree
 elsewhere. `--dry-run-workers` launches zero-episode workers for the selected
 protocols; `--overwrite` explicitly replaces matching completed results.
-`SYSTEMD_INHIBIT_WHAT` may override the default inhibited operations.
 
 Workers create a lock per protocol/replicate. A restart skips complete,
 matching result files and resumes at the first missing or failed

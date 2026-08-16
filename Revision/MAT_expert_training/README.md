@@ -45,9 +45,8 @@ pmat_varying_01 ... pmat_varying_10
 pmat_test
 ```
 
-Every process uses `systemd-inhibit` by default and each session closes after
-its process finishes. Use `--no-systemd-inhibit` only for an intentional local
-or debug run. `JULIA_BIN`, `MAT_EXPERT_RESULTS_DIR`, and
+Each session closes after its process finishes. `JULIA_BIN`,
+`MAT_EXPERT_RESULTS_DIR`, and
 `MAT_IPPO_RESULTS_DIR` override the executable and result roots.
 `DISTILLATION_EXPERTS_DIR` overrides the tracked expert destination.
 

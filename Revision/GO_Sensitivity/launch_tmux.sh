@@ -6,11 +6,8 @@ project_root="$(cd "${script_directory}/../.." && pwd)"
 worker="${script_directory}/run_strength_calibration_worker.jl"
 results_directory="${P6_CALIBRATION_RESULTS_DIR:-${script_directory}/results/strength_calibration}"
 julia_binary="${JULIA_BIN:-julia}"
-systemd_inhibit_binary="${SYSTEMD_INHIBIT_BIN:-systemd-inhibit}"
-systemd_inhibit_what="${SYSTEMD_INHIBIT_WHAT:-sleep:idle:shutdown}"
 
 preview=false
-use_systemd_inhibit=true
 protocol_selection=all
 grouping_selection=all
 submitted=0
@@ -35,16 +32,11 @@ Options:
   --protocol VALUE   Select all, fixed, or varying workers (default: all).
   --grouping VALUE   Select all, grouped, or separate workers (default: all).
   --preview          Print the 22 planned sessions without starting them.
-  --no-systemd-inhibit
-                     Start workers without a systemd inhibitor (local/debug only).
   --help             Show this message.
 
 Environment:
   JULIA_BIN                   Julia executable (default: julia)
   P6_CALIBRATION_RESULTS_DIR  Strength-calibration result root
-  SYSTEMD_INHIBIT_BIN         systemd-inhibit executable (default: systemd-inhibit)
-  SYSTEMD_INHIBIT_WHAT        Locks to request (default: sleep:idle:shutdown)
-
 Every worker uses regression learning rate 2e-4. Fixed workers run for 35,000
 updates and Varying workers for 50,000 updates. Complete runs are skipped and
 interrupted runs resume from their latest saved checkpoint.
@@ -55,9 +47,6 @@ while (($#)); do
     case "$1" in
         --preview)
             preview=true
-            ;;
-        --no-systemd-inhibit|--no-inhibit)
-            use_systemd_inhibit=false
             ;;
         --protocol)
             (($# >= 2)) || {
@@ -117,13 +106,6 @@ if [[ "${preview}" == false ]]; then
         echo "Julia executable '${julia_binary}' was not found." >&2
         exit 1
     }
-    if [[ "${use_systemd_inhibit}" == true ]]; then
-        command -v "${systemd_inhibit_binary}" >/dev/null 2>&1 || {
-            echo "systemd-inhibit executable '${systemd_inhibit_binary}' was not found." >&2
-            echo "Use --no-systemd-inhibit only if inhibition is intentionally unnecessary." >&2
-            exit 1
-        }
-    fi
 fi
 
 log_directory="${results_directory}/logs"
@@ -164,17 +146,6 @@ start_worker() {
         "--strength" "${strength}"
         "--results-dir" "${results_directory}"
     )
-    if [[ "${use_systemd_inhibit}" == true ]]; then
-        command_parts=(
-            "${systemd_inhibit_binary}"
-            "--what=${systemd_inhibit_what}"
-            "--who=Oceananigans P6 ${session}"
-            "--why=Paper revision Package 6 strength-calibration worker"
-            "--mode=block"
-            "${command_parts[@]}"
-        )
-    fi
-
     printf -v worker_command "%q " "${command_parts[@]}"
     if [[ "${preview}" == true ]]; then
         echo "Would start ${session}: ${worker_command}"

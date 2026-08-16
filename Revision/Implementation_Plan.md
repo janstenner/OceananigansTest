@@ -187,7 +187,7 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     und zählt nicht als wissenschaftlicher Paket-6-Sweep.
   - `GO_Sensitivity/launch_tmux.sh` startet standardmäßig alle 22
     Strength-Fälle gleichzeitig als je eine selbstbeendende tmux-Session mit
-    eigenem Log und `systemd-inhibit`. Abgeschlossene Runs werden übersprungen,
+    eigenem Log. Abgeschlossene Runs werden übersprungen,
     unterbrochene Runs aus `resume/latest.jld2` fortgesetzt.
   - Ein eigener leichtgewichtiger Kalibrierungs-Inspector erzeugt für alle vier
     Protokoll-/Gruppierungskombinationen PlotlyJS-Pareto-Plots über aktive
@@ -232,8 +232,7 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Lernrate `2e-4` und Validation alle 25 Updates ab Update 0.
   - `launch_study_tmux.sh` startet standardmäßig 36 Trainings- und zwei
     Analyse-/Wartesessions gleichzeitig. Er unterstützt Protokollauswahl,
-    Preview, Analysis-only, Result-Root und optionales Abschalten von
-    `systemd-inhibit`; Launchlogs und maschinenlesbare Manifeste liegen unter
+    Preview, Analysis-only und Result-Root; Launchlogs und maschinenlesbare Manifeste liegen unter
     `results/study/launches/<launch-id>/`.
   - Der protokollspezifische Analyseworker auditiert jeweils 15 GO- und drei
     GR-Runs, berechnet Run-/Strength-/globale Fronten, Attainment, Hitting

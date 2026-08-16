@@ -118,18 +118,15 @@ the four Varying test workers separately. This avoids needlessly checking all
 ```bash
 bash Revision/Expert_Apprentice_Distillation/launch_tmux.sh \
   --protocol varying --split validation --max-workers 2 \
-  --varying-expert-path Revision/Expert_Apprentice_Distillation/experts/varying/agent.jld2 \
-  --no-systemd-inhibit
+  --varying-expert-path Revision/Expert_Apprentice_Distillation/experts/varying/agent.jld2
 
 bash Revision/Expert_Apprentice_Distillation/launch_tmux.sh \
   --protocol varying --split test --max-workers 4 \
-  --varying-expert-path Revision/Expert_Apprentice_Distillation/experts/varying/agent.jld2 \
-  --no-systemd-inhibit
+  --varying-expert-path Revision/Expert_Apprentice_Distillation/experts/varying/agent.jld2
 ```
 
-Omit `--no-systemd-inhibit` on a server where the configured user is allowed
-to acquire the inhibitor. Completed matching shards are skipped, so neither
-command needs `--overwrite` for a restart.
+Completed matching shards are skipped, so neither command needs `--overwrite`
+for a restart.
 
 Generate the Fixed-IC dataset:
 

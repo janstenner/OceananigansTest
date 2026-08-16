@@ -4,8 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 JULIA_BIN="${JULIA_BIN:-julia}"
-SYSTEMD_INHIBIT_BIN="${SYSTEMD_INHIBIT_BIN:-systemd-inhibit}"
-SYSTEMD_INHIBIT_WHAT="${SYSTEMD_INHIBIT_WHAT:-sleep:idle:shutdown}"
 WORKER_DIR="${DISTILLATION_WORKER_DIRECTORY:-$SCRIPT_DIR/worker_results}"
 PROTOCOL="varying"
 SPLIT="train"
@@ -16,7 +14,6 @@ RUN_SEED=600600
 PREVIEW=false
 OVERWRITE=false
 ALLOW_FRESH_EXPERT=false
-USE_SYSTEMD_INHIBIT=true
 
 usage() {
     cat <<'EOF'
@@ -37,7 +34,6 @@ Options:
   --preview                          Print jobs and commands; start nothing.
   --overwrite                        Regenerate matching worker files.
   --allow-fresh-expert               Smoke tests only; no production expert.
-  --no-systemd-inhibit               Local/debug use only.
   --help                             Show this message.
 EOF
 }
@@ -54,7 +50,6 @@ while (($#)); do
         --preview) PREVIEW=true; shift ;;
         --overwrite) OVERWRITE=true; shift ;;
         --allow-fresh-expert) ALLOW_FRESH_EXPERT=true; shift ;;
-        --no-systemd-inhibit|--no-inhibit) USE_SYSTEMD_INHIBIT=false; shift ;;
         --help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -75,13 +70,6 @@ done
 command -v "$JULIA_BIN" >/dev/null || {
     echo "Julia executable not found: $JULIA_BIN" >&2; exit 1;
 }
-if [[ "$USE_SYSTEMD_INHIBIT" == true && "$PREVIEW" == false ]]; then
-    command -v "$SYSTEMD_INHIBIT_BIN" >/dev/null || {
-        echo "systemd-inhibit executable not found: $SYSTEMD_INHIBIT_BIN" >&2
-        echo "Use --no-systemd-inhibit only when inhibition is intentionally unnecessary." >&2
-        exit 1
-    }
-fi
 
 if [[ "$PREVIEW" == true ]]; then
     MANIFEST="$(mktemp)"
@@ -129,16 +117,6 @@ worker_command() {
     [[ -n "$expert_path" ]] && command_parts+=(--expert-path "$expert_path")
     [[ "$OVERWRITE" == true ]] && command_parts+=(--overwrite)
     [[ "$ALLOW_FRESH_EXPERT" == true ]] && command_parts+=(--allow-fresh-expert)
-    if [[ "$USE_SYSTEMD_INHIBIT" == true ]]; then
-        command_parts=(
-            "$SYSTEMD_INHIBIT_BIN"
-            "--what=$SYSTEMD_INHIBIT_WHAT"
-            "--who=Oceananigans distillation $protocol $split $base_seed $mirror"
-            "--why=RBC expert-apprentice distillation corpus worker"
-            "--mode=block"
-            "${command_parts[@]}"
-        )
-    fi
     printf -v command '%q ' "${command_parts[@]}"
     printf '%s' "$command"
 }

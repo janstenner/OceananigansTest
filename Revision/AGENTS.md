@@ -81,8 +81,7 @@ Sparse Sensing paper.
 - `GO_Sensitivity/launch_study_tmux.sh`: Production launcher for 36 training
   sessions plus two concurrent analysis/wait sessions. It writes per-launch
   logs and machine-readable manifests and supports protocol restriction,
-  preview, analysis-only restarts, result-root override, and optional
-  systemd-inhibit suppression.
+  preview, analysis-only restarts, and result-root override.
 - `GO_Sensitivity/analyze_study_worker.jl`, `run_study_test_worker.jl`, and
   `run_study_test_episode_worker.jl`: Per-protocol completion audit, full offline
   stability analysis, compact/static and interactive plots, immutable

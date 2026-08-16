@@ -36,9 +36,7 @@ bash Revision/GO_Sensitivity/launch_study_tmux.sh --analysis-only --parallel-tes
 bash Revision/GO_Sensitivity/launch_study_tmux.sh --results-dir /path/to/results/study
 ```
 
-`systemd-inhibit` is enabled by default, matching the other server studies.
-Use `--no-systemd-inhibit` only when the server environment intentionally does
-not need or provide it. Every tmux session closes when its process exits.
+Every tmux session closes when its process exits.
 
 Short results live at paths such as
 `results/study/fixed/go/s01/r01` and `results/study/varying/gr/r03`.
@@ -119,9 +117,8 @@ for example `p6_cal_fixed_gc_s0p003`. Each session writes its own log below
 `results/strength_calibration/logs/` and closes automatically when its Julia
 worker exits. Active sessions with the same name are not duplicated. A
 completed run is skipped, while an interrupted run resumes from
-`resume/latest.jld2`. As in the other server studies, `systemd-inhibit` is used
-by default; `--no-systemd-inhibit` is available for intentional local/debug
-use. `--protocol` and `--grouping` can restrict a restart to a subset.
+`resume/latest.jld2`. `--protocol` and `--grouping` can restrict a restart to a
+subset.
 
 The result root can be overridden with `P6_CALIBRATION_RESULTS_DIR`. The local
 plain-Julia fallback remains available and processes the same 22 jobs
