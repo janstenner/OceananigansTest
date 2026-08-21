@@ -33,8 +33,9 @@ Sparse Sensing paper.
   validation, storage, and collection instructions for package 4.
 - `MAT_expert_training/`: Validation-ranked all-ten MAT continuation for
   Fixed and Varying IC, protocol-wide episode-boundary stop coordination,
-  atomic resume/final and protocol-wide best-so-far checkpoints, explicit
-  best-so-far manual cutoff, persistent 21-session tmux launch,
+  atomic resume/final and protocol-wide full plus compact agent-only
+  best-so-far checkpoints, explicit best-so-far manual cutoff, persistent
+  21-session tmux launch,
   selected-candidate-only test-set reward/score evaluation, and compact publication
   into the tracked Expert-Apprentice Distillation checkpoints.
 - `MAT_expert_training/README.md` and `PLAN.md`: Launch, monitoring, fixed

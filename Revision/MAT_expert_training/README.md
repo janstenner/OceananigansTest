@@ -22,15 +22,21 @@ protocol-wide checkpoint:
 
 ```text
 results/fixed/best_so_far.jld2
+results/fixed/expert.jld2
 results/varying/best_so_far.jld2
+results/varying/expert.jld2
 ```
 
 For Fixed IC it is replaced only by a higher latest completed episode reward.
 For Varying IC it is replaced only by a higher mean over the latest 100
 completed episode rewards. The checkpoint contains the complete resumable
-agent, histories, seeds, continuation trace, metric, and provenance. The source
-states are considered at worker startup, so a usable global best exists before
-the first continuation episode has finished.
+agent, histories, seeds, continuation trace, metric, and provenance. Alongside
+it, `expert.jld2` is updated from a separately loaded copy of the same agent. It
+contains only the `agent` key and has an empty trajectory whose backing buffers
+have capacity one, exactly like the final threshold expert exports. The live
+training agent is never compacted. The source states are considered at worker
+startup, so both usable files exist before the first continuation episode has
+finished.
 
 ## Preview and launch
 

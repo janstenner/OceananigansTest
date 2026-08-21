@@ -17,7 +17,7 @@ export CANDIDATES, DEFAULT_RESULTS_DIRECTORY, DEFAULT_SOURCE_RESULTS_DIRECTORY,
        FIXED_THRESHOLD, VARYING_THRESHOLD, freeze_selection_manifest!,
        run_training_worker, run_test_protocol_worker, candidate_ready,
        protocol_ready_for_test, test_complete, source_checkpoint_path,
-       best_so_far_checkpoint_path, finalize_best_so_far!,
+       best_so_far_checkpoint_path, best_so_far_expert_path, finalize_best_so_far!,
        publish_distillation_experts!, experts_published
 
 const SCHEMA_VERSION = 2
@@ -359,6 +359,12 @@ best_so_far_checkpoint_path(results_directory, protocol) = joinpath(
     "best_so_far.jld2",
 )
 
+best_so_far_expert_path(results_directory, protocol) = joinpath(
+    results_directory,
+    string(normalize_protocol(protocol)),
+    "expert.jld2",
+)
+
 manual_candidate_checkpoint_path(results_directory, protocol) = joinpath(
     results_directory,
     string(normalize_protocol(protocol)),
@@ -666,6 +672,7 @@ function save_best_so_far!(candidate, results_directory, parent_path, parent_sha
     protocol_directory = joinpath(results_directory, string(candidate.protocol))
     mkpath(protocol_directory)
     checkpoint_path = best_so_far_checkpoint_path(results_directory, candidate.protocol)
+    compact_expert_path = best_so_far_expert_path(results_directory, candidate.protocol)
     lock_path = joinpath(protocol_directory, ".best_so_far.lock")
     return with_lock(lock_path; wait_seconds = BEST_LOCK_WAIT_SECONDS) do
         if isfile(checkpoint_path)
@@ -678,11 +685,16 @@ function save_best_so_far!(candidate, results_directory, parent_path, parent_sha
                 )
                 Float64(read(file, "criterion_value"))
             end
-            metric_value > existing || return false
+            if metric_value <= existing
+                compact_expert_checkpoint_valid(compact_expert_path) ||
+                    save_compact_expert_from_checkpoint!(checkpoint_path, compact_expert_path)
+                return false
+            end
         end
 
-        atomic_jldsave(
-            checkpoint_path;
+        atomic_best_so_far_save(
+            checkpoint_path,
+            compact_expert_path;
             schema_version = SCHEMA_VERSION,
             status = "best_so_far",
             protocol = candidate.protocol,
@@ -1194,6 +1206,55 @@ function validate_agent_only_checkpoint(path)
     saved_agent = JLD2.load(path, "agent")
     validate_compact_agent(saved_agent)
     return true
+end
+
+function compact_expert_checkpoint_valid(path)
+    isfile(path) || return false
+    return try
+        validate_agent_only_checkpoint(path)
+    catch
+        false
+    end
+end
+
+function save_compact_expert_from_checkpoint!(checkpoint_path, compact_expert_path)
+    saved_agent = JLD2.load(checkpoint_path, "agent")
+    compact_agent_trajectory!(saved_agent)
+    atomic_jldsave(compact_expert_path; agent = saved_agent)
+    validate_agent_only_checkpoint(compact_expert_path)
+    return compact_expert_path
+end
+
+function atomic_best_so_far_save(checkpoint_path, compact_expert_path; values...)
+    mkpath(dirname(checkpoint_path))
+    mkpath(dirname(compact_expert_path))
+    token = "$(getpid()).$(time_ns()).$(uuid4())"
+    checkpoint_temporary = joinpath(
+        dirname(checkpoint_path),
+        ".$(basename(checkpoint_path)).$token.tmp",
+    )
+    expert_temporary = joinpath(
+        dirname(compact_expert_path),
+        ".$(basename(compact_expert_path)).$token.tmp",
+    )
+    try
+        JLD2.jldsave(checkpoint_temporary; values...)
+        saved_agent = JLD2.load(checkpoint_temporary, "agent")
+        compact_agent_trajectory!(saved_agent)
+        JLD2.jldsave(expert_temporary; agent = saved_agent)
+        validate_agent_only_checkpoint(expert_temporary)
+
+        # The metadata-free expert is made visible first. The authoritative
+        # best-so-far checkpoint advances only after its matching compact copy
+        # has been written successfully.
+        mv(expert_temporary, compact_expert_path; force = true)
+        mv(checkpoint_temporary, checkpoint_path; force = true)
+    finally
+        isfile(expert_temporary) && rm(expert_temporary; force = true)
+        isfile(checkpoint_temporary) && rm(checkpoint_temporary; force = true)
+    end
+    validate_agent_only_checkpoint(compact_expert_path)
+    return checkpoint_path
 end
 
 function experts_published(

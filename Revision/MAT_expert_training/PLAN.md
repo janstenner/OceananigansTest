@@ -206,6 +206,10 @@ gelesen und niemals überschrieben.
 - `results/<protocol>/best_so_far.jld2` ist ein vollständiger, atomar
   ersetzter Agentcheckpoint und bleibt deshalb auch bei Nichterreichen des
   Thresholds nutzbar.
+- Parallel dazu wird `results/<protocol>/expert.jld2` aus einer separaten
+  Agentkopie erzeugt. Die Datei enthält ausschließlich `agent`; dessen
+  Trajectory ist wie beim finalen Expert-Export leer und auf Pufferkapazität
+  eins verkleinert. Der aktive Trainingsagent bleibt unverändert.
 - Der Gewinner veröffentlicht atomar ein protokollweites Stop-Signal. Andere
   Worker brechen keine laufende Episode ab. Sie beenden diese Episode,
   speichern Resume- und finalen Checkpoint und stoppen anschließend.
@@ -269,6 +273,9 @@ duplizierte Workerimplementierungen abgebildet.
 - Solange noch kein Gewinner existiert, entspricht jeder protokollweite
   `best_so_far.jld2` dem höchsten bisher vollständig beobachteten Stopwert über
   alle zehn Worker; ein manueller Cutoff friert genau diesen Agentzustand ein.
+- Zu jedem `best_so_far.jld2` existiert ein inhaltlich passender
+  `expert.jld2`, der nur den kompaktierten Agenten mit leerer Trajectory
+  enthält.
 - Kein Worker wird mitten in einer Episode abgebrochen; alle zehn finalen
   Checkpoints pro Protokoll liegen vor dem Teststart vor.
 - Der Testworker erzeugt Rewardkurven und Scores des Fixed-Gewinners auf der
