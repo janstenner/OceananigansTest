@@ -57,7 +57,7 @@ function main(arguments)
     deadline = time() + 3600 * Float64(options["max_wait_hours"])
     pending = Set((:fixed, :varying))
 
-    println("Test worker waiting for Fixed and Varying expert candidates.")
+    println("Test worker waiting for Fixed and Varying expert selections.")
     flush(stdout)
     while !isempty(pending)
         for protocol in collect(pending)
@@ -66,7 +66,7 @@ function main(arguments)
                 delete!(pending, protocol)
             elseif MATExpertTraining.protocol_ready_for_test(results_directory, protocol)
                 println(
-                    "[$(now())] $protocol winner and all ten final checkpoints are ready; " *
+                    "[$(now())] $protocol selection and all ten final checkpoints are ready; " *
                     "starting test-set evaluation.",
                 )
                 flush(stdout)

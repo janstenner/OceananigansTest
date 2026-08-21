@@ -1,6 +1,6 @@
 # MAT Expert Training — Versuchs- und Implementierungsplan
 
-Stand: 2026-08-13
+Stand: 2026-08-21
 
 ## Status
 
@@ -40,31 +40,31 @@ Protokoll. Höhere, also weniger negative, Validation-Scores sind besser.
 
 | Rang | Run-ID | Validation-Score | Run-Seed | IC-Seed | Herkunft |
 |---:|---|---:|---:|---:|---|
-| 1 | `seed_ce0b5b582dda8eff` | -588.662153945814 | 686791604 | 493568598 | `imported_package3` |
-| 2 | `seed_1f82af6b2a587ef6` | -590.433882645501 | 1241319044 | 83126739 | `imported_package3` |
-| 3 | `seed_a0c258998e2632fd` | -592.4416938887673 | 740592503 | 1545505641 | `generated` |
-| 4 | `seed_41296dceb8db78ce` | -593.5512835444865 | 874617006 | 579508289 | `generated` |
-| 5 | `seed_500415d5315402cd` | -594.1152706696137 | 633980338 | 386963254 | `generated` |
-| 6 | `seed_b983871a14d50ecb` | -594.4241241430935 | 530442171 | 122357054 | `generated` |
-| 7 | `seed_e72249f3ea1fa410` | -600.5881163654836 | 1422047759 | 627765402 | `imported_package3` |
-| 8 | `seed_f6984b8779f1349c` | -601.1631889210348 | 1863733649 | 973985366 | `generated` |
-| 9 | `seed_3a2d3a2f3341b412` | -615.0248757752528 | 319470045 | 1788533232 | `imported_package3` |
-| 10 | `seed_92b79c49251eb7a2` | -703.1870046063658 | 1987317423 | 60237239 | `imported_package3` |
+| 1 | `seed_dfe17c7e95fcbb6d` | -590.9383601579968 | 1926005828 | 1313070640 | `generated` |
+| 2 | `seed_92b79c49251eb7a2` | -593.0080725637902 | 1987317423 | 60237239 | `imported_package3` |
+| 3 | `seed_14a5d7fe05cff1de` | -593.6025872180584 | 1838755672 | 181983109 | `generated` |
+| 4 | `seed_1f82af6b2a587ef6` | -594.9301747976292 | 1241319044 | 83126739 | `imported_package3` |
+| 5 | `seed_7ebdabd4b2738e12` | -597.169321125308 | 850985002 | 1210719576 | `generated` |
+| 6 | `seed_e72249f3ea1fa410` | -598.6395111651227 | 1422047759 | 627765402 | `imported_package3` |
+| 7 | `seed_5954219d6cc69d5c` | -600.2644632664014 | 459291457 | 409251705 | `generated` |
+| 8 | `seed_ce0b5b582dda8eff` | -602.7203153676935 | 686791604 | 493568598 | `imported_package3` |
+| 9 | `seed_4c43a7202fb90fbe` | -607.7752318311447 | 1301152156 | 512477356 | `generated` |
+| 10 | `seed_3a2d3a2f3341b412` | -609.483440542703 | 319470045 | 1788533232 | `imported_package3` |
 
 ### Varying IC
 
 | Rang | Run-ID | Validation-Score | Run-Seed | IC-Seed | Herkunft |
 |---:|---|---:|---:|---:|---|
-| 1 | `seed_92b79c49251eb7a2` | -612.4201562246841 | 1987317423 | 60237239 | `imported_package3` |
-| 2 | `seed_a0c258998e2632fd` | -617.5392566808855 | 740592503 | 1545505641 | `generated` |
-| 3 | `seed_b983871a14d50ecb` | -619.575374499492 | 530442171 | 122357054 | `generated` |
-| 4 | `seed_1f82af6b2a587ef6` | -619.9315436427753 | 1241319044 | 83126739 | `imported_package3` |
-| 5 | `seed_e72249f3ea1fa410` | -620.4323211994139 | 1422047759 | 627765402 | `imported_package3` |
-| 6 | `seed_ce0b5b582dda8eff` | -621.221352270041 | 686791604 | 493568598 | `imported_package3` |
-| 7 | `seed_3a2d3a2f3341b412` | -635.0695292787293 | 319470045 | 1788533232 | `imported_package3` |
-| 8 | `seed_500415d5315402cd` | -651.7820854079739 | 633980338 | 386963254 | `generated` |
-| 9 | `seed_41296dceb8db78ce` | -654.0193289454812 | 874617006 | 579508289 | `generated` |
-| 10 | `seed_f6984b8779f1349c` | -715.0087688479787 | 1863733649 | 973985366 | `generated` |
+| 1 | `seed_5954219d6cc69d5c` | -619.8056356260331 | 459291457 | 409251705 | `generated` |
+| 2 | `seed_e72249f3ea1fa410` | -621.5046799648103 | 1422047759 | 627765402 | `imported_package3` |
+| 3 | `seed_14a5d7fe05cff1de` | -623.2918953664753 | 1838755672 | 181983109 | `generated` |
+| 4 | `seed_92b79c49251eb7a2` | -625.3938140617716 | 1987317423 | 60237239 | `imported_package3` |
+| 5 | `seed_dfe17c7e95fcbb6d` | -627.8491806615882 | 1926005828 | 1313070640 | `generated` |
+| 6 | `seed_1f82af6b2a587ef6` | -628.7449545348579 | 1241319044 | 83126739 | `imported_package3` |
+| 7 | `seed_ce0b5b582dda8eff` | -633.5548083921888 | 686791604 | 493568598 | `imported_package3` |
+| 8 | `seed_3a2d3a2f3341b412` | -641.0630750222932 | 319470045 | 1788533232 | `imported_package3` |
+| 9 | `seed_7ebdabd4b2738e12` | -646.0897190597743 | 850985002 | 1210719576 | `generated` |
+| 10 | `seed_4c43a7202fb90fbe` | -646.9058766970634 | 1301152156 | 512477356 | `generated` |
 
 Vor jedem Produktionsstart werden diese zwanzig Einträge gegen ihre Quelldateien
 validiert; beim ersten nicht nur als Preview ausgeführten Start wird daraus ein
@@ -198,11 +198,24 @@ gelesen und niemals überschrieben.
 - Die vorhandenen 4.000 Varying-Trainingsrewards werden beim Rolling-100-
   Fenster mitgeführt; die Prüfung erfolgt jedoch erst nach einer neuen,
   vollständig abgeschlossenen Episode.
+- Unabhängig vom Threshold wird nach jedem atomaren Worker-Resume der globale
+  Beststand des Protokolls aktualisiert: Fixed nach dem letzten Episodenreturn,
+  Varying nach demselben Rolling-100-Mittel wie der Stopcheck. Auch die
+  geladenen Ausgangs-/Resumezustände nehmen vor der ersten neuen Episode an
+  diesem Vergleich teil.
+- `results/<protocol>/best_so_far.jld2` ist ein vollständiger, atomar
+  ersetzter Agentcheckpoint und bleibt deshalb auch bei Nichterreichen des
+  Thresholds nutzbar.
 - Der Gewinner veröffentlicht atomar ein protokollweites Stop-Signal. Andere
   Worker brechen keine laufende Episode ab. Sie beenden diese Episode,
   speichern Resume- und finalen Checkpoint und stoppen anschließend.
 - Es gibt kein zusätzliches festes Episoden-Maximalbudget. NaN, Inf oder ein
   technischer Simulationsfehler führen zu einem expliziten Fehlerstatus.
+- Ein bewusster vorzeitiger Cutoff wird über `finalize_best_so_far.jl`
+  ausgelöst. Dabei wird der momentane globale Beststand unveränderlich als
+  `manual_candidate.jld2` eingefroren; anschließend greifen dieselben
+  Episode-Ende-, Finalcheckpoint-, Test- und Exportregeln wie beim
+  Threshold-Gewinner.
 
 ### Checkpoints und Resultate
 
@@ -233,6 +246,7 @@ Revision/MAT_expert_training/
 ├── prepare_experiment.jl
 ├── run_training_worker.jl
 ├── run_test_worker.jl
+├── finalize_best_so_far.jl
 ├── launch_tmux.sh
 └── results/
 ```
@@ -252,6 +266,9 @@ duplizierte Workerimplementierungen abgebildet.
   Trainingsworker und einen wartenden Test-/Exportworker.
 - Der Fixed-Gewinner erfüllt `episode_reward > -555.0`; der Varying-Gewinner
   erfüllt `mean(last_100_episode_rewards) > -610.0`.
+- Solange noch kein Gewinner existiert, entspricht jeder protokollweite
+  `best_so_far.jld2` dem höchsten bisher vollständig beobachteten Stopwert über
+  alle zehn Worker; ein manueller Cutoff friert genau diesen Agentzustand ein.
 - Kein Worker wird mitten in einer Episode abgebrochen; alle zehn finalen
   Checkpoints pro Protokoll liegen vor dem Teststart vor.
 - Der Testworker erzeugt Rewardkurven und Scores des Fixed-Gewinners auf der

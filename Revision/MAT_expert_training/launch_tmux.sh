@@ -93,28 +93,28 @@ if [[ "${preview}" == false ]]; then
 fi
 
 declare -a fixed_run_ids=(
-    seed_ce0b5b582dda8eff
-    seed_1f82af6b2a587ef6
-    seed_a0c258998e2632fd
-    seed_41296dceb8db78ce
-    seed_500415d5315402cd
-    seed_b983871a14d50ecb
-    seed_e72249f3ea1fa410
-    seed_f6984b8779f1349c
-    seed_3a2d3a2f3341b412
+    seed_dfe17c7e95fcbb6d
     seed_92b79c49251eb7a2
+    seed_14a5d7fe05cff1de
+    seed_1f82af6b2a587ef6
+    seed_7ebdabd4b2738e12
+    seed_e72249f3ea1fa410
+    seed_5954219d6cc69d5c
+    seed_ce0b5b582dda8eff
+    seed_4c43a7202fb90fbe
+    seed_3a2d3a2f3341b412
 )
 declare -a varying_run_ids=(
-    seed_92b79c49251eb7a2
-    seed_a0c258998e2632fd
-    seed_b983871a14d50ecb
-    seed_1f82af6b2a587ef6
+    seed_5954219d6cc69d5c
     seed_e72249f3ea1fa410
+    seed_14a5d7fe05cff1de
+    seed_92b79c49251eb7a2
+    seed_dfe17c7e95fcbb6d
+    seed_1f82af6b2a587ef6
     seed_ce0b5b582dda8eff
     seed_3a2d3a2f3341b412
-    seed_500415d5315402cd
-    seed_41296dceb8db78ce
-    seed_f6984b8779f1349c
+    seed_7ebdabd4b2738e12
+    seed_4c43a7202fb90fbe
 )
 
 launch_directory="${results_directory}/launches/$(date -u +%Y%m%dT%H%M%SZ)_$$"

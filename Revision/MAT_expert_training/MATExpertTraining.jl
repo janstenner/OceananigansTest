@@ -17,9 +17,10 @@ export CANDIDATES, DEFAULT_RESULTS_DIRECTORY, DEFAULT_SOURCE_RESULTS_DIRECTORY,
        FIXED_THRESHOLD, VARYING_THRESHOLD, freeze_selection_manifest!,
        run_training_worker, run_test_protocol_worker, candidate_ready,
        protocol_ready_for_test, test_complete, source_checkpoint_path,
+       best_so_far_checkpoint_path, finalize_best_so_far!,
        publish_distillation_experts!, experts_published
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 const REVISION_DIRECTORY = normpath(joinpath(@__DIR__, ".."))
 const PROJECT_ROOT = normpath(joinpath(REVISION_DIRECTORY, ".."))
 const DEFAULT_RESULTS_DIRECTORY = joinpath(@__DIR__, "results")
@@ -44,6 +45,7 @@ const VARYING_THRESHOLD = -610.0
 const VARYING_WINDOW = 100
 const TEST_EPISODE_STEPS = 200
 const PROTOCOLS = (:fixed, :varying)
+const BEST_LOCK_WAIT_SECONDS = 600.0
 # Validation returns can differ in their last Float32-derived digits across
 # Julia/CUDA/hardware environments. This tolerance is still orders of magnitude
 # below the smallest score gap in either frozen ranking.
@@ -53,181 +55,181 @@ const CANDIDATES = (
     (
         protocol = :fixed,
         rank = 1,
-        run_id = "seed_ce0b5b582dda8eff",
-        validation_score = -588.662153945814,
-        run_seed = 686_791_604,
-        ic_seed = 493_568_598,
-        origin = :imported_package3,
+        run_id = "seed_dfe17c7e95fcbb6d",
+        validation_score = -590.9383601579968,
+        run_seed = 1_926_005_828,
+        ic_seed = 1_313_070_640,
+        origin = :generated,
     ),
     (
         protocol = :fixed,
         rank = 2,
+        run_id = "seed_92b79c49251eb7a2",
+        validation_score = -593.0080725637902,
+        run_seed = 1_987_317_423,
+        ic_seed = 60_237_239,
+        origin = :imported_package3,
+    ),
+    (
+        protocol = :fixed,
+        rank = 3,
+        run_id = "seed_14a5d7fe05cff1de",
+        validation_score = -593.6025872180584,
+        run_seed = 1_838_755_672,
+        ic_seed = 181_983_109,
+        origin = :generated,
+    ),
+    (
+        protocol = :fixed,
+        rank = 4,
         run_id = "seed_1f82af6b2a587ef6",
-        validation_score = -590.433882645501,
+        validation_score = -594.9301747976292,
         run_seed = 1_241_319_044,
         ic_seed = 83_126_739,
         origin = :imported_package3,
     ),
     (
         protocol = :fixed,
-        rank = 3,
-        run_id = "seed_a0c258998e2632fd",
-        validation_score = -592.4416938887673,
-        run_seed = 740_592_503,
-        ic_seed = 1_545_505_641,
-        origin = :generated,
-    ),
-    (
-        protocol = :fixed,
-        rank = 4,
-        run_id = "seed_41296dceb8db78ce",
-        validation_score = -593.5512835444865,
-        run_seed = 874_617_006,
-        ic_seed = 579_508_289,
-        origin = :generated,
-    ),
-    (
-        protocol = :fixed,
         rank = 5,
-        run_id = "seed_500415d5315402cd",
-        validation_score = -594.1152706696137,
-        run_seed = 633_980_338,
-        ic_seed = 386_963_254,
+        run_id = "seed_7ebdabd4b2738e12",
+        validation_score = -597.169321125308,
+        run_seed = 850_985_002,
+        ic_seed = 1_210_719_576,
         origin = :generated,
     ),
     (
         protocol = :fixed,
         rank = 6,
-        run_id = "seed_b983871a14d50ecb",
-        validation_score = -594.4241241430935,
-        run_seed = 530_442_171,
-        ic_seed = 122_357_054,
-        origin = :generated,
-    ),
-    (
-        protocol = :fixed,
-        rank = 7,
         run_id = "seed_e72249f3ea1fa410",
-        validation_score = -600.5881163654836,
+        validation_score = -598.6395111651227,
         run_seed = 1_422_047_759,
         ic_seed = 627_765_402,
         origin = :imported_package3,
     ),
     (
         protocol = :fixed,
-        rank = 8,
-        run_id = "seed_f6984b8779f1349c",
-        validation_score = -601.1631889210348,
-        run_seed = 1_863_733_649,
-        ic_seed = 973_985_366,
+        rank = 7,
+        run_id = "seed_5954219d6cc69d5c",
+        validation_score = -600.2644632664014,
+        run_seed = 459_291_457,
+        ic_seed = 409_251_705,
         origin = :generated,
     ),
     (
         protocol = :fixed,
-        rank = 9,
-        run_id = "seed_3a2d3a2f3341b412",
-        validation_score = -615.0248757752528,
-        run_seed = 319_470_045,
-        ic_seed = 1_788_533_232,
+        rank = 8,
+        run_id = "seed_ce0b5b582dda8eff",
+        validation_score = -602.7203153676935,
+        run_seed = 686_791_604,
+        ic_seed = 493_568_598,
         origin = :imported_package3,
     ),
     (
         protocol = :fixed,
+        rank = 9,
+        run_id = "seed_4c43a7202fb90fbe",
+        validation_score = -607.7752318311447,
+        run_seed = 1_301_152_156,
+        ic_seed = 512_477_356,
+        origin = :generated,
+    ),
+    (
+        protocol = :fixed,
         rank = 10,
-        run_id = "seed_92b79c49251eb7a2",
-        validation_score = -703.1870046063658,
-        run_seed = 1_987_317_423,
-        ic_seed = 60_237_239,
+        run_id = "seed_3a2d3a2f3341b412",
+        validation_score = -609.483440542703,
+        run_seed = 319_470_045,
+        ic_seed = 1_788_533_232,
         origin = :imported_package3,
     ),
     (
         protocol = :varying,
         rank = 1,
-        run_id = "seed_92b79c49251eb7a2",
-        validation_score = -612.4201562246841,
-        run_seed = 1_987_317_423,
-        ic_seed = 60_237_239,
-        origin = :imported_package3,
+        run_id = "seed_5954219d6cc69d5c",
+        validation_score = -619.8056356260331,
+        run_seed = 459_291_457,
+        ic_seed = 409_251_705,
+        origin = :generated,
     ),
     (
         protocol = :varying,
         rank = 2,
-        run_id = "seed_a0c258998e2632fd",
-        validation_score = -617.5392566808855,
-        run_seed = 740_592_503,
-        ic_seed = 1_545_505_641,
-        origin = :generated,
-    ),
-    (
-        protocol = :varying,
-        rank = 3,
-        run_id = "seed_b983871a14d50ecb",
-        validation_score = -619.575374499492,
-        run_seed = 530_442_171,
-        ic_seed = 122_357_054,
-        origin = :generated,
-    ),
-    (
-        protocol = :varying,
-        rank = 4,
-        run_id = "seed_1f82af6b2a587ef6",
-        validation_score = -619.9315436427753,
-        run_seed = 1_241_319_044,
-        ic_seed = 83_126_739,
-        origin = :imported_package3,
-    ),
-    (
-        protocol = :varying,
-        rank = 5,
         run_id = "seed_e72249f3ea1fa410",
-        validation_score = -620.4323211994139,
+        validation_score = -621.5046799648103,
         run_seed = 1_422_047_759,
         ic_seed = 627_765_402,
         origin = :imported_package3,
     ),
     (
         protocol = :varying,
+        rank = 3,
+        run_id = "seed_14a5d7fe05cff1de",
+        validation_score = -623.2918953664753,
+        run_seed = 1_838_755_672,
+        ic_seed = 181_983_109,
+        origin = :generated,
+    ),
+    (
+        protocol = :varying,
+        rank = 4,
+        run_id = "seed_92b79c49251eb7a2",
+        validation_score = -625.3938140617716,
+        run_seed = 1_987_317_423,
+        ic_seed = 60_237_239,
+        origin = :imported_package3,
+    ),
+    (
+        protocol = :varying,
+        rank = 5,
+        run_id = "seed_dfe17c7e95fcbb6d",
+        validation_score = -627.8491806615882,
+        run_seed = 1_926_005_828,
+        ic_seed = 1_313_070_640,
+        origin = :generated,
+    ),
+    (
+        protocol = :varying,
         rank = 6,
+        run_id = "seed_1f82af6b2a587ef6",
+        validation_score = -628.7449545348579,
+        run_seed = 1_241_319_044,
+        ic_seed = 83_126_739,
+        origin = :imported_package3,
+    ),
+    (
+        protocol = :varying,
+        rank = 7,
         run_id = "seed_ce0b5b582dda8eff",
-        validation_score = -621.221352270041,
+        validation_score = -633.5548083921888,
         run_seed = 686_791_604,
         ic_seed = 493_568_598,
         origin = :imported_package3,
     ),
     (
         protocol = :varying,
-        rank = 7,
+        rank = 8,
         run_id = "seed_3a2d3a2f3341b412",
-        validation_score = -635.0695292787293,
+        validation_score = -641.0630750222932,
         run_seed = 319_470_045,
         ic_seed = 1_788_533_232,
         origin = :imported_package3,
     ),
     (
         protocol = :varying,
-        rank = 8,
-        run_id = "seed_500415d5315402cd",
-        validation_score = -651.7820854079739,
-        run_seed = 633_980_338,
-        ic_seed = 386_963_254,
-        origin = :generated,
-    ),
-    (
-        protocol = :varying,
         rank = 9,
-        run_id = "seed_41296dceb8db78ce",
-        validation_score = -654.0193289454812,
-        run_seed = 874_617_006,
-        ic_seed = 579_508_289,
+        run_id = "seed_7ebdabd4b2738e12",
+        validation_score = -646.0897190597743,
+        run_seed = 850_985_002,
+        ic_seed = 1_210_719_576,
         origin = :generated,
     ),
     (
         protocol = :varying,
         rank = 10,
-        run_id = "seed_f6984b8779f1349c",
-        validation_score = -715.0087688479787,
-        run_seed = 1_863_733_649,
-        ic_seed = 973_985_366,
+        run_id = "seed_4c43a7202fb90fbe",
+        validation_score = -646.9058766970634,
+        run_seed = 1_301_152_156,
+        ic_seed = 512_477_356,
         origin = :generated,
     ),
 )
@@ -262,6 +264,18 @@ function atomic_jldsave(path::AbstractString; values...)
         isfile(temporary) && rm(temporary; force = true)
     end
     return path
+end
+
+function atomic_copy(source::AbstractString, destination::AbstractString)
+    mkpath(dirname(destination))
+    temporary = joinpath(dirname(destination), ".$(basename(destination)).$(uuid4()).tmp")
+    try
+        cp(source, temporary; force = true)
+        mv(temporary, destination; force = true)
+    finally
+        isfile(temporary) && rm(temporary; force = true)
+    end
+    return destination
 end
 
 function acquire_lock(path::AbstractString; wait_seconds::Real = 0.0)
@@ -337,6 +351,18 @@ candidate_manifest_path(results_directory, protocol) = joinpath(
     results_directory,
     string(protocol),
     "candidate.jld2",
+)
+
+best_so_far_checkpoint_path(results_directory, protocol) = joinpath(
+    results_directory,
+    string(normalize_protocol(protocol)),
+    "best_so_far.jld2",
+)
+
+manual_candidate_checkpoint_path(results_directory, protocol) = joinpath(
+    results_directory,
+    string(normalize_protocol(protocol)),
+    "manual_candidate.jld2",
 )
 
 selection_manifest_path(results_directory) = joinpath(results_directory, "selection_manifest.jld2")
@@ -630,6 +656,68 @@ criterion_reached(protocol, rewards) = protocol === :fixed ?
     (length(rewards) >= VARYING_WINDOW &&
      mean(@view rewards[(end - VARYING_WINDOW + 1):end]) > VARYING_THRESHOLD)
 
+criterion_description(protocol) = protocol === :fixed ?
+    "latest_completed_episode_reward" : "mean_latest_100_completed_episode_rewards"
+
+function save_best_so_far!(candidate, results_directory, parent_path, parent_sha,
+                           additional_episodes, continuation_trace, elapsed_seconds)
+    metric_value = criterion_value(candidate.protocol, hook.rewards)
+    isfinite(metric_value) || return false
+    protocol_directory = joinpath(results_directory, string(candidate.protocol))
+    mkpath(protocol_directory)
+    checkpoint_path = best_so_far_checkpoint_path(results_directory, candidate.protocol)
+    lock_path = joinpath(protocol_directory, ".best_so_far.lock")
+    return with_lock(lock_path; wait_seconds = BEST_LOCK_WAIT_SECONDS) do
+        if isfile(checkpoint_path)
+            existing = JLD2.jldopen(checkpoint_path, "r") do file
+                string(read(file, "status")) == "best_so_far" || error(
+                    "Invalid global best-so-far checkpoint status: $checkpoint_path",
+                )
+                Symbol(read(file, "protocol")) === candidate.protocol || error(
+                    "Global best-so-far protocol mismatch: $checkpoint_path",
+                )
+                Float64(read(file, "criterion_value"))
+            end
+            metric_value > existing || return false
+        end
+
+        atomic_jldsave(
+            checkpoint_path;
+            schema_version = SCHEMA_VERSION,
+            status = "best_so_far",
+            protocol = candidate.protocol,
+            rank = candidate.rank,
+            run_id = candidate.run_id,
+            run_seed = candidate.run_seed,
+            ic_seed = candidate.ic_seed,
+            source_validation_score = candidate.validation_score,
+            parent_checkpoint_path = abspath(parent_path),
+            parent_checkpoint_sha256 = parent_sha,
+            original_episodes = ORIGINAL_EPISODES[candidate.protocol],
+            additional_episodes = Int(additional_episodes),
+            total_episodes = length(hook.rewards),
+            selection_basis = criterion_description(candidate.protocol),
+            criterion_value = Float64(metric_value),
+            threshold = candidate.protocol === :fixed ? FIXED_THRESHOLD : VARYING_THRESHOLD,
+            threshold_reached = criterion_reached(candidate.protocol, hook.rewards),
+            latest_episode_reward = Float64(last(hook.rewards)),
+            rewards = copy(hook.rewards),
+            rewards_all_timesteps = copy(hook.rewards_all_timesteps),
+            rewards_compare = copy(hook.rewards_compare),
+            errored_episodes = copy(hook.errored_episodes),
+            best_reward = hook.bestreward,
+            best_episode = hook.bestepisode,
+            continuation_trace = copy(continuation_trace),
+            elapsed_seconds = Float64(elapsed_seconds),
+            updated_at = string(now()),
+            hostname = gethostname(),
+            julia_version = string(VERSION),
+            agent = agent,
+        )
+        return true
+    end
+end
+
 function read_stop_signal(results_directory, protocol)
     path = stop_signal_path(results_directory, protocol)
     isfile(path) || return nothing
@@ -647,6 +735,7 @@ function publish_candidate!(candidate, results_directory, metric_value, addition
         values = (
             schema_version = SCHEMA_VERSION,
             status = "stop_requested",
+            selection_mode = "threshold",
             protocol = candidate.protocol,
             winner_run_id = candidate.run_id,
             winner_rank = candidate.rank,
@@ -655,6 +744,7 @@ function publish_candidate!(candidate, results_directory, metric_value, addition
             criterion = candidate.protocol === :fixed ?
                 "episode_reward_gt_-555" : "mean_latest_100_episode_rewards_gt_-610",
             criterion_value = Float64(metric_value),
+            threshold_reached = true,
             original_episodes = ORIGINAL_EPISODES[candidate.protocol],
             additional_episodes = Int(additional_episodes),
             total_episodes = ORIGINAL_EPISODES[candidate.protocol] + Int(additional_episodes),
@@ -664,6 +754,87 @@ function publish_candidate!(candidate, results_directory, metric_value, addition
         atomic_jldsave(stop_signal_path(results_directory, candidate.protocol); values...)
         atomic_jldsave(candidate_manifest_path(results_directory, candidate.protocol); values...)
         return true
+    end
+end
+
+function finalize_best_so_far!(;
+    results_directory::AbstractString = DEFAULT_RESULTS_DIRECTORY,
+    protocol = :all,
+)
+    selected = selected_protocols(protocol)
+    return map(selected) do current_protocol
+        protocol_directory = joinpath(results_directory, string(current_protocol))
+        mkpath(protocol_directory)
+        candidate_lock = joinpath(protocol_directory, ".candidate.lock")
+        with_lock(candidate_lock; wait_seconds = 60.0) do
+            existing = read_stop_signal(results_directory, current_protocol)
+            if !isnothing(existing)
+                existing_winner = string(existing["winner_run_id"])
+                println(
+                    "A stop signal already exists for $current_protocol; keeping " *
+                    "$existing_winner.",
+                )
+                return candidate_manifest_path(results_directory, current_protocol)
+            end
+
+            best_path = best_so_far_checkpoint_path(results_directory, current_protocol)
+            isfile(best_path) || error(
+                "No global best-so-far checkpoint exists yet for $current_protocol: $best_path",
+            )
+            frozen_path = manual_candidate_checkpoint_path(results_directory, current_protocol)
+            best_lock = joinpath(protocol_directory, ".best_so_far.lock")
+            best = with_lock(best_lock; wait_seconds = BEST_LOCK_WAIT_SECONDS) do
+                metadata = JLD2.jldopen(best_path, "r") do file
+                    string(read(file, "status")) == "best_so_far" || error(
+                        "Invalid best-so-far status: $best_path",
+                    )
+                    Symbol(read(file, "protocol")) === current_protocol || error(
+                        "Best-so-far protocol mismatch: $best_path",
+                    )
+                    (
+                        run_id = string(read(file, "run_id")),
+                        rank = Int(read(file, "rank")),
+                        run_seed = Int(read(file, "run_seed")),
+                        ic_seed = Int(read(file, "ic_seed")),
+                        criterion_value = Float64(read(file, "criterion_value")),
+                        additional_episodes = Int(read(file, "additional_episodes")),
+                        total_episodes = Int(read(file, "total_episodes")),
+                    )
+                end
+                atomic_copy(best_path, frozen_path)
+                merge(metadata, (; checkpoint_sha256 = source_hash(frozen_path)))
+            end
+            candidate_for(current_protocol, best.run_id)
+            values = (
+                schema_version = SCHEMA_VERSION,
+                status = "stop_requested",
+                selection_mode = "manual_best_so_far",
+                protocol = current_protocol,
+                winner_run_id = best.run_id,
+                winner_rank = best.rank,
+                run_seed = best.run_seed,
+                ic_seed = best.ic_seed,
+                criterion = criterion_description(current_protocol),
+                criterion_value = best.criterion_value,
+                threshold_reached = best.criterion_value > (
+                    current_protocol === :fixed ? FIXED_THRESHOLD : VARYING_THRESHOLD
+                ),
+                original_episodes = ORIGINAL_EPISODES[current_protocol],
+                additional_episodes = best.additional_episodes,
+                total_episodes = best.total_episodes,
+                final_checkpoint_path = abspath(frozen_path),
+                final_checkpoint_sha256 = best.checkpoint_sha256,
+                requested_at = string(now()),
+            )
+            atomic_jldsave(stop_signal_path(results_directory, current_protocol); values...)
+            atomic_jldsave(candidate_manifest_path(results_directory, current_protocol); values...)
+            println(
+                "Froze manual $current_protocol candidate $(best.run_id) with " *
+                "$(criterion_description(current_protocol))=$(best.criterion_value).",
+            )
+            flush(stdout)
+            return candidate_manifest_path(results_directory, current_protocol)
+        end
     end
 end
 
@@ -701,11 +872,18 @@ end
 function save_final!(candidate, results_directory, parent_path, parent_sha,
                      additional_episodes, continuation_trace, elapsed_seconds, stop_signal)
     winner = string(stop_signal["winner_run_id"]) == candidate.run_id
+    selection_mode = string(get(stop_signal, "selection_mode", "threshold"))
+    completion_reason = if winner
+        selection_mode == "threshold" ? "criterion_reached" : "selected_manual_best_so_far"
+    else
+        selection_mode == "threshold" ? "stopped_by_protocol_winner" : "stopped_by_manual_cutoff"
+    end
     atomic_jldsave(
         final_path(results_directory, candidate);
         schema_version = SCHEMA_VERSION,
         status = "complete",
-        completion_reason = winner ? "criterion_reached" : "stopped_by_protocol_winner",
+        completion_reason,
+        selection_mode,
         is_protocol_winner = winner,
         protocol = candidate.protocol,
         rank = candidate.rank,
@@ -782,11 +960,30 @@ function run_training_worker(;
 
         hook(PRE_EXPERIMENT_STAGE, agent, env)
         agent(PRE_EXPERIMENT_STAGE, env)
+        save_resume!(
+            candidate,
+            results_directory,
+            parent_path,
+            parent_sha,
+            additional_episodes,
+            continuation_trace,
+            elapsed_seconds,
+        )
+        initial_best_updated = save_best_so_far!(
+            candidate,
+            results_directory,
+            parent_path,
+            parent_sha,
+            additional_episodes,
+            continuation_trace,
+            elapsed_seconds,
+        )
         existing_signal = read_stop_signal(results_directory, candidate.protocol)
         if isnothing(existing_signal)
             println(
                 "Starting $(candidate.protocol) rank $(candidate.rank) $(candidate.run_id) from " *
-                "$(length(hook.rewards)) total episodes.",
+                "$(length(hook.rewards)) total episodes; " *
+                "initial_global_best_updated=$initial_best_updated.",
             )
             flush(stdout)
         end
@@ -808,9 +1005,18 @@ function run_training_worker(;
             )
 
             metric = criterion_value(candidate.protocol, hook.rewards)
+            global_best_updated = save_best_so_far!(
+                candidate,
+                results_directory,
+                parent_path,
+                parent_sha,
+                additional_episodes,
+                continuation_trace,
+                elapsed_seconds,
+            )
             reached = criterion_reached(candidate.protocol, hook.rewards)
             @printf(
-                "[%s] protocol=%s rank=%d run=%s additional=%d total=%d episode_reward=%.6f criterion_value=%.6f target=%.6f reached=%s\n",
+                "[%s] protocol=%s rank=%d run=%s additional=%d total=%d episode_reward=%.6f criterion_value=%.6f target=%.6f reached=%s global_best_updated=%s\n",
                 now(),
                 candidate.protocol,
                 candidate.rank,
@@ -821,6 +1027,7 @@ function run_training_worker(;
                 metric,
                 candidate.protocol === :fixed ? FIXED_THRESHOLD : VARYING_THRESHOLD,
                 reached,
+                global_best_updated,
             )
             flush(stdout)
 
@@ -865,6 +1072,21 @@ function candidate_ready(results_directory, protocol)
     manifest = JLD2.load(manifest_path)
     final_checkpoint = string(manifest["final_checkpoint_path"])
     isfile(final_checkpoint) || return false
+    selection_mode = string(get(manifest, "selection_mode", "threshold"))
+    if selection_mode == "manual_best_so_far"
+        expected_sha = string(manifest["final_checkpoint_sha256"])
+        source_hash(final_checkpoint) == expected_sha || return false
+        return try
+            JLD2.jldopen(final_checkpoint, "r") do file
+                string(read(file, "status")) == "best_so_far" &&
+                string(read(file, "run_id")) == string(manifest["winner_run_id"]) &&
+                Symbol(read(file, "protocol")) === protocol &&
+                Float64(read(file, "criterion_value")) == Float64(manifest["criterion_value"])
+            end
+        catch
+            false
+        end
+    end
     return try
         JLD2.jldopen(final_checkpoint, "r") do file
             string(read(file, "status")) == "complete" &&
@@ -1237,7 +1459,7 @@ function run_test_protocol_worker(;
 )
     protocol = normalize_protocol(protocol)
     protocol_ready_for_test(results_directory, protocol) || error(
-        "Winner or one of the ten final protocol checkpoints for $protocol is not ready.",
+        "Selection or one of the ten final protocol checkpoints for $protocol is not ready.",
     )
     test_complete(results_directory, protocol) && begin
         println("Complete test result already exists for $protocol; skipping.")

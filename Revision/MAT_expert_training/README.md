@@ -17,6 +17,21 @@ The winner writes an atomic protocol stop signal. The other nine workers never
 abort an active episode: they finish it, atomically save their resume and final
 checkpoints, and then exit. The original Package-4 files are read-only.
 
+Independently of the thresholds, every worker also competes for one atomic
+protocol-wide checkpoint:
+
+```text
+results/fixed/best_so_far.jld2
+results/varying/best_so_far.jld2
+```
+
+For Fixed IC it is replaced only by a higher latest completed episode reward.
+For Varying IC it is replaced only by a higher mean over the latest 100
+completed episode rewards. The checkpoint contains the complete resumable
+agent, histories, seeds, continuation trace, metric, and provenance. The source
+states are considered at worker startup, so a usable global best exists before
+the first continuation episode has finished.
+
 ## Preview and launch
 
 From the repository root, validate all twenty selected checkpoint identities and
@@ -36,6 +51,18 @@ Start the 20 training workers and one waiting test/export worker:
 ```bash
 bash Revision/MAT_expert_training/launch_tmux.sh
 ```
+
+This revision freezes the newly collected Package-4 ranking. A server result
+root that already contains the previous `selection_manifest.jld2` is
+intentionally rejected. Preserve old results and start the rerun in a fresh
+root, for example:
+
+```bash
+bash Revision/MAT_expert_training/launch_tmux.sh \
+  --results-dir Revision/MAT_expert_training/results/rerun_20260821
+```
+
+Use the same `--results-dir` for a later manual cutoff.
 
 The sessions are:
 
@@ -69,14 +96,35 @@ tail -f Revision/MAT_expert_training/results/launches/<launch-id>/pmat_test.log
 
 Every completed training episode prints protocol, rank, run ID, additional and
 total episode count, episode reward, current stop metric, target, and whether
-the criterion was reached. A resume checkpoint is atomically replaced after
+the criterion was reached. `global_best_updated=true` marks a new
+protocol-wide top candidate. A resume checkpoint is atomically replaced after
 every completed episode.
+
+## Manual best-so-far cutoff
+
+If a threshold is not reached in the desired wall-clock budget, do not kill the
+training sessions first. From the repository root, freeze the current global
+best for both protocols and request a graceful episode-boundary stop with:
+
+```bash
+julia --startup-file=no --project=. \
+  Revision/MAT_expert_training/finalize_best_so_far.jl --protocol all
+```
+
+`--protocol fixed` and `--protocol varying` can be used independently. The
+command copies each current `best_so_far.jld2` to an immutable
+`manual_candidate.jld2`, publishes the normal stop signal, and leaves active
+workers enough time to finish their current episode and save final checkpoints.
+The already running `pmat_test` session then evaluates and exports the frozen
+best snapshot through the same test/publication pipeline as a threshold winner.
+If a threshold winner already exists, the command preserves it.
 
 ## Test evaluation
 
-`pmat_test` waits until a protocol winner and all ten final checkpoints for
-that protocol exist. It then evaluates the winner with deterministic mean
-actions:
+`pmat_test` waits until a protocol selection and all ten final checkpoints for
+that protocol exist. The selection is either the first threshold winner or an
+explicitly frozen manual best-so-far snapshot. It then evaluates the selected
+agent with deterministic mean actions:
 
 - Fixed IC: the one shared 200-step episode;
 - Varying IC: all eight predefined test episodes from two test bases, both
