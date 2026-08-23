@@ -161,11 +161,14 @@ Pro Gewinner und Testfall werden gespeichert:
 - Protokoll, Controller-ID und Checkpoint-SHA-256,
 - Basis-Seed, Spiegelung und Offset bei Varying IC,
 - vollständige Rewardkurve und kumulativer 200-Schritt-Return,
+- vollständige globale Nusselt-Kurve aus `state_Nu(env)`, ihr Mittelwert und
+  der vergleichbare Score `-sum(state_Nu)`,
 - deterministische Auswertungsregel und Abschlussstatus.
 
 Die zusammengefassten Artefakte umfassen CSV und JLD2 sowie SVG- und
-PNG-Rewardkurven pro Protokoll. Einzelne Episoden werden atomar gecacht, sodass
-ein Neustart nur fehlende oder ungültige Fälle berechnet.
+PNG-Kurven für Reward und vollständige globale Nusselt-Zahl pro Protokoll.
+Einzelne Episoden werden atomar gecacht, sodass ein Neustart nur fehlende oder
+ungültige Fälle berechnet.
 
 Nach Abschluss beider Protokolltests werden die Trajectory-Puffer beider
 Gewinner geleert und auf Kapazität eins verkleinert. Die kompakten Dateien
@@ -189,8 +192,14 @@ gelesen und niemals überschrieben.
   Training-Split.
 - Der Testsplit wird während des Trainings und der Gewinnerauswahl nicht
   geladen.
-- Fixed IC: Nach jeder vollständig abgeschlossenen neuen Episode gewinnt der
-  erste Worker mit einem Episodenreward strikt größer als `-555.0`.
+- Fixed IC: Die geladene Ausgangs-/Resume-Policy und danach nach jeder
+  vollständig abgeschlossenen neuen Trainingsepisode die aktuelle Policy
+  werden einmal mit deterministischen Mean-Actions ausgewertet und an allen
+  200 Evaluationsschritten wird `state_Nu(env)` auf dem vollständigen
+  Zustandsfeld berechnet. Der erste Worker mit `-sum(state_Nu) > -555.0`
+  gewinnt. Das entspricht einer mittleren vollständigen globalen Nusselt-Zahl
+  unter `2.775`, ist direkt mit dem deterministischen alten Expert-Rollout
+  vergleichbar und ist ausdrücklich nicht der sensorbasierte Environment-Reward.
 - Varying IC: Nach jeder vollständig abgeschlossenen neuen Episode wird wie in
   `randomIC/randomIC_MAT.jl` der Mittelwert der letzten 100 Episodenrewards
   berechnet. Der erste Worker mit einem Mittelwert strikt größer als `-610.0`
@@ -199,10 +208,12 @@ gelesen und niemals überschrieben.
   Fenster mitgeführt; die Prüfung erfolgt jedoch erst nach einer neuen,
   vollständig abgeschlossenen Episode.
 - Unabhängig vom Threshold wird nach jedem atomaren Worker-Resume der globale
-  Beststand des Protokolls aktualisiert: Fixed nach dem letzten Episodenreturn,
-  Varying nach demselben Rolling-100-Mittel wie der Stopcheck. Auch die
-  geladenen Ausgangs-/Resumezustände nehmen vor der ersten neuen Episode an
-  diesem Vergleich teil.
+  Beststand des Protokolls aktualisiert: Fixed nach dem letzten deterministisch
+  evaluierten `-sum(state_Nu)`, Varying nach demselben Rolling-100-Rewardmittel wie der
+  Stopcheck. Da die Package-4-Quellen keine vollständigen Nusselt-Kurven
+  speichern, wird jede geladene Fixed-Ausgangs-/Resume-Policy einmal vor der
+  ersten Fortsetzungsepisode evaluiert; Varying kann seinen geladenen Zustand
+  direkt aus der Rewardhistorie werten.
 - `results/<protocol>/best_so_far.jld2` ist ein vollständiger, atomar
   ersetzter Agentcheckpoint und bleibt deshalb auch bei Nichterreichen des
   Thresholds nutzbar.
@@ -230,6 +241,8 @@ Jeder Worker speichert atomar:
 - unveränderliche Ausgangsidentität und Parent-Checkpointhash,
 - kumulatives und zusätzliches Episodenbudget,
 - vollständige alte und neue Rewardhistorie mit klarer Fortsetzungsgrenze,
+- für neue Fixed-Episoden die vollständige letzte deterministische
+  `state_Nu`-Evaluationskurve und die Historie der Scores `-sum(state_Nu)`,
 - den protokollspezifischen Stopwert und die Gewinneridentität,
 - vollständiges Resume-Bundle,
 - Laufzeiten, Fehlläufe, Konfiguration und Provenienz.
@@ -268,8 +281,9 @@ duplizierte Workerimplementierungen abgebildet.
   Optimizer-, Policy-RNG-, Update- und Varying-IC-Zustand.
 - Der Launcher plant genau 21 Sessions: zehn Fixed-, zehn Varying-
   Trainingsworker und einen wartenden Test-/Exportworker.
-- Der Fixed-Gewinner erfüllt `episode_reward > -555.0`; der Varying-Gewinner
-  erfüllt `mean(last_100_episode_rewards) > -610.0`.
+- Der Fixed-Gewinner erfüllt in der deterministischen Evaluation
+  `-sum(state_Nu) > -555.0`; der Varying-Gewinner erfüllt
+  `mean(last_100_episode_rewards) > -610.0`.
 - Solange noch kein Gewinner existiert, entspricht jeder protokollweite
   `best_so_far.jld2` dem höchsten bisher vollständig beobachteten Stopwert über
   alle zehn Worker; ein manueller Cutoff friert genau diesen Agentzustand ein.
@@ -278,7 +292,8 @@ duplizierte Workerimplementierungen abgebildet.
   enthält.
 - Kein Worker wird mitten in einer Episode abgebrochen; alle zehn finalen
   Checkpoints pro Protokoll liegen vor dem Teststart vor.
-- Der Testworker erzeugt Rewardkurven und Scores des Fixed-Gewinners auf der
+- Der Testworker erzeugt getrennte sensorbasierte Reward- und vollständige
+  `state_Nu`-Kurven samt Returns/Mittelwerten des Fixed-Gewinners auf der
   gemeinsamen Fixed-Episode und des Varying-Gewinners auf allen acht
   Varying-Testepisoden.
 - Beide Gewinner werden als agent-only `expert.jld2` mit leerer, auf Kapazität

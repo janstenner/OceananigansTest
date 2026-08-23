@@ -7,7 +7,7 @@ using Statistics
 const EXPERT_TRAINING_DIRECTORY = @__DIR__
 const REVISION_DIRECTORY = normpath(joinpath(EXPERT_TRAINING_DIRECTORY, ".."))
 const PROJECT_ROOT = normpath(joinpath(REVISION_DIRECTORY, ".."))
-const RUN_ID = "seed_ce0b5b582dda8eff"
+const RUN_ID = "seed_dfe17c7e95fcbb6d"
 const CHECKPOINT_PATH = joinpath(
     REVISION_DIRECTORY,
     "MAT_IPPO_Comparison",
@@ -29,7 +29,7 @@ const VALIDATION_PATH = joinpath(
 const OUTPUT_DIRECTORY = joinpath(EXPERT_TRAINING_DIRECTORY, "results", "fixed_best_seed_rollout")
 const RUNTIME_DIRECTORY = joinpath(EXPERT_TRAINING_DIRECTORY, "runtime", "fixed_best_seed_rollout")
 const EPISODE_STEPS = 200
-const EXPECTED_VALIDATION_SCORE = -588.662153945814
+const EXPECTED_VALIDATION_SCORE = -590.9383601579968
 
 isfile(CHECKPOINT_PATH) || error("Missing MAT checkpoint: $CHECKPOINT_PATH")
 isfile(VALIDATION_PATH) || error("Missing MAT validation result: $VALIDATION_PATH")
@@ -77,18 +77,24 @@ function run_rollout(; exploration::Bool)
     reset_fixed_episode!()
 
     rewards = Vector{Float64}(undef, EPISODE_STEPS)
+    global_nusselt = Vector{Float64}(undef, EPISODE_STEPS)
     for step in 1:EPISODE_STEPS
         action = exploration ? agent.policy(env) : RL.prob(agent.policy, env).μ
         env(action)
         rewards[step] = mean(Float64.(reward(env)))
+        global_nusselt[step] = Float64(Base.invokelatest(state_Nu, env))
     end
-    return rewards
+    return (; rewards, global_nusselt)
 end
 
-deterministic_rewards = run_rollout(; exploration = false)
-exploratory_rewards = run_rollout(; exploration = true)
+deterministic = run_rollout(; exploration = false)
+exploratory = run_rollout(; exploration = true)
+deterministic_rewards = deterministic.rewards
+exploratory_rewards = exploratory.rewards
 deterministic_score = sum(deterministic_rewards)
 exploratory_score = sum(exploratory_rewards)
+deterministic_nusselt_score = -sum(deterministic.global_nusselt)
+exploratory_nusselt_score = -sum(exploratory.global_nusselt)
 
 isapprox(deterministic_score, validation_metadata.validation_mean; atol = 1e-6) || error(
     "Deterministic rollout score $deterministic_score does not reproduce stored validation " *
@@ -178,9 +184,46 @@ png_path = joinpath(OUTPUT_DIRECTORY, "reward_curves.png")
 PlotlyJS.savefig(plot_handle, svg_path; width = 1000, height = 600)
 PlotlyJS.savefig(plot_handle, png_path; width = 1000, height = 600)
 
+nusselt_plot = Plot(
+    [
+        scatter(
+            x = steps,
+            y = deterministic.global_nusselt,
+            mode = "lines",
+            name = "Exploration off (mean action)",
+            line = attr(color = "#2166AC", width = 3),
+        ),
+        scatter(
+            x = steps,
+            y = exploratory.global_nusselt,
+            mode = "lines",
+            name = "Exploration on (sampled action)",
+            line = attr(color = "#B2182B", width = 2.5),
+        ),
+    ],
+    Layout(
+        template = "plotly_white",
+        title = "Best Fixed-IC MAT agent — full-state global Nusselt number",
+        xaxis = attr(title = "Control step", gridcolor = "#E6E6E6"),
+        yaxis = attr(title = "Full-state global Nusselt number (lower is better)",
+                     gridcolor = "#E6E6E6"),
+        width = 1000,
+        height = 600,
+        hovermode = "x unified",
+    ),
+)
+nusselt_svg_path = joinpath(OUTPUT_DIRECTORY, "global_nusselt_curves.svg")
+nusselt_png_path = joinpath(OUTPUT_DIRECTORY, "global_nusselt_curves.png")
+PlotlyJS.savefig(nusselt_plot, nusselt_svg_path; width = 1000, height = 600)
+PlotlyJS.savefig(nusselt_plot, nusselt_png_path; width = 1000, height = 600)
+
 println("Checkpoint: $CHECKPOINT_PATH")
 println("Stored validation score: $(validation_metadata.validation_mean)")
 println("Exploration off score: $deterministic_score")
 println("Exploration on score:  $exploratory_score")
+println("Exploration off full-state Nusselt score: $deterministic_nusselt_score")
+println("Exploration on full-state Nusselt score:  $exploratory_nusselt_score")
 println("Reward plot (SVG): $svg_path")
 println("Reward plot (PNG): $png_path")
+println("Full-state Nusselt plot (SVG): $nusselt_svg_path")
+println("Full-state Nusselt plot (PNG): $nusselt_png_path")

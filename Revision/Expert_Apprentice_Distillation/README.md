@@ -94,6 +94,14 @@ stored in every worker file, and merging rejects shards from different
 experts. `--allow-fresh-expert` is an explicit smoke-test-only escape hatch;
 there is no silent fresh-agent fallback.
 
+The tracked production checkpoints use the final hybrid MAT expert selection:
+Fixed is the unchanged Package-4 validation-rank-1 MAT agent
+`seed_dfe17c7e95fcbb6d`, while Varying is the threshold winner
+`seed_5954219d6cc69d5c` after 703 additional episodes. Both files contain only
+the agent and an empty trajectory with capacity-one backing buffers. Selection
+details and deterministic full-state Nusselt evaluations are recorded in
+`../MAT_expert_training/results/results_notes.md`.
+
 ## Launch
 
 Preview the 40 Varying-IC training workers:

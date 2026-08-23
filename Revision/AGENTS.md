@@ -36,11 +36,18 @@ Sparse Sensing paper.
   atomic resume/final and protocol-wide full plus compact agent-only
   best-so-far checkpoints, explicit best-so-far manual cutoff, persistent
   21-session tmux launch,
-  selected-candidate-only test-set reward/score evaluation, and compact publication
-  into the tracked Expert-Apprentice Distillation checkpoints.
-- `MAT_expert_training/README.md` and `PLAN.md`: Launch, monitoring, fixed
-  `episode_reward > -555.0` and Varying rolling-100 `> -610.0` rules, exact
+  selected-candidate-only test-set sensor-reward and full-state global-Nusselt
+  evaluation, direct Package-4/threshold-candidate evaluation, and hybrid
+  compact publication of the unchanged Fixed rank-1 agent plus the Varying
+  threshold winner into the tracked Expert-Apprentice Distillation
+  checkpoints.
+- `MAT_expert_training/README.md` and `PLAN.md`: Launch, monitoring, Fixed
+  deterministic `-sum(state_Nu) > -555.0` and Varying rolling-100 reward
+  `> -610.0` rules, exact
   selected source candidates, resume semantics, and test-result layout.
+- `MAT_expert_training/results/results_notes.md`: Final Fixed/Varying expert
+  selection, threshold crossing, deterministic test metrics, and published
+  checkpoint identities.
 - `VaryingIC_Corpus/VaryingICCorpus.jl`: Persistent generation, visualization,
   and sampling of independently seeded Rayleigh--Bénard basis snapshots for
   varying-initial-condition experiments.

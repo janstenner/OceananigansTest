@@ -39,7 +39,10 @@ function main(arguments)
             "checkpoint_sha256=$(candidate.checkpoint_sha256)",
         )
     end
-    println("Fixed stop: completed episode reward > $(MATExpertTraining.FIXED_THRESHOLD)")
+    println(
+        "Fixed stop: deterministic -sum(state_Nu(env)) after the latest training episode > " *
+        "$(MATExpertTraining.FIXED_THRESHOLD)",
+    )
     println("Varying stop: mean of latest 100 completed episode rewards > $(MATExpertTraining.VARYING_THRESHOLD)")
 end
 

@@ -20,7 +20,7 @@ export CANDIDATES, DEFAULT_RESULTS_DIRECTORY, DEFAULT_SOURCE_RESULTS_DIRECTORY,
        best_so_far_checkpoint_path, best_so_far_expert_path, finalize_best_so_far!,
        publish_distillation_experts!, experts_published
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 const REVISION_DIRECTORY = normpath(joinpath(@__DIR__, ".."))
 const PROJECT_ROOT = normpath(joinpath(REVISION_DIRECTORY, ".."))
 const DEFAULT_RESULTS_DIRECTORY = joinpath(@__DIR__, "results")
@@ -240,6 +240,7 @@ hook = nothing
 env = nothing
 model = nothing
 function generate_random_init end
+function state_Nu end
 
 normalize_protocol(value) = begin
     protocol = Symbol(lowercase(string(value)))
@@ -603,6 +604,11 @@ function load_training_state(candidate, results_directory, source_results_direct
                 additional_episodes = Int(read(file, "additional_episodes")),
                 continuation_trace = normalize_trace(read(file, "continuation_trace")),
                 prior_elapsed_seconds = Float64(read(file, "elapsed_seconds")),
+                full_state_nusselt_scores = haskey(file, "full_state_nusselt_scores") ?
+                    Float64.(read(file, "full_state_nusselt_scores")) : Float64[],
+                latest_full_state_global_nusselt =
+                    haskey(file, "latest_full_state_global_nusselt") ?
+                    Float64.(read(file, "latest_full_state_global_nusselt")) : Float64[],
             )
         end
     end
@@ -620,11 +626,14 @@ function load_training_state(candidate, results_directory, source_results_direct
         additional_episodes = 0,
         continuation_trace = NamedTuple[],
         prior_elapsed_seconds = 0.0,
+        full_state_nusselt_scores = Float64[],
+        latest_full_state_global_nusselt = Float64[],
     )
 end
 
 function save_resume!(candidate, results_directory, parent_path, parent_sha,
-                      additional_episodes, continuation_trace, elapsed_seconds)
+                      additional_episodes, continuation_trace, elapsed_seconds,
+                      full_state_nusselt_scores, latest_full_state_global_nusselt)
     atomic_jldsave(
         resume_path(results_directory, candidate);
         schema_version = SCHEMA_VERSION,
@@ -646,6 +655,8 @@ function save_resume!(candidate, results_directory, parent_path, parent_sha,
         best_reward = hook.bestreward,
         best_episode = hook.bestepisode,
         continuation_trace = copy(continuation_trace),
+        full_state_nusselt_scores = copy(full_state_nusselt_scores),
+        latest_full_state_global_nusselt = copy(latest_full_state_global_nusselt),
         elapsed_seconds = Float64(elapsed_seconds),
         updated_at = string(now()),
         hostname = gethostname(),
@@ -654,20 +665,28 @@ function save_resume!(candidate, results_directory, parent_path, parent_sha,
     )
 end
 
-criterion_value(protocol, rewards) = protocol === :fixed ? last(rewards) :
-    (length(rewards) >= VARYING_WINDOW ? mean(@view rewards[(end - VARYING_WINDOW + 1):end]) : NaN)
+criterion_value(protocol, rewards, full_state_nusselt_scores) = protocol === :fixed ?
+    (isempty(full_state_nusselt_scores) ? NaN : last(full_state_nusselt_scores)) :
+    (length(rewards) >= VARYING_WINDOW ?
+        mean(@view rewards[(end - VARYING_WINDOW + 1):end]) : NaN)
 
-criterion_reached(protocol, rewards) = protocol === :fixed ?
-    (!isempty(rewards) && last(rewards) > FIXED_THRESHOLD) :
+criterion_reached(protocol, rewards, full_state_nusselt_scores) = protocol === :fixed ?
+    (!isempty(full_state_nusselt_scores) && last(full_state_nusselt_scores) > FIXED_THRESHOLD) :
     (length(rewards) >= VARYING_WINDOW &&
      mean(@view rewards[(end - VARYING_WINDOW + 1):end]) > VARYING_THRESHOLD)
 
 criterion_description(protocol) = protocol === :fixed ?
-    "latest_completed_episode_reward" : "mean_latest_100_completed_episode_rewards"
+    "negative_sum_latest_deterministic_full_state_global_nusselt_evaluation" :
+    "mean_latest_100_completed_episode_rewards"
 
 function save_best_so_far!(candidate, results_directory, parent_path, parent_sha,
-                           additional_episodes, continuation_trace, elapsed_seconds)
-    metric_value = criterion_value(candidate.protocol, hook.rewards)
+                           additional_episodes, continuation_trace, elapsed_seconds,
+                           full_state_nusselt_scores, latest_full_state_global_nusselt)
+    metric_value = criterion_value(
+        candidate.protocol,
+        hook.rewards,
+        full_state_nusselt_scores,
+    )
     isfinite(metric_value) || return false
     protocol_directory = joinpath(results_directory, string(candidate.protocol))
     mkpath(protocol_directory)
@@ -683,9 +702,13 @@ function save_best_so_far!(candidate, results_directory, parent_path, parent_sha
                 Symbol(read(file, "protocol")) === candidate.protocol || error(
                     "Global best-so-far protocol mismatch: $checkpoint_path",
                 )
-                Float64(read(file, "criterion_value"))
+                (
+                    selection_basis = string(read(file, "selection_basis")),
+                    criterion_value = Float64(read(file, "criterion_value")),
+                )
             end
-            if metric_value <= existing
+            if existing.selection_basis == criterion_description(candidate.protocol) &&
+               metric_value <= existing.criterion_value
                 compact_expert_checkpoint_valid(compact_expert_path) ||
                     save_compact_expert_from_checkpoint!(checkpoint_path, compact_expert_path)
                 return false
@@ -711,8 +734,17 @@ function save_best_so_far!(candidate, results_directory, parent_path, parent_sha
             selection_basis = criterion_description(candidate.protocol),
             criterion_value = Float64(metric_value),
             threshold = candidate.protocol === :fixed ? FIXED_THRESHOLD : VARYING_THRESHOLD,
-            threshold_reached = criterion_reached(candidate.protocol, hook.rewards),
+            threshold_reached = criterion_reached(
+                candidate.protocol,
+                hook.rewards,
+                full_state_nusselt_scores,
+            ),
             latest_episode_reward = Float64(last(hook.rewards)),
+            full_state_nusselt_scores = copy(full_state_nusselt_scores),
+            latest_full_state_global_nusselt = copy(latest_full_state_global_nusselt),
+            latest_mean_full_state_global_nusselt =
+                isempty(latest_full_state_global_nusselt) ? NaN :
+                mean(latest_full_state_global_nusselt),
             rewards = copy(hook.rewards),
             rewards_all_timesteps = copy(hook.rewards_all_timesteps),
             rewards_compare = copy(hook.rewards_compare),
@@ -754,7 +786,8 @@ function publish_candidate!(candidate, results_directory, metric_value, addition
             run_seed = candidate.run_seed,
             ic_seed = candidate.ic_seed,
             criterion = candidate.protocol === :fixed ?
-                "episode_reward_gt_-555" : "mean_latest_100_episode_rewards_gt_-610",
+                "negative_sum_deterministic_full_state_global_nusselt_gt_-555" :
+                "mean_latest_100_episode_rewards_gt_-610",
             criterion_value = Float64(metric_value),
             threshold_reached = true,
             original_episodes = ORIGINAL_EPISODES[candidate.protocol],
@@ -802,6 +835,11 @@ function finalize_best_so_far!(;
                     )
                     Symbol(read(file, "protocol")) === current_protocol || error(
                         "Best-so-far protocol mismatch: $best_path",
+                    )
+                    selection_basis = string(read(file, "selection_basis"))
+                    selection_basis == criterion_description(current_protocol) || error(
+                        "Best-so-far selection basis '$selection_basis' is obsolete for " *
+                        "$current_protocol; wait for a new corrected checkpoint.",
                     )
                     (
                         run_id = string(read(file, "run_id")),
@@ -864,7 +902,7 @@ function train_one_episode!()
     end
     agent(POST_EPISODE_STAGE, env)
     hook(POST_EPISODE_STAGE, agent, env)
-    return hook.rewards[end]
+    return Float64(hook.rewards[end])
 end
 
 function final_result_complete(path, candidate, parent_sha)
@@ -882,7 +920,8 @@ function final_result_complete(path, candidate, parent_sha)
 end
 
 function save_final!(candidate, results_directory, parent_path, parent_sha,
-                     additional_episodes, continuation_trace, elapsed_seconds, stop_signal)
+                     additional_episodes, continuation_trace, elapsed_seconds, stop_signal,
+                     full_state_nusselt_scores, latest_full_state_global_nusselt)
     winner = string(stop_signal["winner_run_id"]) == candidate.run_id
     selection_mode = string(get(stop_signal, "selection_mode", "threshold"))
     completion_reason = if winner
@@ -907,7 +946,11 @@ function save_final!(candidate, results_directory, parent_path, parent_sha,
         original_episodes = ORIGINAL_EPISODES[candidate.protocol],
         additional_episodes = additional_episodes,
         total_episodes = length(hook.rewards),
-        final_criterion_value = criterion_value(candidate.protocol, hook.rewards),
+        final_criterion_value = criterion_value(
+            candidate.protocol,
+            hook.rewards,
+            full_state_nusselt_scores,
+        ),
         winner_run_id = string(stop_signal["winner_run_id"]),
         rewards = copy(hook.rewards),
         rewards_all_timesteps = copy(hook.rewards_all_timesteps),
@@ -916,6 +959,8 @@ function save_final!(candidate, results_directory, parent_path, parent_sha,
         best_reward = hook.bestreward,
         best_episode = hook.bestepisode,
         continuation_trace = copy(continuation_trace),
+        full_state_nusselt_scores = copy(full_state_nusselt_scores),
+        latest_full_state_global_nusselt = copy(latest_full_state_global_nusselt),
         elapsed_seconds = Float64(elapsed_seconds),
         completed_at = string(now()),
         hostname = gethostname(),
@@ -969,9 +1014,19 @@ function run_training_worker(;
         configure_episode_initializer!(candidate, source_trace, continuation_trace)
         additional_episodes = state.additional_episodes
         elapsed_seconds = state.prior_elapsed_seconds
+        full_state_nusselt_scores = copy(state.full_state_nusselt_scores)
+        latest_full_state_global_nusselt = copy(state.latest_full_state_global_nusselt)
 
         hook(PRE_EXPERIMENT_STAGE, agent, env)
         agent(PRE_EXPERIMENT_STAGE, env)
+        if candidate.protocol === :fixed && isempty(full_state_nusselt_scores)
+            initial_evaluation_elapsed = @elapsed initial_evaluation = Base.invokelatest(
+                deterministic_test_rollout, :fixed, nothing,
+            )
+            elapsed_seconds += initial_evaluation_elapsed
+            latest_full_state_global_nusselt = initial_evaluation.global_nusselt
+            push!(full_state_nusselt_scores, -sum(latest_full_state_global_nusselt))
+        end
         save_resume!(
             candidate,
             results_directory,
@@ -980,6 +1035,8 @@ function run_training_worker(;
             additional_episodes,
             continuation_trace,
             elapsed_seconds,
+            full_state_nusselt_scores,
+            latest_full_state_global_nusselt,
         )
         initial_best_updated = save_best_so_far!(
             candidate,
@@ -989,21 +1046,56 @@ function run_training_worker(;
             additional_episodes,
             continuation_trace,
             elapsed_seconds,
+            full_state_nusselt_scores,
+            latest_full_state_global_nusselt,
         )
         existing_signal = read_stop_signal(results_directory, candidate.protocol)
+        initial_metric = criterion_value(
+            candidate.protocol,
+            hook.rewards,
+            full_state_nusselt_scores,
+        )
+        initial_reached = criterion_reached(
+            candidate.protocol,
+            hook.rewards,
+            full_state_nusselt_scores,
+        )
         if isnothing(existing_signal)
             println(
                 "Starting $(candidate.protocol) rank $(candidate.rank) $(candidate.run_id) from " *
                 "$(length(hook.rewards)) total episodes; " *
+                "initial_criterion_value=$initial_metric, " *
+                "initial_reached=$initial_reached, " *
                 "initial_global_best_updated=$initial_best_updated.",
             )
             flush(stdout)
+            if initial_reached
+                won = publish_candidate!(
+                    candidate,
+                    results_directory,
+                    initial_metric,
+                    additional_episodes,
+                )
+                won && println(
+                    "Published protocol stop signal from initial corrected evaluation " *
+                    "as winner $(candidate.run_id).",
+                )
+                existing_signal = read_stop_signal(results_directory, candidate.protocol)
+            end
         end
 
         while isnothing(existing_signal)
             episode_elapsed = @elapsed episode_reward = Base.invokelatest(train_one_episode!)
             elapsed_seconds += episode_elapsed
             additional_episodes += 1
+            if candidate.protocol === :fixed
+                evaluation_elapsed = @elapsed fixed_evaluation = Base.invokelatest(
+                    deterministic_test_rollout, :fixed, nothing,
+                )
+                elapsed_seconds += evaluation_elapsed
+                latest_full_state_global_nusselt = fixed_evaluation.global_nusselt
+                push!(full_state_nusselt_scores, -sum(latest_full_state_global_nusselt))
+            end
             candidate.protocol === :varying && length(continuation_trace) != additional_episodes &&
                 error("Continuation trace and additional-episode count differ.")
             save_resume!(
@@ -1014,9 +1106,15 @@ function run_training_worker(;
                 additional_episodes,
                 continuation_trace,
                 elapsed_seconds,
+                full_state_nusselt_scores,
+                latest_full_state_global_nusselt,
             )
 
-            metric = criterion_value(candidate.protocol, hook.rewards)
+            metric = criterion_value(
+                candidate.protocol,
+                hook.rewards,
+                full_state_nusselt_scores,
+            )
             global_best_updated = save_best_so_far!(
                 candidate,
                 results_directory,
@@ -1025,10 +1123,18 @@ function run_training_worker(;
                 additional_episodes,
                 continuation_trace,
                 elapsed_seconds,
+                full_state_nusselt_scores,
+                latest_full_state_global_nusselt,
             )
-            reached = criterion_reached(candidate.protocol, hook.rewards)
+            reached = criterion_reached(
+                candidate.protocol,
+                hook.rewards,
+                full_state_nusselt_scores,
+            )
+            mean_full_state_nusselt = isempty(latest_full_state_global_nusselt) ? NaN :
+                mean(latest_full_state_global_nusselt)
             @printf(
-                "[%s] protocol=%s rank=%d run=%s additional=%d total=%d episode_reward=%.6f criterion_value=%.6f target=%.6f reached=%s global_best_updated=%s\n",
+                "[%s] protocol=%s rank=%d run=%s additional=%d total=%d episode_reward=%.6f mean_full_state_global_nusselt=%.6f criterion_value=%.6f target=%.6f reached=%s global_best_updated=%s\n",
                 now(),
                 candidate.protocol,
                 candidate.rank,
@@ -1036,6 +1142,7 @@ function run_training_worker(;
                 additional_episodes,
                 length(hook.rewards),
                 episode_reward,
+                mean_full_state_nusselt,
                 metric,
                 candidate.protocol === :fixed ? FIXED_THRESHOLD : VARYING_THRESHOLD,
                 reached,
@@ -1060,6 +1167,8 @@ function run_training_worker(;
             continuation_trace,
             elapsed_seconds,
             existing_signal,
+            full_state_nusselt_scores,
+            latest_full_state_global_nusselt,
         )
         winner = string(existing_signal["winner_run_id"]) == candidate.run_id
         println(
@@ -1139,7 +1248,10 @@ test_complete(results_directory, protocol) = begin
     path = joinpath(test_directory(results_directory, protocol), "summary.jld2")
     isfile(path) || return false
     try
-        JLD2.load(path, "status") == "complete"
+        summary = JLD2.load(path)
+        string(summary["status"]) == "complete" &&
+            haskey(summary, "mean_full_state_global_nusselt") &&
+            haskey(summary, "global_nusselt_plot_svg")
     catch
         false
     end
@@ -1424,21 +1536,31 @@ end
 function deterministic_test_rollout(protocol, choice)
     reset_test_episode!(protocol, choice)
     rewards = Float64[]
+    global_nusselt = Float64[]
     while !(is_terminated(env) || is_truncated(env))
         action = RL.prob(agent.policy, env).μ
         hasproperty(agent.policy, :clip1) && agent.policy.clip1 && clamp!(action, -1.0, 1.0)
         env(action)
         push!(rewards, mean(Float64.(reward(env))))
+        push!(global_nusselt, Float64(Base.invokelatest(state_Nu, env)))
     end
-    length(rewards) == TEST_EPISODE_STEPS || error(
-        "Expected $TEST_EPISODE_STEPS test steps, got $(length(rewards)).",
+    length(rewards) == TEST_EPISODE_STEPS == length(global_nusselt) || error(
+        "Expected $TEST_EPISODE_STEPS test rewards and Nusselt values, got " *
+        "$(length(rewards)) and $(length(global_nusselt)).",
     )
-    return rewards
+    all(isfinite, rewards) && all(isfinite, global_nusselt) || error(
+        "Non-finite reward or full-state global Nusselt number in test rollout.",
+    )
+    return (; rewards, global_nusselt)
 end
 
 function write_test_csv(path, records)
     open(path, "w") do io
-        println(io, "case_id,base_seed,mirror,offset,score")
+        println(
+            io,
+            "case_id,base_seed,mirror,offset,reward_score," *
+            "negative_full_state_nusselt_score,mean_full_state_global_nusselt",
+        )
         for record in records
             choice = record.choice
             println(io, join((
@@ -1447,28 +1569,31 @@ function write_test_csv(path, records)
                 isnothing(choice) ? "" : choice.mirror,
                 isnothing(choice) ? "" : choice.offset,
                 record.score,
+                record.full_state_nusselt_score,
+                record.mean_global_nusselt,
             ), ','))
         end
     end
     return path
 end
 
-function plot_test_rewards(protocol, records, output_directory)
+function plot_test_curve(protocol, records, output_directory;
+                         field, filename, title, yaxis_title, mean_name, color)
     steps = collect(1:TEST_EPISODE_STEPS)
     traces = PlotlyJS.GenericTrace[]
     if protocol === :fixed
         push!(traces, scatter(
             x = steps,
-            y = only(records).rewards,
+            y = getproperty(only(records), field),
             mode = "lines",
             name = "Fixed test episode",
-            line = attr(color = "#2166AC", width = 3),
+            line = attr(color = color, width = 3),
         ))
     else
         for record in records
             push!(traces, scatter(
                 x = steps,
-                y = record.rewards,
+                y = getproperty(record, field),
                 mode = "lines",
                 name = record.case_id,
                 line = attr(width = 1),
@@ -1476,13 +1601,13 @@ function plot_test_rewards(protocol, records, output_directory)
                 showlegend = false,
             ))
         end
-        mean_curve = vec(mean(reduce(hcat, getproperty.(records, :rewards)); dims = 2))
+        mean_curve = vec(mean(reduce(hcat, getproperty.(records, field)); dims = 2))
         push!(traces, scatter(
             x = steps,
             y = mean_curve,
             mode = "lines",
-            name = "Mean over 8 test cases",
-            line = attr(color = "#B2182B", width = 3),
+            name = mean_name,
+            line = attr(color = color, width = 3),
         ))
     end
     plot_handle = Plot(
@@ -1490,7 +1615,7 @@ function plot_test_rewards(protocol, records, output_directory)
         Layout(
             template = "plotly_white",
             title = attr(
-                text = "$(uppercasefirst(string(protocol)))-IC expert candidate — test reward curves",
+                text = "$(uppercasefirst(string(protocol)))-IC expert candidate — $title",
                 x = 0.5,
                 xanchor = "center",
             ),
@@ -1501,17 +1626,43 @@ function plot_test_rewards(protocol, records, output_directory)
             margin = attr(l = 95, r = 35, t = 80, b = 80),
             xaxis = attr(title = "Control step", gridcolor = "#E6E6E6"),
             yaxis = attr(
-                title = "Mean environment reward (higher is better)",
+                title = yaxis_title,
                 gridcolor = "#E6E6E6",
             ),
             hovermode = "x unified",
         ),
     )
-    svg_path = joinpath(output_directory, "reward_curves.svg")
-    png_path = joinpath(output_directory, "reward_curves.png")
+    svg_path = joinpath(output_directory, "$filename.svg")
+    png_path = joinpath(output_directory, "$filename.png")
     PlotlyJS.savefig(plot_handle, svg_path; width = 1000, height = 600)
     PlotlyJS.savefig(plot_handle, png_path; width = 1000, height = 600)
     return (; svg_path, png_path)
+end
+
+function plot_test_rewards(protocol, records, output_directory)
+    reward = plot_test_curve(
+        protocol,
+        records,
+        output_directory;
+        field = :rewards,
+        filename = "reward_curves",
+        title = "sensor-derived reward curves",
+        yaxis_title = "Mean environment reward (higher is better)",
+        mean_name = "Mean reward over 8 test cases",
+        color = "#2166AC",
+    )
+    nusselt = plot_test_curve(
+        protocol,
+        records,
+        output_directory;
+        field = :global_nusselt,
+        filename = "global_nusselt_curves",
+        title = "full-state global Nusselt-number curves",
+        yaxis_title = "Full-state global Nusselt number (lower is better)",
+        mean_name = "Mean global Nu over 8 test cases",
+        color = "#B2182B",
+    )
+    return (; reward, nusselt)
 end
 
 function run_test_protocol_worker(;
@@ -1542,28 +1693,41 @@ function run_test_protocol_worker(;
         records = NamedTuple[]
         for case in test_cases(protocol)
             cache_path = joinpath(output_directory, "episodes", "$(case.case_id).jld2")
-            record = if isfile(cache_path)
-                cached = JLD2.load(cache_path)
+            cached = isfile(cache_path) ? JLD2.load(cache_path) : nothing
+            if !isnothing(cached)
                 string(cached["status"]) == "complete" || error("Incomplete test cache: $cache_path")
                 string(cached["checkpoint_sha256"]) == final_sha ||
                     error("Stale test cache for a different candidate: $cache_path")
+            end
+            cache_has_full_state_nusselt = !isnothing(cached) &&
+                haskey(cached, "global_nusselt") &&
+                haskey(cached, "full_state_nusselt_score") &&
+                haskey(cached, "mean_global_nusselt")
+            record = if cache_has_full_state_nusselt
                 (
                     case_id = case.case_id,
                     choice = case.choice,
                     rewards = Float64.(cached["rewards"]),
                     score = Float64(cached["score"]),
+                    global_nusselt = Float64.(cached["global_nusselt"]),
+                    full_state_nusselt_score = Float64(cached["full_state_nusselt_score"]),
+                    mean_global_nusselt = Float64(cached["mean_global_nusselt"]),
                 )
             else
                 # The protocol Run-File is included dynamically above and defines
                 # prepare_action/reward/environment methods in a newer world age.
                 # Enter the complete rollout through invokelatest, just as the
                 # training worker already does for train_one_episode!.
-                rewards = Base.invokelatest(
+                rollout = Base.invokelatest(
                     deterministic_test_rollout,
                     protocol,
                     case.choice,
                 )
+                rewards = rollout.rewards
+                global_nusselt = rollout.global_nusselt
                 score = sum(rewards)
+                full_state_nusselt_score = -sum(global_nusselt)
+                mean_global_nusselt = mean(global_nusselt)
                 atomic_jldsave(
                     cache_path;
                     schema_version = SCHEMA_VERSION,
@@ -1577,11 +1741,26 @@ function run_test_protocol_worker(;
                     policy = "deterministic_mean_action",
                     rewards,
                     score,
+                    global_nusselt,
+                    full_state_nusselt_score,
+                    mean_global_nusselt,
                     completed_at = string(now()),
                 )
-                println("Completed $protocol test case $(case.case_id): score=$score")
+                println(
+                    "Completed $protocol test case $(case.case_id): " *
+                    "reward_score=$score, full_state_nusselt_score=" *
+                    "$full_state_nusselt_score, mean_global_nusselt=$mean_global_nusselt",
+                )
                 flush(stdout)
-                (; case_id = case.case_id, choice = case.choice, rewards, score)
+                (;
+                    case_id = case.case_id,
+                    choice = case.choice,
+                    rewards,
+                    score,
+                    global_nusselt,
+                    full_state_nusselt_score,
+                    mean_global_nusselt,
+                )
             end
             push!(records, record)
         end
@@ -1589,6 +1768,8 @@ function run_test_protocol_worker(;
         plots = plot_test_rewards(protocol, records, output_directory)
         csv_path = write_test_csv(joinpath(output_directory, "scores.csv"), records)
         scores = getproperty.(records, :score)
+        full_state_nusselt_scores = getproperty.(records, :full_state_nusselt_score)
+        mean_global_nusselt = getproperty.(records, :mean_global_nusselt)
         summary_path = joinpath(output_directory, "summary.jld2")
         atomic_jldsave(
             summary_path;
@@ -1602,14 +1783,22 @@ function run_test_protocol_worker(;
             cases = records,
             scores,
             mean_score = mean(scores),
+            full_state_nusselt_scores,
+            mean_full_state_nusselt_score = mean(full_state_nusselt_scores),
+            mean_global_nusselt_by_case = mean_global_nusselt,
+            mean_full_state_global_nusselt = mean(mean_global_nusselt),
             csv_path = abspath(csv_path),
-            reward_plot_svg = abspath(plots.svg_path),
-            reward_plot_png = abspath(plots.png_path),
+            reward_plot_svg = abspath(plots.reward.svg_path),
+            reward_plot_png = abspath(plots.reward.png_path),
+            global_nusselt_plot_svg = abspath(plots.nusselt.svg_path),
+            global_nusselt_plot_png = abspath(plots.nusselt.png_path),
             completed_at = string(now()),
         )
         println(
-            "Completed $protocol candidate test: mean_score=$(mean(scores)); " *
-            "plot=$(plots.svg_path)",
+            "Completed $protocol candidate test: mean_reward_score=$(mean(scores)), " *
+            "mean_full_state_global_nusselt=$(mean(mean_global_nusselt)); " *
+            "reward_plot=$(plots.reward.svg_path), " *
+            "global_nusselt_plot=$(plots.nusselt.svg_path)",
         )
         flush(stdout)
         return summary_path
