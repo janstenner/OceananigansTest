@@ -17,7 +17,7 @@ export P6_SCHEMA_VERSION, P6_MASTER_SEED, P6_STRENGTHS, P6_GR_STRENGTH,
        expected_evaluation_updates, short_path_components
 
 const P6_SCHEMA_VERSION = 1
-const P6_MASTER_SEED = 20_260_810
+const P6_MASTER_SEED = 20_260_811
 const P6_STRENGTHS = (0.0015, 0.003, 0.006, 0.01, 0.03)
 const P6_GR_STRENGTH = Dict(:fixed => 0.00004, :varying => 0.0001)
 const P6_UPDATES = Dict(:fixed => 35_000, :varying => 50_000)
