@@ -234,6 +234,7 @@ function validate_loaded_data(data)
     roles = Set(string_value(row, :role) for row in data.test_episodes)
     "expert" in roles || error("$(data.protocol): expert test episodes are missing.")
     "C_match" in roles || error("$(data.protocol): C_match test episodes are missing.")
+    all(haskey(row, :global_nusselt) for row in data.test_episodes) || error("$(data.protocol): state_Nu test values are missing.")
     return nothing
 end
 
@@ -384,17 +385,17 @@ function terminal_metrics(data)
     for role in CONTROLLER_ORDER
         selected = filter(row -> string_value(row, :role) == role, data.test_episodes)
         isempty(selected) && continue
-        rewards = float_value.(selected, Ref(:reward))
+        nusselt = float_value.(selected, Ref(:global_nusselt))
         cases = unique(string_value(row, :case) for row in selected)
         per_case_nu = Float64[]
         for case in cases
-            case_rewards = [float_value(row, :reward) for row in selected if string_value(row, :case) == case]
-            push!(per_case_nu, -mean(case_rewards))
+            case_nusselt = [float_value(row, :global_nusselt) for row in selected if string_value(row, :case) == case]
+            push!(per_case_nu, mean(case_nusselt))
         end
         returns = [float_value(row, :return) for row in data.test_returns if string_value(row, :role) == role]
         push!(rows, (;
             protocol = data.protocol, role, cases = length(cases),
-            mean_nu = -mean(rewards), median_case_nu = median(per_case_nu),
+            mean_nu = mean(nusselt), median_case_nu = median(per_case_nu),
             minimum_case_nu = minimum(per_case_nu), maximum_case_nu = maximum(per_case_nu),
             mean_200_step_return = mean(returns),
         ))
@@ -561,7 +562,7 @@ function add_response_panel!(plot_handle, data, response, row, col; showlegend, 
             y = [item.reached ? Float64(item.active_groups) : NaN for item in selected],
             mode = "lines+markers", connectgaps = false, name = label,
             line = attr(color = REPLICATE_COLORS[replicate], width = 2),
-            marker = attr(color = REPLICATE_COLORS[replicate], size = 8, symbol = ("circle", "square", "diamond")[replicate]),
+            marker = attr(color = REPLICATE_COLORS[replicate], size = replicate == 1 ? 15 : 8, symbol = ("circle", "square", "diamond")[replicate]),
             legendgroup = "replicate_$replicate", showlegend = showlegend, legend = legend_id,
         ); row, col)
         missing_strengths = [item.strength for item in selected if !item.reached]
@@ -573,6 +574,11 @@ function add_response_panel!(plot_handle, data, response, row, col; showlegend, 
         ); row, col)
     end
     return (; maximum_group, missing_level, has_missing)
+end
+
+function pareto_y_range(data)
+    losses = float_value.(data.fronts, Ref(:validation_matching))
+    return [log10(minimum(losses)) - 0.1, log10(max(maximum(losses), 0.01)) + 0.1]
 end
 
 function make_main_figure(data_by_protocol, metrics, output)
@@ -615,9 +621,9 @@ function make_main_figure(data_by_protocol, metrics, output)
     layout = common_layout(width = 1400, height = 1120, title = "Package 6: sensitivity, reproducibility, and Pareto performance")
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Active SC groups")),
-        :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true)),
+        :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = pareto_y_range(data_by_protocol[:fixed]))),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups")),
-        :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true)),
+        :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = pareto_y_range(data_by_protocol[:varying]))),
         :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS), ticktext = string.(P6_STRENGTHS))),
         :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE <= 0.01)"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
         :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS), ticktext = string.(P6_STRENGTHS))),
@@ -644,7 +650,7 @@ function make_terminal_figure(data_by_protocol, output)
         isempty(selected) && continue
         add_trace!(plot_handle, scatter(
             x = [int_value(row, :step) for row in selected],
-            y = [-float_value(row, :reward) for row in selected],
+            y = [float_value(row, :global_nusselt) for row in selected],
             mode = "lines", name = CONTROLLER_NAMES[role], legendgroup = role,
             line = attr(color = CONTROLLER_COLORS[role], width = role == "expert" ? 2.5 : 2.0),
             showlegend = true,
@@ -657,7 +663,7 @@ function make_terminal_figure(data_by_protocol, output)
     case_values = Dict{Tuple{String, String}, Float64}()
     for case in cases, role in roles
         selected = [row for row in varying.test_episodes if string_value(row, :case) == case && string_value(row, :role) == role]
-        isempty(selected) || (case_values[(case, role)] = -mean(float_value(row, :reward) for row in selected))
+        isempty(selected) || (case_values[(case, role)] = mean(float_value(row, :global_nusselt) for row in selected))
     end
     display_roles = [CONTROLLER_NAMES[role] for role in roles]
     for case in cases
@@ -918,7 +924,7 @@ function write_summary_table(output_dir, rows)
                 row.protocol, row.go_combined_retention, row.gr_combined_retention,
                 match, sparse, row.expert_test_mean_nu, row.c_match_test_mean_nu, sparse_nu)
         end
-        println(io, "\n`Retained` means retained after pooling the GO and GR method fronts into one combined nondominated front. Test mean Nu is computed as `-reward` and lower is better.")
+        println(io, "\n`Retained` means retained after pooling the GO and GR method fronts into one combined nondominated front. Test mean Nu is computed with `state_Nu` and lower is better.")
     end
     return (; csv_path, markdown_path)
 end
@@ -979,7 +985,7 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
         println(io, "\nRetention is evaluated only after each method-specific pooled front has been formed. A retained count of all GO points means that none of the GO front points is dominated in the combined front; it does not mean that every individual GO point dominates every GR point.\n")
 
         println(io, "## 5. Selection-inert terminal test confirmation\n")
-        println(io, "Candidates were loaded from the immutable validation-only manifest. Test mean Nu is `-mean(reward)` over the stored 200-step episodes; lower is better. The test data are not used to change a candidate, strength, or training decision.\n")
+        println(io, "Candidates were loaded from the immutable validation-only manifest. Test mean Nu is the mean of the stored per-step `state_Nu` values over the 200-step episodes; lower is better. The test data are not used to change a candidate, strength, or training decision.\n")
         println(io, "| Protocol | Controller | Cases | Mean Nu | Median case Nu | Case range | Mean raw 200-step return |")
         println(io, "|---|---|---:|---:|---:|---:|---:|")
         for row in metrics.terminal
@@ -993,7 +999,7 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
 
         println(io, "## Figure files\n")
         println(io, "- [`figure_1_main.svg`](figure_1_main.svg): Pareto/attainment and quality-constrained strength response.")
-        println(io, "- [`figure_2_terminal_test.svg`](figure_2_terminal_test.svg): Fixed trajectory and Varying paired test episodes, with reward inverted to Nu.")
+        println(io, "- [`figure_2_terminal_test.svg`](figure_2_terminal_test.svg): Fixed `state_Nu` trajectory and Varying paired test episodes.")
         println(io, "- [`figure_s1_stability_diagnostics.svg`](figure_s1_stability_diagnostics.svg): hitting times, reset rates, and aggregate archive convergence.")
         println(io, "- [`table_1_summary.md`](table_1_summary.md): compact paper table.")
     end
