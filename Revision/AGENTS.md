@@ -58,7 +58,8 @@ Sparse Sensing paper.
   of the MAT expert-apprentice implementation used as the Package-6/7/8
   training starting point. Future Fixed and Varying apprentice regressions use
   learning rate `2e-4`; their default regularized budgets are 35,000 and 50,000
-  updates respectively.
+  updates respectively. Proximal pruning restores groups from the current step
+  with the training RNG and keeps at least one active group by default.
 - `Expert_Apprentice_Distillation/DistillationCorpus.jl`: Directly includable
   Fixed-/Varying-IC teacher-rollout shard generation, atomic persistence,
   expert discovery, in-memory split merge, and lossless global-to-local MAT

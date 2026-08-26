@@ -29,7 +29,9 @@ Experiment scripts own the scientific policy. They construct
 `ApprenticeTrainingConfig`, `CandidateSchedule`, the complete vector of
 `HardThresholdSpec`s, and a `ParetoArchiveManager`, then call
 `train_apprentice!`. One training update is exactly one optimizer update;
-`proximal_interval` controls proximal applications independently.
+`proximal_interval` controls proximal applications independently. Proximal
+pruning keeps at least `minimum_active_groups` groups (default `1`) by randomly
+restoring groups pruned in the current step with the resumable training RNG.
 
 Validation always uses the loaded corpus `:validation` split. Autoregressive
 action matching is the default Pareto objective; teacher-forced matching can

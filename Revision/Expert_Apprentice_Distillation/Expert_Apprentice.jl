@@ -362,11 +362,49 @@ end
 
 
 
+function restore_minimum_active_groups!(
+    new_weights,
+    original_weights,
+    new_group_norms,
+    original_group_norms,
+    groups;
+    minimum_active_groups::Integer = 1,
+    rng::AbstractRNG = Random.default_rng(),
+)
+    n_groups = length(groups)
+    0 <= minimum_active_groups <= n_groups || throw(ArgumentError(
+        "minimum_active_groups must be between 0 and $n_groups.",
+    ))
+    eps_val = eps(Float32)
+    active_groups = count(norm -> norm >= eps_val, new_group_norms)
+    restore_count = minimum_active_groups - active_groups
+    restore_count <= 0 && return new_weights
+
+    pruned_groups = [
+        index for index in 1:n_groups
+        if new_group_norms[index] < eps_val && original_group_norms[index] >= eps_val
+    ]
+    length(pruned_groups) >= restore_count || error(
+        "Cannot restore $minimum_active_groups active groups from this pruning step.",
+    )
+    shuffle!(rng, pruned_groups)
+    for index in pruned_groups[1:restore_count]
+        for row in groups[index]
+            new_weights[row, :] .= original_weights[row, :]
+        end
+        new_group_norms[index] = original_group_norms[index]
+    end
+    return new_weights
+end
+
+
 function apply_grouped_regularizer!(
     model_weights;
     groups,
     regularization_strength::Real,
     theta_mode::Symbol,
+    minimum_active_groups::Integer = 1,
+    rng::AbstractRNG = Random.default_rng(),
 )
     reshaped_weight = transpose(model_weights)
 
@@ -400,7 +438,15 @@ function apply_grouped_regularizer!(
         end
     end
 
-
+    restore_minimum_active_groups!(
+        new_W,
+        reshaped_weight,
+        new_n2_groups,
+        n2_groups,
+        groups;
+        minimum_active_groups,
+        rng,
+    )
     model_weights .= transpose(new_W)
     return model_weights
 end
@@ -412,6 +458,8 @@ function apply_group_reweighted_regularizer!(
     groups,
     operator_weights::AbstractVector,
     regularization_strength::Real,
+    minimum_active_groups::Integer = 1,
+    rng::AbstractRNG = Random.default_rng(),
 )
     reshaped_weight = transpose(model_weights)
 
@@ -445,7 +493,15 @@ function apply_group_reweighted_regularizer!(
         end
     end
 
-
+    restore_minimum_active_groups!(
+        new_W,
+        reshaped_weight,
+        new_n2_groups,
+        n2_groups,
+        groups;
+        minimum_active_groups,
+        rng,
+    )
     model_weights .= transpose(new_W)
     return model_weights
 end
@@ -885,6 +941,7 @@ function train_apprentice!(
     group_rows_by_overlap::Bool = true,
     group_channels::Bool = group_channels,
     training_rng::AbstractRNG = rng,
+    minimum_active_groups::Int = 1,
     resume::Bool = false,
 )
     method, method_config = apprentice_kind_config(method)
@@ -894,6 +951,9 @@ function train_apprentice!(
         rIC = EXPERT_APPRENTICE_PROTOCOL === :varying,
     )
     groups = regularizer_groups(model; group_rows_by_overlap, group_channels)
+    0 <= minimum_active_groups <= length(groups) || throw(ArgumentError(
+        "minimum_active_groups must be between 0 and $(length(groups)).",
+    ))
     sample_count = Int(train_dataset[:sample_count])
     sampler = DistillationBatchSampler(sample_count, training_rng)
     operator_weights = ones(eltype(model.encoder.embedding.weight), length(groups))
@@ -993,6 +1053,8 @@ function train_apprentice!(
                     groups,
                     regularization_strength,
                     theta_mode = method_config.theta_mode,
+                    minimum_active_groups,
+                    rng = training_rng,
                 )
             elseif method_config.regularizer === :group_reweighted
                 apply_group_reweighted_regularizer!(
@@ -1000,6 +1062,8 @@ function train_apprentice!(
                     groups,
                     operator_weights,
                     regularization_strength,
+                    minimum_active_groups,
+                    rng = training_rng,
                 )
             else
                 error("Unsupported regularizer $(method_config.regularizer).")

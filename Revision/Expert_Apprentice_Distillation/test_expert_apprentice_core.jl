@@ -63,6 +63,41 @@ end
     @test all(isfinite, weights)
 end
 
+@testset "minimum active groups are restored after pruning" begin
+    groups = [[1], [2], [3], [4]]
+    original = reshape(Float32[1, 2, 3, 4], 1, :)
+
+    grouped = copy(original)
+    apply_grouped_regularizer!(
+        grouped;
+        groups,
+        regularization_strength = 100.0,
+        theta_mode = :group_lasso,
+        minimum_active_groups = 2,
+        rng = MersenneTwister(23),
+    )
+    @test count(group -> norm(transpose(grouped)[group, :]) > 0, groups) == 2
+    @test all(value -> value == 0 || value in original, grouped)
+
+    reweighted = copy(original)
+    apply_group_reweighted_regularizer!(
+        reweighted;
+        groups,
+        operator_weights = ones(Float32, length(groups)),
+        regularization_strength = 100.0,
+        rng = MersenneTwister(31),
+    )
+    @test count(group -> norm(transpose(reweighted)[group, :]) > 0, groups) == 1
+
+    @test_throws ArgumentError apply_grouped_regularizer!(
+        copy(original);
+        groups,
+        regularization_strength = 100.0,
+        theta_mode = :group_lasso,
+        minimum_active_groups = 5,
+    )
+end
+
 @testset "corpus validation, training, and archive integration" begin
     sample_count = 4
     observations = rand(MersenneTwister(11), Float32, 3, 48, 8, sample_count)
