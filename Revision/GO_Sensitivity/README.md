@@ -45,6 +45,11 @@ below `results/study/launches/<launch-id>/`. Complete runs are identity-checked
 and skipped; interrupted runs resume. Failed runs remain explicitly failed and
 require `--retry-failed` after their cause has been repaired.
 
+During training, every validation point is an atomic shard. A newly completed
+Package-6 run verifies and consolidates these shards into one
+`evaluations.jld2`; retained Pareto checkpoints carry the expanded mask
+metadata. Analysis accepts both this format and legacy per-update shards.
+
 The Fixed and Varying analysis workers start concurrently with training and
 wait for their 18 runs. They audit configurations, pairings, corpus/expert
 identity, hashes, budgets, and evaluation coverage; compute the complete

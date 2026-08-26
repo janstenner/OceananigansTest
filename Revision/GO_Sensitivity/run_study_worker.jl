@@ -145,6 +145,7 @@ function study_archive_config(job, updates, training_config, expert_path, corpus
         :grouping => :separate_channels,
         :native_sparsity_only => true,
         :hard_threshold_candidates => false,
+        :slim_evaluation_records => true,
         :post_pruning_finetune_updates => 0,
         :result_dependent_stopping => false,
         :replicate => job.replicate,
@@ -229,6 +230,17 @@ function validate_complete_run_without_runtime(options, previous)
         length(string(config[:initial_apprentice_parameter_hash])) == 64,
     )
     all(checks) || error("Complete run $(job.id) does not match the requested configuration.")
+    if Bool(get(config, :slim_evaluation_records, false))
+        isfile(joinpath(directory, "evaluations.jld2")) || error(
+            "Complete compact run $(job.id) is missing evaluations.jld2.",
+        )
+        shard_directory = joinpath(directory, "evaluations")
+        shards = isdir(shard_directory) ? filter(
+            name -> startswith(name, "update_") && endswith(name, ".jld2"),
+            readdir(shard_directory),
+        ) : String[]
+        isempty(shards) || error("Complete compact run $(job.id) still contains evaluation shards.")
+    end
     summary = JLD2.load(summary_path)
     string(summary["config_fingerprint"]) == config_fingerprint || error("Complete summary/config fingerprint mismatch.")
     JLD2.jldopen(resume_path, "r") do resume
@@ -279,6 +291,7 @@ function run_loaded_study_worker(options, directory, expert_path)
     resume_checkpoint = load_resume_checkpoint(manager)
     if !isnothing(resume_checkpoint) && resume_checkpoint.status === :complete
         isfile(joinpath(directory, "summary.jld2")) || error("Complete run is missing summary.jld2.")
+        compact_evaluations!(manager)
         write_status!(
             status_path(options.results_root, job);
             state = :complete,
@@ -334,6 +347,7 @@ function run_loaded_study_worker(options, directory, expert_path)
     )
     elapsed = time() - started
     summary = save_study_summary!(manager, job, result, elapsed)
+    compact_evaluations!(manager)
     write_status!(
         status_path(options.results_root, job);
         state = :complete,

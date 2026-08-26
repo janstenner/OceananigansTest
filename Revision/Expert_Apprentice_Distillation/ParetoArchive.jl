@@ -3,7 +3,23 @@ using JLD2
 using Printf
 using SHA
 
-const PARETO_ARCHIVE_SCHEMA_VERSION = 1
+const PARETO_ARCHIVE_SCHEMA_VERSION = 2
+const PARETO_ARCHIVE_SUPPORTED_SCHEMA_VERSIONS = (1, 2)
+const PARETO_CANDIDATE_METADATA_KEYS = (
+    :group_importances,
+    :mask,
+    :group_mask,
+    :global_mask,
+    :active_sensor_locations,
+)
+const PARETO_SLIM_EVALUATION_OMIT_KEYS = (
+    :group_importances,
+    :mask,
+    :global_mask,
+    :active_sensor_locations,
+    :model_path,
+    :loadable,
+)
 
 Base.@kwdef struct CandidateSchedule
     start_update::Int = 0
@@ -153,6 +169,17 @@ function candidate_checkpoint_path(manager::ParetoArchiveManager, update::Intege
     return joinpath(candidate_directory(manager), @sprintf("checkpoint_%012d.jld2", update))
 end
 
+function candidate_checkpoint_path(run_directory::AbstractString, update::Integer)
+    return joinpath(abspath(run_directory), "candidates", @sprintf("checkpoint_%012d.jld2", update))
+end
+
+function consolidated_evaluations_path(run_directory::AbstractString)
+    return joinpath(abspath(run_directory), "evaluations.jld2")
+end
+
+consolidated_evaluations_path(manager::ParetoArchiveManager) =
+    consolidated_evaluations_path(manager.run_directory)
+
 function latest_resume_path(manager::ParetoArchiveManager)
     return joinpath(resume_directory(manager), "latest.jld2")
 end
@@ -161,6 +188,81 @@ function normalize_archive_dict(raw)
     return Dict{Symbol, Any}(
         (key isa Symbol ? key : Symbol(key)) => value for (key, value) in raw
     )
+end
+
+function supported_pareto_schema(value)
+    return Int(value) in PARETO_ARCHIVE_SUPPORTED_SCHEMA_VERSIONS
+end
+
+function slim_evaluation_records(manager::ParetoArchiveManager)
+    return Bool(get(manager.config, :slim_evaluation_records, false))
+end
+
+function slim_candidate_record(record)
+    result = normalize_archive_dict(record)
+    for key in PARETO_SLIM_EVALUATION_OMIT_KEYS
+        pop!(result, key, nothing)
+    end
+    return result
+end
+
+function candidate_metadata_record(record)
+    normalized = normalize_archive_dict(record)
+    metadata = Dict{Symbol, Any}(
+        :candidate_id => string(normalized[:candidate_id]),
+        :threshold_id => Symbol(normalized[:threshold_id]),
+    )
+    for key in PARETO_CANDIDATE_METADATA_KEYS
+        haskey(normalized, key) && (metadata[key] = normalized[key])
+    end
+    return metadata
+end
+
+function candidate_checkpoint_for_record(run_directory::AbstractString, candidate)
+    recorded = archive_value(candidate, :model_path; default = nothing)
+    if !isnothing(recorded)
+        recorded_path = string(recorded)
+        isfile(recorded_path) && return abspath(recorded_path)
+        relocated = joinpath(abspath(run_directory), "candidates", basename(replace(recorded_path, '\\' => '/')))
+        isfile(relocated) && return relocated
+    end
+    return candidate_checkpoint_path(run_directory, Int(archive_value(candidate, :update)))
+end
+
+function load_candidate_metadata(path::AbstractString, candidate_id)
+    isfile(path) || error("Candidate checkpoint is missing at '$path'.")
+    metadata = JLD2.jldopen(path, "r") do file
+        haskey(file, "candidate_metadata") || return nothing
+        return file["candidate_metadata"]
+    end
+    isnothing(metadata) && return nothing
+    matches = [
+        normalize_archive_dict(entry) for entry in metadata
+        if string(archive_value(entry, :candidate_id)) == string(candidate_id)
+    ]
+    length(matches) == 1 || error(
+        "Candidate checkpoint '$path' has $(length(matches)) metadata entries for '$candidate_id'.",
+    )
+    return only(matches)
+end
+
+function hydrate_candidate_record(
+    candidate,
+    run_directory::AbstractString;
+    required_keys = PARETO_CANDIDATE_METADATA_KEYS,
+)
+    record = normalize_archive_dict(candidate)
+    all(haskey(record, key) for key in required_keys) && return record
+    path = candidate_checkpoint_for_record(run_directory, record)
+    metadata = load_candidate_metadata(path, record[:candidate_id])
+    isnothing(metadata) && error(
+        "Candidate $(record[:candidate_id]) has neither inline nor checkpoint metadata.",
+    )
+    merge!(record, metadata)
+    all(haskey(record, key) for key in required_keys) || error(
+        "Candidate $(record[:candidate_id]) checkpoint metadata is incomplete.",
+    )
+    return record
 end
 
 function candidate_identifier(run_id, update, threshold_id)
@@ -260,8 +362,8 @@ function save_archive_manifest!(manager::ParetoArchiveManager)
     )
 end
 
-function evaluation_files(manager::ParetoArchiveManager)
-    directory = evaluation_directory(manager)
+function evaluation_files(run_directory::AbstractString)
+    directory = joinpath(abspath(run_directory), "evaluations")
     isdir(directory) || return String[]
     return sort!(
         [
@@ -272,9 +374,176 @@ function evaluation_files(manager::ParetoArchiveManager)
     )
 end
 
+evaluation_files(manager::ParetoArchiveManager) = evaluation_files(manager.run_directory)
+
+function load_evaluation_shard(path::AbstractString)
+    loaded = JLD2.load(path)
+    supported_pareto_schema(loaded["schema_version"]) || error(
+        "Unsupported evaluation schema in '$path'.",
+    )
+    return (
+        run_id = string(loaded["run_id"]),
+        config_fingerprint = string(loaded["config_fingerprint"]),
+        evaluation_metadata = normalize_archive_dict(loaded["evaluation_metadata"]),
+        batch = Dict{Symbol, Any}(
+            :update => Int(loaded["update"]),
+            :created_at => string(loaded["created_at"]),
+            :candidates => [normalize_archive_dict(record) for record in loaded["candidates"]],
+        ),
+    )
+end
+
+function normalize_evaluation_batch(raw)
+    batch = normalize_archive_dict(raw)
+    return Dict{Symbol, Any}(
+        :update => Int(batch[:update]),
+        :created_at => string(batch[:created_at]),
+        :candidates => [normalize_archive_dict(record) for record in batch[:candidates]],
+    )
+end
+
+function validate_evaluation_batches(batches; context::AbstractString)
+    updates = Int[batch[:update] for batch in batches]
+    updates == sort(updates) || error("Evaluation updates are not sorted in $context.")
+    length(unique(updates)) == length(updates) || error("Duplicate evaluation updates in $context.")
+    for batch in batches
+        candidate_ids = string.(getindex.(batch[:candidates], :candidate_id))
+        length(unique(candidate_ids)) == length(candidate_ids) || error(
+            "Duplicate candidate IDs at update $(batch[:update]) in $context.",
+        )
+    end
+    return batches
+end
+
+function load_consolidated_evaluations(path::AbstractString)
+    loaded = JLD2.load(path)
+    supported_pareto_schema(loaded["schema_version"]) || error(
+        "Unsupported consolidated evaluation schema in '$path'.",
+    )
+    Symbol(loaded["format"]) === :consolidated_evaluations || error(
+        "Unexpected evaluation format in '$path'.",
+    )
+    batches = validate_evaluation_batches(
+        normalize_evaluation_batch.(loaded["batches"]);
+        context = path,
+    )
+    Int(loaded["evaluation_count"]) == length(batches) || error(
+        "Consolidated evaluation count mismatch in '$path'.",
+    )
+    return (
+        run_id = string(loaded["run_id"]),
+        config_fingerprint = string(loaded["config_fingerprint"]),
+        evaluation_metadata = normalize_archive_dict(loaded["evaluation_metadata"]),
+        batches,
+        path = abspath(path),
+        consolidated = true,
+    )
+end
+
+function load_evaluation_collection(run_directory::AbstractString)
+    directory = abspath(run_directory)
+    shards = evaluation_files(directory)
+    consolidated_path = consolidated_evaluations_path(directory)
+    if isfile(consolidated_path)
+        collection = load_consolidated_evaluations(consolidated_path)
+        by_update = Dict(batch[:update] => batch for batch in collection.batches)
+        for shard_path in shards
+            shard = load_evaluation_shard(shard_path)
+            shard.run_id == collection.run_id || error("Run ID mismatch in '$shard_path'.")
+            shard.config_fingerprint == collection.config_fingerprint || error(
+                "Evaluation fingerprint mismatch in '$shard_path'.",
+            )
+            shard.evaluation_metadata == collection.evaluation_metadata || error(
+                "Evaluation metadata mismatch in '$shard_path'.",
+            )
+            haskey(by_update, shard.batch[:update]) || error(
+                "Shard '$shard_path' is absent from the consolidated evaluation file.",
+            )
+            isequal(by_update[shard.batch[:update]], shard.batch) || error(
+                "Shard '$shard_path' differs from the consolidated evaluation file.",
+            )
+        end
+        return collection
+    end
+
+    isempty(shards) && return (
+        run_id = nothing,
+        config_fingerprint = nothing,
+        evaluation_metadata = Dict{Symbol, Any}(),
+        batches = Dict{Symbol, Any}[],
+        path = nothing,
+        consolidated = false,
+    )
+    loaded_shards = load_evaluation_shard.(shards)
+    run_id = only(unique(shard.run_id for shard in loaded_shards))
+    config_fingerprint = only(unique(shard.config_fingerprint for shard in loaded_shards))
+    evaluation_metadata = first(loaded_shards).evaluation_metadata
+    all(shard -> shard.evaluation_metadata == evaluation_metadata, loaded_shards) || error(
+        "Evaluation shards in '$directory' contain different evaluation metadata.",
+    )
+    batches = validate_evaluation_batches(
+        [shard.batch for shard in loaded_shards];
+        context = joinpath(directory, "evaluations"),
+    )
+    return (
+        run_id,
+        config_fingerprint,
+        evaluation_metadata,
+        batches,
+        path = nothing,
+        consolidated = false,
+    )
+end
+
+function compact_evaluations!(manager::ParetoArchiveManager)
+    collection = load_evaluation_collection(manager.run_directory)
+    isempty(collection.batches) && error("Run $(manager.run_id) has no evaluations to compact.")
+    collection.run_id == manager.run_id || error("Evaluation run ID mismatch during compaction.")
+    collection.config_fingerprint == manager.config_fingerprint || error(
+        "Evaluation fingerprint mismatch during compaction.",
+    )
+    length(collection.batches) == manager.evaluation_count || error(
+        "Evaluation count mismatch during compaction: expected $(manager.evaluation_count), found $(length(collection.batches)).",
+    )
+    last(collection.batches)[:update] == manager.last_evaluated_update || error(
+        "Last evaluation update mismatch during compaction.",
+    )
+    path = consolidated_evaluations_path(manager)
+    if !isfile(path)
+        pareto_atomic_save(
+            path;
+            schema_version = PARETO_ARCHIVE_SCHEMA_VERSION,
+            format = :consolidated_evaluations,
+            run_id = manager.run_id,
+            config_fingerprint = manager.config_fingerprint,
+            evaluation_metadata = collection.evaluation_metadata,
+            evaluation_count = length(collection.batches),
+            batches = collection.batches,
+            compacted_at = string(Dates.now()),
+        )
+    end
+    verified = load_consolidated_evaluations(path)
+    verified.run_id == manager.run_id || error("Consolidated run ID verification failed.")
+    verified.config_fingerprint == manager.config_fingerprint || error(
+        "Consolidated fingerprint verification failed.",
+    )
+    verified.evaluation_metadata == collection.evaluation_metadata || error(
+        "Consolidated evaluation metadata verification failed.",
+    )
+    isequal(verified.batches, collection.batches) || error(
+        "Consolidated evaluation content verification failed.",
+    )
+    for shard_path in evaluation_files(manager)
+        rm(shard_path; force = true)
+    end
+    shard_directory = evaluation_directory(manager)
+    isdir(shard_directory) && isempty(readdir(shard_directory)) && rm(shard_directory)
+    return path
+end
+
 function load_evaluation_records(path::AbstractString)
     loaded = JLD2.load(path)
-    Int(loaded["schema_version"]) == PARETO_ARCHIVE_SCHEMA_VERSION || error(
+    supported_pareto_schema(loaded["schema_version"]) || error(
         "Unsupported evaluation schema in '$path'.",
     )
     return [normalize_archive_dict(record) for record in loaded["candidates"]]
@@ -283,21 +552,20 @@ end
 function rebuild_pareto_archive!(manager::ParetoArchiveManager)
     records = Dict{Symbol, Any}[]
     last_update = -1
-    files = evaluation_files(manager)
-    for path in files
-        loaded = JLD2.load(path)
-        loaded["config_fingerprint"] == manager.config_fingerprint || error(
-            "Evaluation '$path' belongs to a different experiment configuration.",
-        )
-        append!(records, [normalize_archive_dict(record) for record in loaded["candidates"]])
-        last_update = max(last_update, Int(loaded["update"]))
+    collection = load_evaluation_collection(manager.run_directory)
+    collection.config_fingerprint == manager.config_fingerprint || error(
+        "Evaluations belong to a different experiment configuration.",
+    )
+    for batch in collection.batches
+        append!(records, batch[:candidates])
+        last_update = max(last_update, batch[:update])
     end
     manager.front = pareto_front(records)
-    manager.evaluation_count = length(files)
+    manager.evaluation_count = length(collection.batches)
     manager.last_evaluated_update = last_update
     for candidate in manager.front
-        model_path = archive_value(candidate, :model_path; default = nothing)
-        !isnothing(model_path) && isfile(model_path) || error(
+        model_path = candidate_checkpoint_path(manager, Int(candidate[:update]))
+        isfile(model_path) || error(
             "Rebuilt Pareto candidate $(candidate[:candidate_id]) has no loadable model.",
         )
     end
@@ -358,7 +626,7 @@ function initialize_pareto_archive(
     end
 
     files = evaluation_files(manager)
-    if !isempty(files)
+    if !isempty(files) || isfile(consolidated_evaluations_path(manager))
         # Evaluation shards are the durable scientific event log. Rebuilding
         # from them also recovers a crash after writing an evaluation but
         # before publishing the corresponding manifest.
@@ -378,15 +646,36 @@ function initialize_pareto_archive(
     return manager
 end
 
-function save_candidate_checkpoint!(manager::ParetoArchiveManager, update::Integer, model_payload)
+function save_candidate_checkpoint!(
+    manager::ParetoArchiveManager,
+    update::Integer,
+    model_payload;
+    candidate_metadata = Dict{Symbol, Any}[],
+)
     path = candidate_checkpoint_path(manager, update)
-    isfile(path) && return path
+    normalized_metadata = candidate_metadata_record.(candidate_metadata)
+    if isfile(path)
+        loaded = JLD2.load(path)
+        string(loaded["run_id"]) == manager.run_id || error(
+            "Existing candidate checkpoint at update $update belongs to a different run.",
+        )
+        Int(loaded["update"]) == Int(update) || error("Existing candidate checkpoint has the wrong update.")
+        if haskey(loaded, "candidate_metadata")
+            existing = candidate_metadata_record.(loaded["candidate_metadata"])
+            isequal(existing, normalized_metadata) || error(
+                "Existing candidate checkpoint metadata differs at update $update.",
+            )
+            return path
+        end
+    end
     pareto_atomic_save(
         path;
         schema_version = PARETO_ARCHIVE_SCHEMA_VERSION,
         run_id = manager.run_id,
         update = Int(update),
         model_payload,
+        candidate_metadata = normalized_metadata,
+        config_fingerprint = manager.config_fingerprint,
         created_at = string(Dates.now()),
     )
     return path
@@ -404,6 +693,9 @@ function record_candidate_batch!(
         ArgumentError("Update $update is before candidate start $(manager.schedule.start_update)."),
     )
     path = evaluation_path(manager, update)
+    isfile(consolidated_evaluations_path(manager)) && error(
+        "Cannot append update $update after evaluations were consolidated.",
+    )
     if isfile(path)
         loaded = JLD2.load(path)
         loaded["config_fingerprint"] == manager.config_fingerprint || error(
@@ -425,18 +717,28 @@ function record_candidate_batch!(
     )
     checkpoint_path = nothing
     if !isempty(new_survivor_ids)
-        checkpoint_path = save_candidate_checkpoint!(manager, update, model_payload)
+        survivor_metadata = [
+            record for record in records if string(record[:candidate_id]) in new_survivor_ids
+        ]
+        checkpoint_path = save_candidate_checkpoint!(
+            manager,
+            update,
+            model_payload;
+            candidate_metadata = survivor_metadata,
+        )
         for record in records
             if string(record[:candidate_id]) in new_survivor_ids
                 record[:model_path] = checkpoint_path
                 record[:loadable] = true
             end
         end
-        updated_by_id = Dict(string(record[:candidate_id]) => record for record in records)
-        for index in eachindex(proposed_front)
-            candidate_id = string(proposed_front[index][:candidate_id])
-            haskey(updated_by_id, candidate_id) && (proposed_front[index] = updated_by_id[candidate_id])
-        end
+    end
+
+    stored_records = slim_evaluation_records(manager) ? slim_candidate_record.(records) : records
+    updated_by_id = Dict(string(record[:candidate_id]) => record for record in stored_records)
+    for index in eachindex(proposed_front)
+        candidate_id = string(proposed_front[index][:candidate_id])
+        haskey(updated_by_id, candidate_id) && (proposed_front[index] = updated_by_id[candidate_id])
     end
 
     pareto_atomic_save(
@@ -444,7 +746,7 @@ function record_candidate_batch!(
         schema_version = PARETO_ARCHIVE_SCHEMA_VERSION,
         run_id = manager.run_id,
         update,
-        candidates = records,
+        candidates = stored_records,
         evaluation_metadata = normalize_archive_dict(evaluation_metadata),
         config_fingerprint = manager.config_fingerprint,
         created_at = string(Dates.now()),
@@ -458,14 +760,13 @@ function record_candidate_batch!(
     if mod(manager.evaluation_count, manager.schedule.garbage_collection_interval) == 0
         garbage_collect_candidate_models!(manager)
     end
-    return records
+    return stored_records
 end
 
 function referenced_candidate_models(manager::ParetoArchiveManager)
     return Set(
-        abspath(string(candidate[:model_path]))
+        abspath(candidate_checkpoint_path(manager, Int(candidate[:update])))
         for candidate in manager.front
-        if get(candidate, :loadable, false) && !isnothing(get(candidate, :model_path, nothing))
     )
 end
 

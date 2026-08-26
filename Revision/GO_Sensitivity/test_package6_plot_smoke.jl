@@ -49,7 +49,15 @@ end
     @test length(metrics.attainment_rows) == 6 * 97 * 3
     mktempdir() do directory
         options = (protocol = :fixed, results_root = directory, poll_seconds = 0, timeout_seconds = 0, skip_test = true)
-        persist_metrics(options, audit, metrics)
+        metrics_path = persist_metrics(options, audit, metrics)
+        persisted_metrics = JLD2.load(metrics_path)
+        @test !haskey(persisted_metrics, "checkpoints")
+        @test haskey(persisted_metrics, "checkpoint_rows")
+        @test length(persisted_metrics["checkpoint_rows"]) == sum(length, values(metrics.checkpoints))
+        @test all(
+            !haskey(row, :global_mask) && !haskey(row, :mask)
+            for row in persisted_metrics["checkpoint_rows"]
+        )
         paths = make_plots(options, audit, metrics)
         manifest = joinpath(directory, "fixed", "analysis", "candidate_manifest.jld2")
         selected = copy(first(first(runs).records))

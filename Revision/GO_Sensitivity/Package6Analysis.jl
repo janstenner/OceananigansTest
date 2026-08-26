@@ -258,14 +258,19 @@ function jaccard(left, right)
     return union_count == 0 ? 1.0 : count(a .& b) / union_count
 end
 
-function mask_stability(run_fronts::AbstractDict, all_run_records::AbstractDict; mse_threshold = 0.01)
+function mask_stability(
+    run_fronts::AbstractDict,
+    all_run_records::AbstractDict;
+    mse_threshold = 0.01,
+    hydrate = identity,
+)
     run_ids = sort!(collect(keys(run_fronts)); by = string)
     pair_rows = NamedTuple[]
     if length(run_ids) >= 2
         for left_index in 1:(length(run_ids) - 1), right_index in (left_index + 1):length(run_ids)
             left_id, right_id = run_ids[left_index], run_ids[right_index]
-            left_by_group = Dict(record[:active_groups] => record for record in run_fronts[left_id])
-            right_by_group = Dict(record[:active_groups] => record for record in run_fronts[right_id])
+            left_by_group = Dict(record[:active_groups] => hydrate(record) for record in run_fronts[left_id])
+            right_by_group = Dict(record[:active_groups] => hydrate(record) for record in run_fronts[right_id])
             for groups in sort!(collect(intersect(keys(left_by_group), keys(right_by_group))))
                 push!(pair_rows, (
                     left_run = string(left_id), right_run = string(right_id), active_groups = groups,
@@ -278,7 +283,7 @@ function mask_stability(run_fronts::AbstractDict, all_run_records::AbstractDict;
     for run_id in run_ids
         qualified = filter(record -> valid_record(record) && record[:validation_matching] <= mse_threshold, all_run_records[run_id])
         isempty(qualified) && continue
-        selected[string(run_id)] = first(sort(qualified; by = record_key))
+        selected[string(run_id)] = hydrate(first(sort(qualified; by = record_key)))
     end
     frequency = isempty(selected) ? Float64[] : begin
         masks = [Float64.(vec(record[:global_mask])) for record in values(selected)]

@@ -6,6 +6,9 @@ using Statistics
 
 include(joinpath(@__DIR__, "Package6Study.jl"))
 using .Package6Study
+if !isdefined(@__MODULE__, :PARETO_ARCHIVE_SCHEMA_VERSION)
+    include(joinpath(@__DIR__, "..", "Expert_Apprentice_Distillation", "ParetoArchive.jl"))
+end
 
 const TEST_STEPS = 200
 const PROJECT_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
@@ -354,21 +357,23 @@ function local_expert_path(protocol, recorded)
 end
 
 function candidate_checkpoint(candidate, results_root, protocol)
-    recorded = get(candidate, :model_path, nothing)
-    !isnothing(recorded) && isfile(string(recorded)) && return abspath(string(recorded))
-    isnothing(recorded) && error("Candidate $(candidate[:candidate_id]) has no model path.")
-    filename = basename(replace(string(recorded), '\\' => '/'))
-    recorded_run_fallback = joinpath(string(candidate[:source_run_directory]), "candidates", filename)
-    if isfile(recorded_run_fallback)
-        return abspath(recorded_run_fallback)
+    if haskey(candidate, :source_run_directory)
+        source_path = candidate_checkpoint_for_record(
+            string(candidate[:source_run_directory]),
+            candidate,
+        )
+        isfile(source_path) && return abspath(source_path)
     end
     method = Symbol(candidate[:method])
     strength_index = Int(candidate[:strength_index])
     replicate = Int(candidate[:replicate])
     local_job = job_for(protocol, method, strength_index, replicate)
-    relocated_fallback = joinpath(run_directory(results_root, local_job), "candidates", filename)
+    relocated_fallback = candidate_checkpoint_path(
+        run_directory(results_root, local_job),
+        Int(candidate[:update]),
+    )
     isfile(relocated_fallback) || error(
-        "Candidate checkpoint is missing at '$recorded', '$recorded_run_fallback', and '$relocated_fallback'.",
+        "Candidate checkpoint $(candidate[:candidate_id]) is missing at '$relocated_fallback'.",
     )
     println("  Recorded candidate path is unavailable; using relocated checkpoint $relocated_fallback")
     return abspath(relocated_fallback)
@@ -383,7 +388,16 @@ function evaluate_controller!(output, results_root, protocol, cases, expert_iden
         candidate_model = loaded["model_payload"]
         runtime_flux = latest_runtime_binding(:Flux)
         Base.invokelatest(runtime_flux.testmode!, candidate_model)
-        input_mask = Float32.(candidate[:mask])
+        if haskey(candidate, :mask)
+            input_mask = Float32.(candidate[:mask])
+        else
+            metadata = load_candidate_metadata(
+                candidate_checkpoint(candidate, results_root, protocol),
+                candidate[:candidate_id],
+            )
+            isnothing(metadata) && error("Candidate $(candidate[:candidate_id]) has no stored mask metadata.")
+            input_mask = Float32.(metadata[:mask])
+        end
     end
     episodes = Dict{String, Any}()
     for case in cases

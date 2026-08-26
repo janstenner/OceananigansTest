@@ -6,6 +6,9 @@ using Statistics
 
 include(joinpath(@__DIR__, "Package6Study.jl"))
 include(joinpath(@__DIR__, "Package6Analysis.jl"))
+if !isdefined(@__MODULE__, :PARETO_ARCHIVE_SCHEMA_VERSION)
+    include(joinpath(@__DIR__, "..", "Expert_Apprentice_Distillation", "ParetoArchive.jl"))
+end
 using .Package6Study
 using .Package6Analysis
 
@@ -139,16 +142,15 @@ function load_run(options, job)
     string(status[:config_fingerprint]) == config_fingerprint || error("Status/config fingerprint mismatch for $(job.id).")
     summary = JLD2.load(joinpath(directory, "summary.jld2"))
     string(summary["config_fingerprint"]) == config_fingerprint || error("Summary/config fingerprint mismatch for $(job.id).")
-    evaluation_directory = joinpath(directory, "evaluations")
-    files = sort!(filter(path -> startswith(basename(path), "update_") && endswith(path, ".jld2"), readdir(evaluation_directory; join = true)))
+    collection = load_evaluation_collection(directory)
+    collection.run_id == job.id || error("Evaluation run ID mismatch for $(job.id).")
+    collection.config_fingerprint == config_fingerprint || error("Evaluation fingerprint mismatch for $(job.id).")
     updates = Int[]
     records = Dict{Symbol, Any}[]
-    for path in files
-        loaded = JLD2.load(path)
-        string(loaded["config_fingerprint"]) == config_fingerprint || error("Evaluation fingerprint mismatch in $path.")
-        update = Int(loaded["update"])
+    for batch in collection.batches
+        update = Int(batch[:update])
         push!(updates, update)
-        candidates = loaded["candidates"]
+        candidates = batch[:candidates]
         length(candidates) == 1 || error("Native-only run $(job.id) has $(length(candidates)) candidates at update $update.")
         record = normalize_record(only(candidates); metadata = (
             run_id = job.id,
@@ -301,11 +303,20 @@ function build_metrics(audit)
         end
     end
     masks = Dict{Symbol, Any}()
+    hydrated = Dict{String, Dict{Symbol, Any}}()
+    hydrate(record) = get!(hydrated, string(record[:candidate_id])) do
+        hydrate_candidate_record(
+            record,
+            string(record[:source_run_directory]);
+            required_keys = (:global_mask,),
+        )
+    end
     for method in (:go, :gr)
         selected_runs = filter(run -> run.job.method === method, runs)
         masks[method] = mask_stability(
             Dict(run.job.id => run_fronts[run.job.id] for run in selected_runs),
             Dict(run.job.id => run.records for run in selected_runs),
+            hydrate = hydrate,
         )
     end
     hitting_summary_rows = NamedTuple[]
@@ -465,9 +476,11 @@ function freeze_candidate_manifest(options, audit, metrics)
         isnothing(candidate) && continue
         selected_candidate = copy(candidate)
         selected_candidate[:selection_role] = role
-        recorded = get(selected_candidate, :model_path, nothing)
-        fallback = isnothing(recorded) ? "" : joinpath(string(selected_candidate[:source_run_directory]), "candidates", basename(replace(string(recorded), '\\' => '/')))
-        ((!isnothing(recorded) && isfile(string(recorded))) || isfile(fallback)) || error("Selected candidate $(candidate[:candidate_id]) has no loadable checkpoint.")
+        checkpoint = candidate_checkpoint_for_record(
+            string(selected_candidate[:source_run_directory]),
+            selected_candidate,
+        )
+        isfile(checkpoint) || error("Selected candidate $(candidate[:candidate_id]) has no loadable checkpoint.")
         push!(selected, selected_candidate)
     end
     path = joinpath(analysis_directory(options), "candidate_manifest.jld2")
@@ -639,8 +652,26 @@ function persist_metrics(options, audit, metrics)
         push!(front_rows, merge(front_fields(record), Dict(:front_scope => :global_method, :front_id => string(method))))
     end
     write_csv(joinpath(csv_directory, "front_points.csv"), front_rows)
-    checkpoint_rows = reduce(vcat, collect(values(metrics.checkpoints)))
-    write_csv(joinpath(csv_directory, "checkpoint_metrics.csv"), [Dict(key => value for (key, value) in row if key in (:run_id, :method, :strength_index, :regularization_strength, :replicate, :update, :active_groups, :validation_matching, :own_front_regret, :strength_front_regret, :front_near, :candidate_id)) for row in checkpoint_rows])
+    checkpoint_rows = [row for rows in values(metrics.checkpoints) for row in rows]
+    checkpoint_fields = (
+        :run_id,
+        :method,
+        :strength_index,
+        :regularization_strength,
+        :replicate,
+        :update,
+        :active_groups,
+        :validation_matching,
+        :own_front_regret,
+        :strength_front_regret,
+        :front_near,
+        :candidate_id,
+    )
+    compact_checkpoint_rows = [
+        NamedTuple{checkpoint_fields}(Tuple(row[key] for key in checkpoint_fields))
+        for row in checkpoint_rows
+    ]
+    write_csv(joinpath(csv_directory, "checkpoint_metrics.csv"), compact_checkpoint_rows)
     path = joinpath(directory, "metrics.jld2")
     atomic_save(
         path;
@@ -651,7 +682,7 @@ function persist_metrics(options, audit, metrics)
         run_fronts = metrics.run_fronts,
         strength_fronts = metrics.strength_fronts,
         global_fronts = metrics.global_fronts,
-        checkpoints = metrics.checkpoints,
+        checkpoint_rows = compact_checkpoint_rows,
         late_rows = metrics.late_rows,
         hitting_rows = metrics.hitting_rows,
         hitting_summary_rows = metrics.hitting_summary_rows,

@@ -40,9 +40,12 @@ separate candidate types and separate Pareto scopes. A hard-threshold
 candidate therefore cannot delete a Package-6 native-front checkpoint.
 Thresholding is group-consistent and never mutates the model.
 
-All evaluated metrics and masks remain in per-update evaluation JLD2s. Only
-current per-run Pareto survivors receive a loadable model, and every survivor
-from one training update shares that update's single model checkpoint.
+Per-update evaluation JLD2s are the atomic training-time event log. Experiments
+may opt into slim records that keep the scientific objectives and group mask
+while moving expanded masks and group importances into the retained Pareto
+model checkpoint. Every survivor from one training update shares that update's
+single model checkpoint. Completed experiments may atomically consolidate the
+verified shards into one `evaluations.jld2`.
 `resume/latest.jld2` is separate from the scientific archive. Logical Pareto
 pruning happens after every evaluation; unreferenced model files are removed
 periodically and on finalization.

@@ -11,6 +11,26 @@ options_for(root; timeout = 0) = (
     skip_test = true,
 )
 
+function slim_test_candidate(groups, mse)
+    group_mask = BitVector(vcat(fill(true, groups), fill(false, 4 - groups)))
+    global_mask = BitArray(reshape(repeat(group_mask, 3), 3, 4, 1))
+    return Dict{Symbol, Any}(
+        :threshold_id => :native,
+        :validation_matching => mse,
+        :active_inputs => count(global_mask),
+        :mask => Float32.(repeat(group_mask, 3)),
+        :group_mask => group_mask,
+        :global_mask => global_mask,
+        :group_importances => collect(4.0:-1.0:1.0),
+        :active_groups => count(group_mask),
+        :active_sensor_locations => count(dropdims(any(global_mask; dims = 1); dims = 1)),
+        :numeric_status => :ok,
+        :pareto_scope => :native,
+        :method => :go,
+        :regularization_strength => 0.0015,
+    )
+end
+
 @testset "Analysis wait worker states and timeout" begin
     mktempdir() do directory
         options = options_for(directory)
@@ -31,6 +51,65 @@ options_for(root; timeout = 0) = (
             write_status!(status_path(directory, job); state = :complete, run_id = job.id)
         end
         @test length(wait_for_runs(options)) == 18
+    end
+end
+
+
+@testset "Analysis loads shards and consolidated evaluations identically" begin
+    mktempdir() do directory
+        original_job = first(study_jobs(:fixed))
+        job = merge(original_job, (updates = 25,))
+        run_path = run_directory(directory, job)
+        schedule = CandidateSchedule(
+            start_update = 0,
+            evaluation_interval = 25,
+            garbage_collection_interval = 5,
+            resume_interval = 25,
+        )
+        manager = initialize_pareto_archive(
+            run_path;
+            run_id = job.id,
+            schedule,
+            config = Dict(:experiment => :test, :slim_evaluation_records => true),
+        )
+        for (update, groups, mse) in ((0, 4, 0.1), (25, 2, 0.01))
+            record_candidate_batch!(
+                manager,
+                update,
+                [slim_test_candidate(groups, mse)];
+                model_payload = Dict(:update => update),
+                evaluation_metadata = Dict(:sample_count => 2),
+            )
+        end
+        pareto_atomic_save(
+            joinpath(run_path, "summary.jld2");
+            config_fingerprint = manager.config_fingerprint,
+            elapsed_seconds = 1.0,
+        )
+        write_status!(
+            status_path(directory, job);
+            state = :complete,
+            run_id = job.id,
+            config_fingerprint = manager.config_fingerprint,
+            update = job.updates,
+        )
+        options = options_for(directory)
+        shard_run = load_run(options, job)
+        @test length(shard_run.records) == 2
+        @test all(!haskey(record, :mask) for record in shard_run.records)
+
+        compact_evaluations!(manager)
+        consolidated_run = load_run(options, job)
+        @test isequal(consolidated_run.records, shard_run.records)
+        @test isfile(consolidated_evaluations_path(manager))
+        @test isempty(evaluation_files(manager))
+        hydrated = hydrate_candidate_record(
+            last(consolidated_run.records),
+            run_path;
+            required_keys = (:mask, :global_mask),
+        )
+        @test haskey(hydrated, :mask)
+        @test haskey(hydrated, :global_mask)
     end
 end
 
