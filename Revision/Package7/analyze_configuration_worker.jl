@@ -241,6 +241,11 @@ function analyze_completed_runs(options, jobs)
     pooled_front = pareto_front(records)
     front_ids = Set(string(record[:candidate_id]) for record in pooled_front)
     csv_path = write_csv(joinpath(output, "pareto_points.csv"), records, front_ids)
+    front_csv_path = write_csv(
+        joinpath(output, "pooled_pareto_front.csv"),
+        pooled_front,
+        front_ids,
+    )
     data_path = atomic_save(
         joinpath(output, "pareto_points.jld2");
         schema_version = P7_SCHEMA_VERSION,
@@ -262,6 +267,7 @@ function analyze_completed_runs(options, jobs)
         point_count = length(records),
         front_count = length(pooled_front),
         csv_path,
+        front_csv_path,
         data_path,
         plot_paths,
         completed_at = string(Dates.now()),
@@ -269,7 +275,7 @@ function analyze_completed_runs(options, jobs)
     println("Completed Package-7 Pareto analysis for $(options.configuration), λ=$(options.strength).")
     println("  points/front: $(length(records)) / $(length(pooled_front))")
     println("  output: $output")
-    return (; records, pooled_front, csv_path, data_path, plot_paths)
+    return (; records, pooled_front, csv_path, front_csv_path, data_path, plot_paths)
 end
 
 function analysis_main(arguments = ARGS)

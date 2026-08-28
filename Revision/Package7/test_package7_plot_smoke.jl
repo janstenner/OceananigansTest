@@ -33,6 +33,9 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
         @test length(paths) == 2
         @test all(isfile, paths)
         @test all(filesize(path) > 0 for path in paths)
+        front_ids = Set(string(record[:candidate_id]) for record in front)
+        front_csv = write_csv(joinpath(directory, "pooled_pareto_front.csv"), front, front_ids)
+        @test length(readlines(front_csv)) == length(front) + 1
     end
 end
 
