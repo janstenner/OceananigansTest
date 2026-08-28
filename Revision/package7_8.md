@@ -90,7 +90,7 @@ Jeder Basischeckpoint wird alle 25 Updates mit genau vier Mask-Thresholds
 ausgewertet:
 
 ```text
-(0.0, 0.001, 0.002, 0.003)
+(0.0, 0.0015, 0.003, 0.005)
 ```
 
 Für jeden Threshold werden eine gruppenkonsistente Maske, `active_inputs` und

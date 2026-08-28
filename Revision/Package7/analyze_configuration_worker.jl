@@ -11,9 +11,9 @@ include(joinpath(P7_DISTILLATION_DIRECTORY, "ParetoArchive.jl"))
 const DEFAULT_RESULTS_ROOT = joinpath(@__DIR__, "results")
 const THRESHOLD_COLORS = Dict(
     0.0 => "#2166AC",
-    0.001 => "#92C5DE",
-    0.002 => "#D6604D",
-    0.003 => "#67001F",
+    0.0015 => "#92C5DE",
+    0.003 => "#D6604D",
+    0.005 => "#67001F",
 )
 const REPLICATE_SYMBOLS = Dict(1 => "circle", 2 => "diamond", 3 => "square")
 

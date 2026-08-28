@@ -25,7 +25,7 @@ const P7_EVALUATION_INTERVAL = 25
 const P7_RESUME_INTERVAL = 100
 const P7_GARBAGE_COLLECTION_INTERVAL = 5
 const P7_REPLICATES = 1:3
-const P7_THRESHOLDS = (0.0, 0.001, 0.002, 0.003)
+const P7_THRESHOLDS = (0.0, 0.0015, 0.003, 0.005)
 
 const P7_CONFIGURATION_NAMES = (
     "go-gc", "go-sc", "gr-gc", "gr-sc",
