@@ -10,10 +10,10 @@ include(joinpath(P7_DISTILLATION_DIRECTORY, "ParetoArchive.jl"))
 
 const DEFAULT_RESULTS_ROOT = joinpath(@__DIR__, "results")
 const THRESHOLD_COLORS = Dict(
-    0.0 => "#1F77B4",
-    0.001 => "#4B8FC6",
-    0.002 => "#77A7D8",
-    0.003 => "#A3BFEA",
+    0.0 => "#2166AC",
+    0.001 => "#92C5DE",
+    0.002 => "#D6604D",
+    0.003 => "#67001F",
 )
 const REPLICATE_SYMBOLS = Dict(1 => "circle", 2 => "diamond", 3 => "square")
 
@@ -168,11 +168,13 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
     traces = PlotlyJS.GenericTrace[]
     for replicate in P7_REPLICATES, threshold in P7_THRESHOLDS
         selected = filter(record -> Int(record[:replicate]) == replicate && Float64(record[:threshold_value]) == threshold, records)
+        active_groups = Int.(getindex.(selected, :active_groups))
+        active_inputs = Int.(getindex.(selected, :active_inputs))
         push!(traces, PlotlyJS.scatter(
-            x = Int.(getindex.(selected, :active_inputs)),
+            x = active_groups,
             y = Float64.(getindex.(selected, :validation_matching)),
             mode = "markers",
-            name = "τ=$(threshold), r$(replicate)",
+            name = "τ=$(threshold)",
             legendgroup = "threshold_$(threshold)",
             showlegend = replicate == 1,
             marker = PlotlyJS.attr(
@@ -182,22 +184,41 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
                 opacity = 0.38,
                 line = PlotlyJS.attr(width = 0),
             ),
-            customdata = hcat(Int.(getindex.(selected, :update)), fill(replicate, length(selected))),
-            hovertemplate = "inputs=%{x}<br>MSE=%{y:.4e}<br>update=%{customdata[0]}<br>replicate=%{customdata[1]}<extra></extra>",
+            customdata = hcat(active_groups, active_inputs, Int.(getindex.(selected, :update)), fill(replicate, length(selected))),
+            hovertemplate = "groups=%{customdata[0]}<br>global inputs=%{customdata[1]}<br>MSE=%{y:.4e}<br>update=%{customdata[2]}<br>replicate=%{customdata[3]}<extra></extra>",
         ))
     end
+    front_active_groups = Int.(getindex.(pooled_front, :active_groups))
+    front_active_inputs = Int.(getindex.(pooled_front, :active_inputs))
     push!(traces, PlotlyJS.scatter(
-        x = Int.(getindex.(pooled_front, :active_inputs)),
+        x = front_active_groups,
         y = Float64.(getindex.(pooled_front, :validation_matching)),
         mode = "lines+markers",
         name = "pooled Pareto front",
         line = PlotlyJS.attr(color = "#111111", width = 2.5),
         marker = PlotlyJS.attr(color = "#111111", size = 7, symbol = "circle-open"),
+        customdata = hcat(front_active_groups, front_active_inputs),
+        hovertemplate = "groups=%{customdata[0]}<br>global inputs=%{customdata[1]}<br>MSE=%{y:.4e}<extra>pooled Pareto front</extra>",
     ))
+    for replicate in P7_REPLICATES
+        push!(traces, PlotlyJS.scatter(
+            x = [NaN],
+            y = [NaN],
+            mode = "markers",
+            name = "Replicate $replicate",
+            legendgroup = "replicates",
+            marker = PlotlyJS.attr(
+                color = "#555555",
+                symbol = REPLICATE_SYMBOLS[replicate],
+                size = 7,
+            ),
+            hoverinfo = "skip",
+        ))
+    end
     layout = PlotlyJS.Layout(
         template = "plotly_white",
         title = "Package 7 $(options.configuration), λ=$(options.strength)",
-        xaxis = PlotlyJS.attr(title = "Globally active sensor-channel inputs"),
+        xaxis = PlotlyJS.attr(title = "Active groups"),
         yaxis = PlotlyJS.attr(title = "Validation expert-action matching (MSE)", type = "log"),
         legend = PlotlyJS.attr(title = PlotlyJS.attr(text = "Threshold")),
     )
