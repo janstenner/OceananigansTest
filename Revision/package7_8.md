@@ -95,8 +95,11 @@ ausgewertet:
 
 Für jeden Threshold werden eine gruppenkonsistente Maske, `active_inputs` und
 das Validation-Expert-Action-Matching bestimmt. Threshold `0.0` bezeichnet die
-native exakte Nullmaske. Identische Masken dürfen nur einmal berechnet werden,
-die vier threshold-spezifischen Evaluationszeilen bleiben jedoch erhalten.
+native exakte Nullmaske und wird immer validiert. Ein Hard-Threshold wird nur
+dann validiert und als Evaluationszeile gespeichert, wenn er gegenüber dem
+nativen Kandidaten desselben Checkpoints die Anzahl aktiver Gruppen reduziert.
+Identische erfolgreiche Masken dürfen nur einmal berechnet werden; ihre
+threshold-spezifischen Evaluationszeilen bleiben erhalten.
 
 Die Thresholds sind absolut. Zunächst wird für jeden Apprentice-Input die
 L1-Summe seiner Embedding-Gewichte berechnet. Die Importance einer Gruppe ist

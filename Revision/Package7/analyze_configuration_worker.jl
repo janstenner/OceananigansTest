@@ -87,6 +87,27 @@ function wait_for_runs(options)
     end
 end
 
+function retain_successful_threshold_records(records; context::AbstractString)
+    by_update = Dict{Int, Vector{Dict{Symbol, Any}}}()
+    for record in records
+        push!(get!(by_update, Int(record[:update]), Dict{Symbol, Any}[]), record)
+    end
+    retained = Dict{Symbol, Any}[]
+    for update in sort!(collect(keys(by_update)))
+        batch = by_update[update]
+        native = filter(record -> Symbol(record[:threshold_id]) === :native, batch)
+        length(native) == 1 || error("Expected one native candidate at update $update in $context.")
+        native_record = only(native)
+        native_active_groups = Int(native_record[:active_groups])
+        push!(retained, native_record)
+        for record in batch
+            Symbol(record[:threshold_id]) === :native && continue
+            Int(record[:active_groups]) < native_active_groups && push!(retained, record)
+        end
+    end
+    return retained
+end
+
 function load_run_records(options, job)
     directory = run_directory(options.results_root, job)
     config_path = joinpath(directory, "config.jld2")
@@ -131,7 +152,7 @@ function load_run_records(options, job)
         record[:regularization_strength] = job.regularization_strength
         push!(records, record)
     end
-    return records
+    return retain_successful_threshold_records(records; context = job.id)
 end
 
 function write_csv(path::AbstractString, records, front_ids)
@@ -236,11 +257,16 @@ function analyze_completed_runs(options, jobs)
     output = analysis_directory(options.results_root, options.configuration, options.strength)
     mkpath(output)
     records = reduce(vcat, (load_run_records(options, job) for job in jobs); init = Dict{Symbol, Any}[])
-    expected_count = length(P7_REPLICATES) * length(expected_evaluation_updates(options.expected_updates)) * length(P7_THRESHOLDS)
-    length(records) == expected_count || error("Expected $expected_count evaluation points, found $(length(records)).")
+    expected_native_count = length(P7_REPLICATES) * length(expected_evaluation_updates(options.expected_updates))
+    native_count = count(record -> Symbol(record[:threshold_id]) === :native, records)
+    native_count == expected_native_count || error(
+        "Expected $expected_native_count native evaluation points, found $native_count.",
+    )
     pooled_front = pareto_front(records)
     front_ids = Set(string(record[:candidate_id]) for record in pooled_front)
-    csv_path = write_csv(joinpath(output, "pareto_points.csv"), records, front_ids)
+    csv_path = write_csv(joinpath(output, "evaluations.csv"), records, front_ids)
+    legacy_csv_path = joinpath(output, "pareto_points.csv")
+    isfile(legacy_csv_path) && rm(legacy_csv_path; force = true)
     front_csv_path = write_csv(
         joinpath(output, "pooled_pareto_front.csv"),
         pooled_front,

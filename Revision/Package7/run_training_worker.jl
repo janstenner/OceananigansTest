@@ -154,6 +154,7 @@ function archive_config(options, training_config, expert_path, inputs, initial_h
         :threshold_importance_mode => :max_input_l1,
         :threshold_group_aggregation => :maximum,
         :threshold_minimum_active_groups => 1,
+        :require_threshold_group_reduction => true,
         :active_inputs_definition => :global_expanded_sensor_channel_inputs,
         :pareto_objectives => (:active_inputs, :validation_matching),
         :pareto_scope => :package7_thresholds,
@@ -282,6 +283,7 @@ function run_loaded_worker(options, directory, expert_path)
             threshold_importance_mode = :max_input_l1,
             threshold_minimum_active_groups = 1,
             threshold_pareto_scope = :package7_thresholds,
+            require_threshold_group_reduction = true,
             resume,
         )
         elapsed = time() - started

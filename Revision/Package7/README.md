@@ -56,7 +56,7 @@ After each run, atomic evaluation shards are consolidated into
 results/<configuration>/<strength-tag>/analysis/
   pareto_all_points.svg
   pareto_all_points.pdf
-  pareto_points.csv
+  evaluations.csv
   pooled_pareto_front.csv
   pareto_points.jld2
 ```
@@ -64,5 +64,7 @@ results/<configuration>/<strength-tag>/analysis/
 The plot contains every 25-update evaluation from all three seeds, with four
 threshold colors and the pooled Pareto front. Its x-axis shows the number of
 active groups on a linear scale.
-`pareto_points.csv` contains every evaluation, whereas
+`evaluations.csv` contains the native point from every checkpoint plus only
+those hard-threshold points that reduce the active-group count. Hard thresholds
+without a group-count reduction are skipped before validation. In contrast,
 `pooled_pareto_front.csv` contains only the pooled non-dominated points.

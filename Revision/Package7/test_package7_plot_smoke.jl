@@ -27,6 +27,13 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
     @test !isempty(front)
     @test length(records) == 12
     @test Set(Float64(record[:threshold_value]) for record in records) == Set(P7_THRESHOLDS)
+    filter_fixture = Dict{Symbol, Any}[
+        Dict(:update => 0, :threshold_id => :native, :active_groups => 5),
+        Dict(:update => 0, :threshold_id => :same_groups, :active_groups => 5),
+        Dict(:update => 0, :threshold_id => :fewer_groups, :active_groups => 4),
+    ]
+    filtered = retain_successful_threshold_records(filter_fixture; context = "smoke")
+    @test Symbol.(getindex.(filtered, :threshold_id)) == [:native, :fewer_groups]
     mktempdir() do directory
         options = (configuration = "go-sc", strength = 0.09)
         paths = make_plot(options, records, front, directory)

@@ -85,6 +85,7 @@ end
     @test all(candidate -> candidate[:pareto_scope] === :package7_thresholds, candidates)
     @test all(candidate -> candidate[:threshold_importance_mode] === :max_input_l1, candidates)
     @test length(unique(Tuple(candidate[:group_mask]) for candidate in candidates)) == 1
+    @test only(candidates_with_group_reduction(candidates))[:threshold_id] === :native
 end
 
 @testset "regularizer names and proximal interval primitives" begin

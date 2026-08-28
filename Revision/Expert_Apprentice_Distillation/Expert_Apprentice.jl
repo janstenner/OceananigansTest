@@ -804,6 +804,15 @@ function candidate_masks(
     end
 end
 
+function candidates_with_group_reduction(records)
+    native_records = filter(record -> record[:threshold_id] === :native, records)
+    length(native_records) == 1 || error("Expected exactly one native threshold candidate.")
+    native_active_groups = Int(only(native_records)[:active_groups])
+    return filter(records) do record
+        record[:threshold_id] === :native || Int(record[:active_groups]) < native_active_groups
+    end
+end
+
 function teacher_forced_actions(model, observations, expert_actions)
     observation_representation, _ = model.encoder(observations)
     action_dimension = size(model.decoder.embedding.weight, 2)
@@ -878,6 +887,7 @@ function evaluate_candidate_checkpoint!(
     threshold_importance_mode::Symbol = :group_l2,
     threshold_minimum_active_groups::Int = 0,
     threshold_pareto_scope::Union{Nothing, Symbol} = nothing,
+    require_threshold_group_reduction::Bool = false,
 )
     records = candidate_masks(
         model,
@@ -887,6 +897,9 @@ function evaluate_candidate_checkpoint!(
         threshold_minimum_active_groups,
         threshold_pareto_scope,
     )
+    if require_threshold_group_reduction
+        records = candidates_with_group_reduction(records)
+    end
     measurements_by_mask = Dict{Any, NamedTuple}()
     for record in records
         mask_key = Tuple(record[:group_mask])
@@ -1015,6 +1028,7 @@ function train_apprentice!(
     threshold_importance_mode::Symbol = :group_l2,
     threshold_minimum_active_groups::Int = 0,
     threshold_pareto_scope::Union{Nothing, Symbol} = nothing,
+    require_threshold_group_reduction::Bool = false,
     resume::Bool = false,
 )
     method, method_config = apprentice_kind_config(method)
@@ -1070,6 +1084,7 @@ function train_apprentice!(
             threshold_importance_mode,
             threshold_minimum_active_groups,
             threshold_pareto_scope,
+            require_threshold_group_reduction,
         )
     end
 
@@ -1189,6 +1204,7 @@ function train_apprentice!(
                 threshold_importance_mode,
                 threshold_minimum_active_groups,
                 threshold_pareto_scope,
+                require_threshold_group_reduction,
             )
         end
         if !isnothing(archive_manager) && should_save_resume(archive_manager.schedule, update)
@@ -1224,6 +1240,7 @@ function train_apprentice!(
                 threshold_importance_mode,
                 threshold_minimum_active_groups,
                 threshold_pareto_scope,
+                require_threshold_group_reduction,
             )
         end
         save_resume_checkpoint!(
