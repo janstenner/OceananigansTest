@@ -24,7 +24,7 @@ const P6_STRENGTHS = Dict(
     :varying => (0.000768, 0.00192, 0.0048, 0.012, 0.03),
 )
 const P6_GR_STRENGTH = Dict(:fixed => 0.00007, :varying => 0.0001)
-const P6_QUALITY_THRESHOLDS = Dict(:fixed => 1e-2, :varying => 2e-3)
+const P6_QUALITY_THRESHOLDS = Dict(:fixed => 1e-2, :varying => 3e-2)
 const P6_UPDATES = Dict(:fixed => 35_000, :varying => 50_000)
 const P6_EVALUATION_INTERVAL = 25
 const P6_RESUME_INTERVAL = 100

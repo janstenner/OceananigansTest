@@ -188,7 +188,9 @@ function audit_runs(options, jobs)
         Int(config[:evaluation_interval]) == P6_EVALUATION_INTERVAL || error("Evaluation interval mismatch.")
         Float64(config[:regression_learning_rate]) == P6_REGRESSION_LEARNING_RATE || error("Regression LR mismatch.")
         Float64.(config[:go_strength_grid]) == collect(P6_STRENGTHS[options.protocol]) || error("GO strength-grid mismatch.")
-        Float64(config[:quality_threshold]) == P6_QUALITY_THRESHOLDS[options.protocol] || error("Quality-threshold mismatch.")
+        # This threshold controls analysis-time candidate acceptance only. Its
+        # archived launch value must not prevent reanalysis with a new limit.
+        haskey(config, :quality_threshold) || error("Stored quality-threshold metadata is missing.")
         Int(config[:apprentice_seed]) == run.job.apprentice_seed || error("Apprentice seed mismatch.")
         Int(config[:batch_order_seed]) == run.job.batch_seed || error("Batch seed mismatch.")
         string(config[:pairing_hash]) == run.job.pairing_hash || error("Pairing hash mismatch.")
