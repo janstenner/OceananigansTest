@@ -7,12 +7,15 @@ in `Revision/Expert_Apprentice_Distillation`.
 ## Package-6 production study
 
 The production study is SC-only and contains 30 GO runs plus six paired GR
-references. Fixed and Varying both use GO strengths `0.0015`, `0.003`,
-`0.006`, `0.01`, and `0.03`; GR uses `0.00004` and `0.0001`, respectively.
-Three new apprentice/batch seed pairs come from `StableRNG(20260810)`. Fixed
-runs use 35,000 updates, Varying runs 50,000, regression learning rate `2e-4`,
-and validation every 25 updates from update 0. Package 6 uses native sparsity
-only: no thresholding, fine-tuning, or result-dependent stopping.
+references. Fixed uses GO strengths `0.000512`, `0.00128`, `0.0032`, `0.008`,
+and `0.02`; Varying uses `0.000768`, `0.00192`, `0.0048`, `0.012`, and `0.03`.
+The Fixed and Varying GR references use `0.00007` and `0.0001`, respectively.
+The quality limits for sparse-candidate selection are `0.01` for Fixed and
+`0.002` for Varying. Three apprentice/batch seed pairs come from
+`StableRNG(20260811)`. Fixed runs use 35,000 updates, Varying runs 50,000,
+regression learning rate `2e-4`, and validation every 25 updates from update 0.
+Package 6 uses native sparsity only: no thresholding, fine-tuning, or
+result-dependent stopping.
 
 Preview the 36 training and two analysis sessions from the project root:
 

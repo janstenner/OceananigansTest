@@ -13,7 +13,7 @@ using .Package6Study
 
 const PROTOCOLS = (:fixed, :varying)
 const PROTOCOL_NAMES = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
-const QUALITY_THRESHOLDS = Dict(:fixed => 1e-2, :varying => 1e-2)
+const QUALITY_THRESHOLDS = P6_QUALITY_THRESHOLDS
 const QUALITY_TARGETS = (12, 6, 3, 2)
 const HITTING_TARGETS = (48, 24, 12, 6, 3, 1)
 const CONTROLLER_ORDER = ("expert", "C_match", "C_sparse")
@@ -230,7 +230,7 @@ function validate_loaded_data(data)
     length(go_runs) == 15 || error("$(data.protocol): expected 15 GO runs, found $(length(go_runs)).")
     length(gr_runs) == 3 || error("$(data.protocol): expected 3 GR runs, found $(length(gr_runs)).")
     strengths = sort(unique(float_value(row, :regularization_strength) for row in data.checkpoints if string_value(row, :method) == "go"))
-    strengths == sort(collect(P6_STRENGTHS)) || error("$(data.protocol): GO strength grid differs from Package6Study.jl.")
+    strengths == sort(collect(P6_STRENGTHS[data.protocol])) || error("$(data.protocol): GO strength grid differs from Package6Study.jl.")
     roles = Set(string_value(row, :role) for row in data.test_episodes)
     "expert" in roles || error("$(data.protocol): expert test episodes are missing.")
     "C_match" in roles || error("$(data.protocol): C_match test episodes are missing.")
@@ -241,7 +241,7 @@ end
 function response_metrics(data)
     threshold = QUALITY_THRESHOLDS[data.protocol]
     rows = NamedTuple[]
-    for replicate in P6_REPLICATES, (strength_index, strength) in enumerate(P6_STRENGTHS)
+    for replicate in P6_REPLICATES, (strength_index, strength) in enumerate(P6_STRENGTHS[data.protocol])
         matching = [row for row in data.fronts if
             string_value(row, :front_scope) == "run" &&
             string_value(row, :method) == "go" &&
@@ -286,7 +286,7 @@ function quality_hitting_metrics(data)
     threshold = QUALITY_THRESHOLDS[data.protocol]
     budget = P6_UPDATES[data.protocol]
     run_rows = NamedTuple[]
-    for replicate in P6_REPLICATES, (strength_index, strength) in enumerate(P6_STRENGTHS), target in QUALITY_TARGETS
+    for replicate in P6_REPLICATES, (strength_index, strength) in enumerate(P6_STRENGTHS[data.protocol]), target in QUALITY_TARGETS
         matching = [row for row in data.checkpoints if
             string_value(row, :method) == "go" &&
             int_value(row, :replicate) == replicate &&
@@ -312,7 +312,7 @@ function quality_hitting_metrics(data)
         end
     end
     summary_rows = NamedTuple[]
-    for (strength_index, strength) in enumerate(P6_STRENGTHS), target in QUALITY_TARGETS
+    for (strength_index, strength) in enumerate(P6_STRENGTHS[data.protocol]), target in QUALITY_TARGETS
         selected = filter(row -> row.strength_index == strength_index && row.target_groups == target, run_rows)
         reached = filter(row -> row.reached, selected)
         normalized = Float64[row.normalized_first_update for row in reached]
@@ -624,10 +624,10 @@ function make_main_figure(data_by_protocol, metrics, output)
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = pareto_y_range(data_by_protocol[:fixed]))),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups")),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = pareto_y_range(data_by_protocol[:varying]))),
-        :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS), ticktext = string.(P6_STRENGTHS))),
-        :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE <= 0.01)"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
-        :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS), ticktext = string.(P6_STRENGTHS))),
-        :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Active groups (MSE <= 0.01)"; range = [0, varying_top])),
+        :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:fixed]), ticktext = string.(P6_STRENGTHS[:fixed]))),
+        :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE <= $(QUALITY_THRESHOLDS[:fixed]))"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
+        :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:varying]), ticktext = string.(P6_STRENGTHS[:varying]))),
+        :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Active groups (MSE <= $(QUALITY_THRESHOLDS[:varying]))"; range = [0, varying_top])),
         :legend => row_legend(0.505),
         :legend2 => row_legend(-0.085),
     )))
@@ -701,7 +701,7 @@ function make_terminal_figure(data_by_protocol, output)
 end
 
 function add_hitting_panel!(plot_handle, data, row, col; showlegend, legend_id = "legend")
-    for (strength_index, strength) in enumerate(P6_STRENGTHS)
+    for (strength_index, strength) in enumerate(P6_STRENGTHS[data.protocol])
         values = Float64[]
         for target in HITTING_TARGETS
             matching = [item for item in data.hitting if
@@ -714,7 +714,7 @@ function add_hitting_panel!(plot_handle, data, row, col; showlegend, legend_id =
         end
         add_trace!(plot_handle, scatter(
             x = collect(HITTING_TARGETS), y = values, mode = "lines+markers",
-            name = @sprintf("GO strength %.4g", strength), legendgroup = "strength_$strength_index",
+            name = @sprintf("GO F/V %.4g / %.4g", P6_STRENGTHS[:fixed][strength_index], P6_STRENGTHS[:varying][strength_index]), legendgroup = "strength_$strength_index",
             line = attr(color = STRENGTH_COLORS[strength_index], width = 2),
             marker = attr(color = STRENGTH_COLORS[strength_index], size = 6), showlegend = showlegend,
             legend = legend_id,
@@ -806,7 +806,7 @@ end
 
 function add_archive_panel!(plot_handle, data, row, col; showlegend, legend_id = "legend")
     grid = collect(range(0.0, 1.0; length = 51))
-    specifications = [("go", index, @sprintf("GO %.4g", P6_STRENGTHS[index]), STRENGTH_COLORS[index], "solid") for index in 1:5]
+    specifications = [("go", index, @sprintf("GO F/V %.4g / %.4g", P6_STRENGTHS[:fixed][index], P6_STRENGTHS[:varying][index]), STRENGTH_COLORS[index], "solid") for index in 1:5]
     push!(specifications, ("gr", 0, "GR reference", NEUTRAL_COLOR, "dash"))
     for (method, strength_index, label, color, dash) in specifications
         series = archive_series(data, method, strength_index, grid)
@@ -843,17 +843,19 @@ function make_supplement_figure(data_by_protocol, output)
     add_archive_panel!(plot_handle, data_by_protocol[:fixed], 3, 1; showlegend = true, legend_id = "legend3")
     add_archive_panel!(plot_handle, data_by_protocol[:varying], 3, 2; showlegend = false, legend_id = "legend3")
 
-    strength_ticktext = [string(value) for value in P6_STRENGTHS]
-    push!(strength_ticktext, "GR ref")
+    fixed_strength_ticktext = [string(value) for value in P6_STRENGTHS[:fixed]]
+    varying_strength_ticktext = [string(value) for value in P6_STRENGTHS[:varying]]
+    push!(fixed_strength_ticktext, "GR ref")
+    push!(varying_strength_ticktext, "GR ref")
     layout = common_layout(width = 1450, height = 1750, title = "Package 6 supplementary stability diagnostics")
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Target active SC groups"; reversed = true, tickmode = "array", tickvals = collect(HITTING_TARGETS), ticktext = string.(HITTING_TARGETS))),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Median first update")),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Target active SC groups"; reversed = true, tickmode = "array", tickvals = collect(HITTING_TARGETS), ticktext = string.(HITTING_TARGETS))),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Median first update")),
-        :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength / GR reference"; tickmode = "array", tickvals = collect(1:6), ticktext = strength_ticktext, range = [0.6, 6.4])),
+        :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength / GR reference"; tickmode = "array", tickvals = collect(1:6), ticktext = fixed_strength_ticktext, range = [0.6, 6.4])),
         :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Events per 1,000 updates")),
-        :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength / GR reference"; tickmode = "array", tickvals = collect(1:6), ticktext = strength_ticktext, range = [0.6, 6.4])),
+        :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength / GR reference"; tickmode = "array", tickvals = collect(1:6), ticktext = varying_strength_ticktext, range = [0.6, 6.4])),
         :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Events per 1,000 updates")),
         :xaxis5 => preserved_subplot_axis(plot_handle, :xaxis5, paper_axis("Normalized training progress"; range = [0, 1])),
         :yaxis5 => preserved_subplot_axis(plot_handle, :yaxis5, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
@@ -944,7 +946,7 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
     path = joinpath(output_dir, "paper_metrics.md")
     open(path, "w") do io
         println(io, "# Package 6 paper metrics\n")
-        println(io, "This report is generated deterministically from the completed Package-6 analysis products. Fixed IC and Varying IC both use the quality threshold `MSE <= 0.01`. No training, validation, candidate selection, or rollout is performed by the paper-figure script.\n")
+        println(io, "This report is generated deterministically from the completed Package-6 analysis products. Fixed IC uses the quality threshold `MSE <= $(QUALITY_THRESHOLDS[:fixed])`; Varying IC uses `MSE <= $(QUALITY_THRESHOLDS[:varying])`. No training, validation, candidate selection, or rollout is performed by the paper-figure script.\n")
 
         println(io, "## 1. Empirical attainment across seeds\n")
         println(io, "`1/3`, `2/3`, and `3/3` are the best validation-MSE envelopes attained by at least one, two, or all three paired replicates at group budget `B`. The log spread is `log(L_3/3 / L_1/3)`; smaller finite values mean less seed sensitivity.\n")

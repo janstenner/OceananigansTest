@@ -187,6 +187,8 @@ function audit_runs(options, jobs)
         Int(config[:validation_batch_size]) == P6_VALIDATION_BATCH_SIZE[options.protocol] || error("Validation batch-size mismatch in $(run.job.id).")
         Int(config[:evaluation_interval]) == P6_EVALUATION_INTERVAL || error("Evaluation interval mismatch.")
         Float64(config[:regression_learning_rate]) == P6_REGRESSION_LEARNING_RATE || error("Regression LR mismatch.")
+        Float64.(config[:go_strength_grid]) == collect(P6_STRENGTHS[options.protocol]) || error("GO strength-grid mismatch.")
+        Float64(config[:quality_threshold]) == P6_QUALITY_THRESHOLDS[options.protocol] || error("Quality-threshold mismatch.")
         Int(config[:apprentice_seed]) == run.job.apprentice_seed || error("Apprentice seed mismatch.")
         Int(config[:batch_order_seed]) == run.job.batch_seed || error("Batch seed mismatch.")
         string(config[:pairing_hash]) == run.job.pairing_hash || error("Pairing hash mismatch.")
@@ -233,6 +235,8 @@ end
 
 function build_metrics(audit)
     runs = audit.runs
+    protocol = only(unique(run.job.protocol for run in runs))
+    quality_threshold = P6_QUALITY_THRESHOLDS[protocol]
     run_fronts = Dict(run.job.id => scientific_front(run.records) for run in runs)
     strength_fronts = Dict{Tuple{Symbol, Int}, Vector{Dict{Symbol, Any}}}()
     for method in (:go, :gr)
@@ -316,6 +320,7 @@ function build_metrics(audit)
         masks[method] = mask_stability(
             Dict(run.job.id => run_fronts[run.job.id] for run in selected_runs),
             Dict(run.job.id => run.records for run in selected_runs),
+            mse_threshold = quality_threshold,
             hydrate = hydrate,
         )
     end
@@ -357,6 +362,8 @@ function make_plots_loaded(options, audit, metrics)
     output = joinpath(analysis_directory(options), "plots")
     mkpath(output)
     paths = Dict{Symbol, Any}()
+    strengths = P6_STRENGTHS[options.protocol]
+    quality_threshold = P6_QUALITY_THRESHOLDS[options.protocol]
     pareto_traces = PlotlyJS.GenericTrace[]
     for run in audit.runs
         front = metrics.run_fronts[run.job.id]
@@ -418,7 +425,7 @@ function make_plots_loaded(options, audit, metrics)
         rows = filter(row -> row.method === :go && row.strength_index == strength_index && row.target_groups in HIGHLIGHT_TARGETS && row.reachable, metrics.hitting_rows)
         targets = collect(HIGHLIGHT_TARGETS)
         medians = [begin values = [Float64(row.first_update) for row in rows if row.target_groups == target]; isempty(values) ? NaN : median(values) end for target in targets]
-        push!(hitting_traces, scatter(x = targets, y = medians, mode = "lines+markers", name = @sprintf("GO λ=%.4g", P6_STRENGTHS[strength_index]), line = attr(color = strength_color(strength_index))))
+        push!(hitting_traces, scatter(x = targets, y = medians, mode = "lines+markers", name = @sprintf("GO λ=%.4g", strengths[strength_index]), line = attr(color = strength_color(strength_index))))
     end
     gr_rows = filter(row -> row.method === :gr && row.target_groups in HIGHLIGHT_TARGETS && row.reachable, metrics.hitting_rows)
     gr_targets = collect(HIGHLIGHT_TARGETS)
@@ -444,7 +451,7 @@ function make_plots_loaded(options, audit, metrics)
         frequency = mask_result.selection_frequency
         if !isempty(frequency)
             channel_rows = length(frequency) % 3 == 0 ? reshape(frequency, 3, :) : reshape(frequency, 1, :)
-            frequency_plot = Plot(heatmap(z = channel_rows, zmin = 0, zmax = 1, colorscale = "Blues"), Layout(template = "plotly_white", title = "$(uppercase(string(method))) selection frequency: sparsest per-run mask with MSE ≤ 0.01", xaxis = attr(title = "Global sensor position"), yaxis = attr(title = "Channel")))
+            frequency_plot = Plot(heatmap(z = channel_rows, zmin = 0, zmax = 1, colorscale = "Blues"), Layout(template = "plotly_white", title = "$(uppercase(string(method))) selection frequency: sparsest per-run mask with MSE ≤ $(quality_threshold)", xaxis = attr(title = "Global sensor position"), yaxis = attr(title = "Channel")))
             paths[Symbol("$(method)_selection_map")] = save_svg(frequency_plot, joinpath(output, "$(method)_selection_frequency.svg"); width = 1000, height = 420)
         end
     end
@@ -470,7 +477,8 @@ end
 
 function freeze_candidate_manifest(options, audit, metrics)
     all_go = reduce(vcat, [run.records for run in audit.runs if run.job.method === :go])
-    match, sparse, _ = select_test_candidates(all_go)
+    quality_threshold = P6_QUALITY_THRESHOLDS[options.protocol]
+    match, sparse, _ = select_test_candidates(all_go; mse_threshold = quality_threshold)
     selected = Dict{Symbol, Any}[]
     for (role, candidate) in ((:C_match, match), (:C_sparse, sparse))
         isnothing(candidate) && continue
@@ -501,7 +509,7 @@ function freeze_candidate_manifest(options, audit, metrics)
         protocol = options.protocol,
         selection_source = :pooled_native_go_validation_front,
         selection_uses_test_data = false,
-        sparse_mse_threshold = 0.01,
+        sparse_mse_threshold = quality_threshold,
         tie_breaker = :lower_mse_then_earlier_update_then_lexicographic_run_id,
         candidates = selected,
         expert_identifier = audit.expert_identifier,
@@ -530,8 +538,9 @@ function write_report(options, audit, metrics, paths, manifest_path, test_result
         println(io, "Generated: $(Dates.now())\n")
         println(io, "## Scope and frozen protocol\n")
         println(io, "This report covers Separate-Channel grouping only. It audits 15 GO runs (five strengths × three paired replicates) and three paired GR reference runs. All runs use native sparsity, regression learning rate `2e-4`, validation every 25 updates from update 0, no result-dependent stopping, no fine-tuning, and no hard thresholding. The technical strength calibration is not part of this scientific study.\n")
-        println(io, "- GO strengths: `$(join(P6_STRENGTHS, "`, `"))`")
+        println(io, "- GO strengths: `$(join(P6_STRENGTHS[options.protocol], "`, `"))`")
         println(io, "- GR reference strength: `$(P6_GR_STRENGTH[options.protocol])`")
+        println(io, "- Sparse-candidate quality threshold: `$(P6_QUALITY_THRESHOLDS[options.protocol])`")
         println(io, "- Training updates: `$(P6_UPDATES[options.protocol])`")
         println(io, "- Training/validation batch sizes: `$(P6_TRAINING_BATCH_SIZE[options.protocol])` / `$(P6_VALIDATION_BATCH_SIZE[options.protocol])`")
         println(io, "- Master seed: `$(P6_MASTER_SEED)`; replicate seed pairs: `$(join(("r$(r)=$(seed_plan(r).apprentice_seed)/$(seed_plan(r).batch_seed)" for r in 1:3), ", "))`\n")
@@ -585,7 +594,7 @@ function write_report(options, audit, metrics, paths, manifest_path, test_result
             end
         end
         println(io, "\n## Validation-only candidate freeze\n")
-        println(io, "The immutable [candidate manifest](candidate_manifest.jld2) was written before any terminal rollout. `C_match` minimizes validation MSE on the pooled native GO front. `C_sparse`, when distinct and available, minimizes active SC groups subject to validation MSE ≤ 0.01. Test results cannot change this manifest.\n")
+        println(io, "The immutable [candidate manifest](candidate_manifest.jld2) was written before any terminal rollout. `C_match` minimizes validation MSE on the pooled native GO front. `C_sparse`, when distinct and available, minimizes active SC groups subject to validation MSE ≤ $(P6_QUALITY_THRESHOLDS[options.protocol]). Test results cannot change this manifest.\n")
         for raw in selected
             candidate = Dict{Symbol, Any}(Symbol(key) => value for (key, value) in raw)
             @printf(io, "- `%s`: run `%s`, λ=%.6g, update %d, %d active groups, validation MSE %.6e.\n", string(candidate[:selection_role]), string(candidate[:run_id]), Float64(candidate[:regularization_strength]), Int(candidate[:update]), Int(candidate[:active_groups]), Float64(candidate[:validation_matching]))
@@ -678,6 +687,7 @@ function persist_metrics(options, audit, metrics)
         schema_version = P6_SCHEMA_VERSION,
         experiment = :package6_sc_go_sensitivity,
         protocol = options.protocol,
+        quality_threshold = P6_QUALITY_THRESHOLDS[options.protocol],
         generated_at = string(Dates.now()),
         run_fronts = metrics.run_fronts,
         strength_fronts = metrics.strength_fronts,

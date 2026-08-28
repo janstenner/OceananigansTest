@@ -29,7 +29,15 @@ record(groups, mse, update; id = "c$update", run = "run", mask = BitVector([true
     @test length(analysis_jobs(:fixed)) == 1
     @test P6_TRAINING_BATCH_SIZE == Dict(:fixed => 50, :varying => 100)
     @test P6_VALIDATION_BATCH_SIZE == Dict(:fixed => 200, :varying => 512)
-    @test Set(job.regularization_strength for job in jobs if job.method === :go) == Set(P6_STRENGTHS)
+    @test P6_STRENGTHS == Dict(
+        :fixed => (0.000512, 0.00128, 0.0032, 0.008, 0.02),
+        :varying => (0.000768, 0.00192, 0.0048, 0.012, 0.03),
+    )
+    @test P6_GR_STRENGTH == Dict(:fixed => 7e-5, :varying => 1e-4)
+    @test P6_QUALITY_THRESHOLDS == Dict(:fixed => 1e-2, :varying => 2e-3)
+    for protocol in (:fixed, :varying)
+        @test Set(job.regularization_strength for job in jobs if job.method === :go && job.protocol === protocol) == Set(P6_STRENGTHS[protocol])
+    end
     for protocol in (:fixed, :varying), replicate in 1:3
         paired = filter(job -> job.protocol === protocol && job.replicate == replicate, jobs)
         @test length(paired) == 6
@@ -40,7 +48,7 @@ record(groups, mse, update; id = "c$update", run = "run", mask = BitVector([true
     @test length(unique(seed_plan(replicate).apprentice_seed for replicate in 1:3)) == 3
     @test length(unique(seed_plan(replicate).batch_seed for replicate in 1:3)) == 3
     @test all(seed_plan(replicate).apprentice_seed != 600_601 for replicate in 1:3)
-    @test seed_plan(1) == (replicate = 1, apprentice_seed = 177_701_484, batch_seed = 1_685_563_253)
+    @test seed_plan(1) == (replicate = 1, apprentice_seed = 1_057_174_863, batch_seed = 116_693_996)
 end
 
 @testset "Scientific fronts, attainment and regret" begin
@@ -123,6 +131,13 @@ end
     @test identical.sparse === nothing
     no_sparse = select_test_candidates([record(1, 0.02, 10; id = "only")])
     @test no_sparse.sparse === nothing
+
+    protocol_candidates = [
+        record(8, 0.001, 10; id = "protocol_match"),
+        record(2, 0.003, 20; id = "fixed_only_sparse"),
+    ]
+    @test select_test_candidates(protocol_candidates; mse_threshold = P6_QUALITY_THRESHOLDS[:fixed]).sparse[:candidate_id] == "fixed_only_sparse"
+    @test select_test_candidates(protocol_candidates; mse_threshold = P6_QUALITY_THRESHOLDS[:varying]).sparse === nothing
 
     tied = select_test_candidates([
         record(2, 0.005, 20; id = "late", run = "a"),

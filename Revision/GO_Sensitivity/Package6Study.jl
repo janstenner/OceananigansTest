@@ -7,6 +7,7 @@ using SHA
 using StableRNGs
 
 export P6_SCHEMA_VERSION, P6_MASTER_SEED, P6_STRENGTHS, P6_GR_STRENGTH,
+       P6_QUALITY_THRESHOLDS,
        P6_UPDATES, P6_EVALUATION_INTERVAL, P6_RESUME_INTERVAL,
        P6_GARBAGE_COLLECTION_INTERVAL, P6_REGRESSION_LEARNING_RATE,
        P6_TRAINING_BATCH_SIZE, P6_VALIDATION_BATCH_SIZE,
@@ -17,9 +18,13 @@ export P6_SCHEMA_VERSION, P6_MASTER_SEED, P6_STRENGTHS, P6_GR_STRENGTH,
        expected_evaluation_updates, short_path_components
 
 const P6_SCHEMA_VERSION = 1
-const P6_MASTER_SEED = 20_260_811
-const P6_STRENGTHS = (0.0015, 0.003, 0.006, 0.01, 0.03)
-const P6_GR_STRENGTH = Dict(:fixed => 0.00004, :varying => 0.0001)
+const P6_MASTER_SEED = 20_260_812
+const P6_STRENGTHS = Dict(
+    :fixed => (0.000512, 0.00128, 0.0032, 0.008, 0.02),
+    :varying => (0.000768, 0.00192, 0.0048, 0.012, 0.03),
+)
+const P6_GR_STRENGTH = Dict(:fixed => 0.00007, :varying => 0.0001)
+const P6_QUALITY_THRESHOLDS = Dict(:fixed => 1e-2, :varying => 2e-3)
 const P6_UPDATES = Dict(:fixed => 35_000, :varying => 50_000)
 const P6_EVALUATION_INTERVAL = 25
 const P6_RESUME_INTERVAL = 100
@@ -107,7 +112,7 @@ function study_jobs(protocol_selection = :all)
     protocols = protocol_selection === :all ? (:fixed, :varying) : (normalize_protocol(protocol_selection),)
     jobs = NamedTuple[]
     for protocol in protocols
-        for (strength_index, strength) in enumerate(P6_STRENGTHS), replicate in P6_REPLICATES
+        for (strength_index, strength) in enumerate(P6_STRENGTHS[protocol]), replicate in P6_REPLICATES
             seeds = seed_plan(replicate)
             push!(jobs, (
                 protocol,
