@@ -41,6 +41,52 @@ end
     @test all(candidate -> size(candidate[:global_mask]) == (3, 48, 8), candidates)
 end
 
+@testset "Package-7 threshold importances" begin
+    fake_model = (
+        encoder = (
+            embedding = (
+                weight = Float32[1 -2 0; -3 4 -5],
+            ),
+        ),
+    )
+    fake_groups = [[1, 2], [3]]
+    p7_importances = threshold_importances(fake_model, fake_groups; mode = :max_input_l1)
+    @test p7_importances.input_importances == [4.0, 6.0, 5.0]
+    @test p7_importances.group_importances == [6.0, 5.0]
+    @test group_importances(fake_model, fake_groups) ≈ [sqrt(30.0), 5.0] atol = 1e-6
+
+    active = hard_threshold_group_mask(p7_importances.group_importances, HardThresholdSpec(:all, :absolute, 10.0))
+    enforce_minimum_active_groups!(active, p7_importances.group_importances, 1)
+    @test active == BitVector([true, false])
+
+    tied = falses(3)
+    enforce_minimum_active_groups!(tied, [2.0, 2.0, 1.0], 1)
+    @test tied == BitVector([true, false, false])
+
+    test_model = deepcopy(apprentice)
+    test_model.encoder.embedding.weight .= 0
+    groups = regularizer_groups(test_model; group_rows_by_overlap = true, group_channels = true)
+    specifications = [
+        HardThresholdSpec(:threshold_0p001, :absolute, 0.001),
+        HardThresholdSpec(:threshold_0p002, :absolute, 0.002),
+        HardThresholdSpec(:threshold_0p003, :absolute, 0.003),
+    ]
+    candidates = candidate_masks(
+        test_model,
+        specifications;
+        groups,
+        threshold_importance_mode = :max_input_l1,
+        threshold_minimum_active_groups = 1,
+        threshold_pareto_scope = :package7_thresholds,
+    )
+    @test length(candidates) == 4
+    @test all(candidate -> candidate[:active_groups] == 1, candidates)
+    @test all(candidate -> candidate[:group_mask][1], candidates)
+    @test all(candidate -> candidate[:pareto_scope] === :package7_thresholds, candidates)
+    @test all(candidate -> candidate[:threshold_importance_mode] === :max_input_l1, candidates)
+    @test length(unique(Tuple(candidate[:group_mask]) for candidate in candidates)) == 1
+end
+
 @testset "regularizer names and proximal interval primitives" begin
     weights = Float32[3 0 1 0; 0 4 0 2]
     groups = [[1, 2], [3, 4]]

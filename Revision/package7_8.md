@@ -1,490 +1,160 @@
-# Paket 7 und 8 — Apprentice-Distillation, Pareto-Auswahl und Evaluation
+# Paket 7 und 8 — vollständiger Regularisierer- und Gruppierungsvergleich
 
-Stand: 2026-08-09
+Stand: 2026-08-28
 
 ## Ziel und Abgrenzung
 
-Paket 7 und 8 führen die in Paket 6 aufgebaute Pareto-Infrastruktur in die vollständigen Fixed-IC- und Varying-IC-Experimente des Papers über.
-Die in Paket 6 erzeugten GO- und GR-Runs werden wiederverwendet und nicht ohne Grund erneut ausgeführt.
-
-Paket 6 beantwortet die methodische Frage nach Sensitivität und Seed-Stabilität von GO.
-Paket 7 und 8 beantworten die anwendungsbezogene Frage, welche Apprentice-Modelle und Masken nach Offline-Auswahl, Closed-loop-Validation und gegebenenfalls finaler Testevaluation berichtet werden.
-
-Die wesentlichen Erweiterungen gegenüber Paket 6 sind:
-
-- die noch fehlenden Regularisierer und Gruppierungsvarianten
-- grouped Lasso und Standard-GrOWL
-- Hard-Threshold-Kandidaten
-- Closed-loop-Validation weniger Pareto-Kandidaten
-- finale Evaluation der ausgewählten Modelle
-- vollständige Paper-Tabellen, Sensorplots und Performancevergleiche
-
-## 1. Gemeinsame Voraussetzungen
-
-Vor Beginn werden festgeschrieben:
-
-- die final verwendeten Fixed-IC- und Varying-IC-Experts
-- die MAT-Apprentice-Architektur
-- die Teacher-Rollout-Datensätze
-- die Apprentice-Trainingsbudgets
-- die Checkpoint- und Validationintervalle
-- die betrachteten Methoden und Gruppierungsvarianten
-- die Definition des Expert-Matching-Fehlers
-- die Definition der Gesamtzahl aktiver Inputs
-- die Threshold-Importance und der vollständige Thresholdbereich
-- das maximale Budget für Closed-loop-Validation und Testevaluation
-
-Alle Randomisierungen werden über gespeicherte Seeds kontrolliert.
-Die finale Testevaluation darf keine spätere Modell-, Masken- oder Thresholdentscheidung beeinflussen.
-
-Das Apprentice-Trainingsbudget ist protokollweit festgelegt: sämtliche
-Methoden und Gruppierungsvarianten verwenden 35.000 Optimizer-Updates unter
-Fixed IC und 50.000 Optimizer-Updates unter Varying IC. Die Regressions-
-Lernrate beträgt für beide Protokolle `2e-4`. Diese Festlegung gilt gemeinsam
-mit Paket 6.
-
-## 2. Methoden- und Gruppierungsmatrix
-
-Die vollständige Matrix enthält, soweit die jeweilige Methode nach Paket 6 im Paper verbleibt:
-
-- GO mit channel-coupled grouping
-- GO mit separate-channel grouping
-- GR mit channel-coupled grouping
-- GR mit separate-channel grouping
-- grouped Lasso mit channel-coupled grouping
-- grouped Lasso mit separate-channel grouping
-- Standard-GrOWL mit channel-coupled grouping
-- Standard-GrOWL mit separate-channel grouping
-
-Die aus Paket 6 übernommenen GO-Stärken werden nicht anhand von Testresultaten
-angepasst. Die Paket-6-Kandidaten wurden ausschließlich über
-Validation-Expert-Matching und native SC-Sparsity ausgewählt; der anschließende
-Testset-Check war terminal und auswahl-inert. Auch in Paket 7/8 werden
-Training, Strength-, Checkpoint-, Masken- und Thresholdauswahl vollständig
-ohne Testdaten abgeschlossen und atomar eingefroren, bevor Testrollouts
-beginnen.
-Falls Paket 6 eine einzelne GO-Stärke auswählt, wird nur diese weitergeführt.
-Falls eine konservative und eine aggressive Stärke komplementäre Pareto-Bereiche abdecken, dürfen höchstens diese beiden weitergeführt werden.
-
-Grouped Lasso bezeichnet die gleiche overlap-konsistente Gruppenstruktur wie bei den anderen Methoden mit einer einheitlichen Regularisierungsgewichtung.
-Standard-GrOWL verwendet die absteigende Gewichtsanordnung und bleibt klar von GO mit aufsteigenden Gewichten getrennt.
-
-## 3. Datenprotokoll für Paket 7: Fixed IC
-
-Für Fixed IC sind Training-, Validation- und Testdaten gemäß der getroffenen Festlegung identisch.
-Es existiert daher kein unabhängiger held-out Testsplit.
-
-Das Fixed-IC-Protokoll umfasst:
-
-- Teacher-Rollouts aus dem festgelegten Fixed-IC-Expert
-- Apprentice-Training auf diesen Rollouts
-- Offline-Expert-Matching auf denselben Daten
-- Pareto-Auswahl anhand von Expert Matching und Anzahl aktiver Inputs
-- Closed-loop-Auswertung weniger ausgewählter Kandidaten auf dem Fixed-IC-RBC-Problem
-- abschließende ausführliche Closed-loop-Berichterstattung des ausgewählten Modells
-
-Die abschließende Fixed-IC-Auswertung wird nicht als unabhängige Generalisierungsevaluation bezeichnet.
-Sie dokumentiert die kontrollierte Performance im untersuchten Fixed-IC-Szenario.
-
-## 4. Datenprotokoll für Paket 8: Varying IC
-
-Für Varying IC werden die drei Corpus-Splits strikt getrennt verwendet:
-
-- Trainingbasen ausschließlich für Expert-Rollouts und Apprentice-Training
-- Validationbasis ausschließlich für Offline-Pareto-Messungen und Closed-loop-Validation
-- Testbasen ausschließlich für terminale, auswahl-inerte Evaluationen bereits
-  eingefrorener Modelle
-
-Jeder Rollout speichert mindestens:
-
-- Corpus-Split
-- Basis-Seed
-- Spiegelung
-- horizontalen Offset
-- Run-Seed
-- Episode
-- Kontrollschritt
-- Simulationszeit
-
-Die Testbasen werden weder für Hyperparameterwahl noch für Checkpoint-, Masken-,
-Threshold- oder GO-Power-Auswahl verwendet. Bereits betrachtete terminale
-Paket-6-Testresultate dürfen ebenfalls keine Paket-7/8-Entscheidung auslösen.
-
-## 5. Wiederverwendung der Runs aus Paket 6
-
-Alle kompatiblen Paket-6-Kandidaten werden mit ihren vollständigen Metadaten in die Kandidatenmengen von Paket 7 und 8 übernommen.
-
-Insbesondere werden wiederverwendet:
-
-- GO mit separate-channel grouping unter Fixed IC
-- GO mit separate-channel grouping unter Varying IC
-- die nativen GR-Referenzkandidaten mit separate-channel grouping unter Fixed IC
-- die nativen GR-Referenzkandidaten mit separate-channel grouping unter Varying IC
-- die in Paket 6 erzeugten Run-, Parameter- und gepoolten Pareto-Metadaten
-
-Ein Paket-6-Run wird nur erneut ausgeführt, wenn:
-
-- seine Konfiguration nicht mit der finalen Produktionskonfiguration übereinstimmt
-- erforderliche Metadaten fehlen
-- eine neue Paket-7/8-Konfiguration ausdrücklich zusätzliches Thresholding
-  oder Channel-Coupled-Gruppierung benötigt
-- ein technischer Fehler die Wiederverwendung verhindert
-
-Die nativen SC-Kandidaten aus Paket 6 sind direkt wiederverwendbar. Paket 6
-hat absichtlich keine Threshold-Kandidaten erzeugt. Benötigt Paket 7/8 für GO,
-GR oder andere Regularisierer eine Threshold-Expansion oder eine
-Channel-Coupled-Variante, wird diese als neue, klar getrennte
-Produktionskonfiguration erzeugt; sie wird nicht nachträglich als Bestandteil
-des Paket-6-Sweeps ausgegeben.
-
-## 6. Apprentice-Training und Checkpointauswertung
-
-Jeder neue Apprentice-Run verwendet:
-
-- ein festes Maximalbudget
-- regelmäßig festgelegte Checkpoints
-- ein festes Offline-Validationintervall
-- einen gespeicherten Initialisierungsseed
-- einen gespeicherten Datenreihenfolgeseed
-- identische Teacher-Daten innerhalb gepaarter Vergleiche
-
-Manuelles Stoppen anhand eines gerade akzeptabel erscheinenden Kompromisses aus Expert Matching und Sparsity entfällt.
-Ergebnisabhängige Stopps bleiben auf technische Sicherheitsfälle wie NaN, Inf oder einen eindeutigen numerischen Zusammenbruch begrenzt.
-
-Jeder ausgewertete Basischeckpoint speichert mindestens:
-
-- Methode
-- IC-Protokoll
-- Gruppierungsvariante
-- Regularisierungskonfiguration
-- Apprentice-Seed
-- Trainingsschritt
-- Checkpoint-ID
-- Validation-Expert-Matching
-- native Anzahl aktiver Inputs
-- native Maske
-- Pfad oder Referenz auf das Apprentice-Modell
-
-## 7. Methodenspezifische Kandidatenerzeugung
-
-### GO
-
-GO erzeugt seine primäre Kandidatenmenge mit Threshold $\tau=0$.
-Die durch GO selbst exakt auf null gesetzten Gruppen bestimmen die native Maske.
-
-Die Paket-6-Kandidaten werden übernommen.
-Neue GO-Runs werden nur für fehlende Gruppierungsvarianten oder die nach Paket 6 ausdrücklich weitergeführten GO-Stärken ausgeführt.
-
-### GR
-
-GR erhält zunächst eine native Kandidatenmenge mit $\tau=0$.
-Da GR in den bisherigen Experimenten in geringem Umfang von nachträglichem Thresholding betroffen war, kann zusätzlich derselbe vorab definierte Thresholdprozess angewendet werden.
-
-Die native und die threshold-assisted GR-Front werden getrennt identifizierbar gehalten.
-
-### Grouped Lasso
-
-Grouped Lasso wird zunächst nativ mit $\tau=0$ ausgewertet.
-Es wird erwartet, dass bei Messung ausschließlich exakt null gesetzter Gruppen nur geringe native Sparsity entsteht.
-
-Anschließend wird für jeden ausgewerteten Basischeckpoint der vollständige vorab definierte Thresholdbereich angewendet.
-
-### Standard-GrOWL
-
-Standard-GrOWL wird zunächst nativ mit $\tau=0$ ausgewertet.
-Es wird erwartet, dass ohne Hard Thresholding alle oder nahezu alle Inputs aktiv bleiben.
-
-Da dann alle nativen Checkpoints dieselbe volle Inputzahl besitzen, wäre auf der nativen Front pro Run nur der Checkpoint mit dem besten Validation-Expert-Matching nichtdominiert.
-Deshalb muss die Threshold-Expansion vor der Pareto-Reduktion der GrOWL-Checkpoints erfolgen.
-
-## 8. Hard-Threshold-Kandidaten
-
-Der Threshold ist ein Parameter der Kandidatenerzeugung und keine dritte Pareto-Zielgröße.
-
-Ein Kandidat wird identifiziert durch
-
-$$
-c =
-(\text{method},
-\text{seed},
-\text{checkpoint},
-\tau,
-\text{mask}),
-$$
-
-während die Pareto-Dominanz ausschließlich anhand von
-
-$$
-N_{\mathrm{active}}(c)
-$$
-
-und
-
-$$
-L_{\mathrm{match,val}}(c)
-$$
-
-bestimmt wird.
-
-Der Thresholdbereich beginnt bei $\tau=0$ und wird in vorab festgelegten Stufen, beispielsweise $0.005$, bis zu einem vor Produktionsbeginn festgelegten Maximalwert durchlaufen.
-Der Bereich darf nach Einsicht in Validation- oder Testresultate nicht willkürlich erweitert werden.
-
-Vor Beginn muss festgelegt werden, ob der Threshold auf eine absolute oder normalisierte Group Importance angewendet wird.
-Diese Definition bleibt anschließend über Methoden, Seeds und IC-Protokolle konsistent und wird mit jedem Kandidaten gespeichert.
-
-Für jeden Basischeckpoint gilt die Reihenfolge:
-
-1. Group Importance berechnen.
-2. Alle vorab festgelegten Thresholds anwenden.
-3. Channel-coupled Gruppen immer gemeinsam maskieren.
-4. Identische Masken über verschiedene Thresholds deduplizieren.
-5. Jede unterschiedliche Maske auf dem Validation Set auswerten.
-6. Erst danach Pareto-Dominanz prüfen.
-
-Es findet kein Fine-Tuning nach dem Thresholding statt.
-
-Mehrere Masken desselben Basischeckpoints referenzieren dasselbe Apprentice-Modell.
-Der Threshold, die Maske und ihre Messwerte werden getrennt gespeichert.
-
-## 9. Warum die Reihenfolge bei Lasso und GrOWL entscheidend ist
-
-Ein nativ dominierter Lasso- oder GrOWL-Checkpoint kann nach Thresholding einen nichtdominierten sparse Kandidaten erzeugen.
-Deshalb dürfen Basischeckpoints dieser Methoden nicht vor der Threshold-Expansion allein anhand ihrer nativen Punkte verworfen werden.
-
-Für Standard-GrOWL gilt typischerweise:
-
-$$
-N_{\mathrm{active}}^{(t,0)} = N_{\mathrm{full}}
-$$
-
-für alle Trainingsschritte $t$.
-Die nichttriviale Performance-Sparsity-Punktwolke entsteht erst aus den Kandidaten mit $\tau>0$.
-
-Ein Apprentice-Modell wird pro Checkpoint höchstens einmal gespeichert.
-Trägt nach vollständiger Threshold-Expansion keine seiner Masken zu einer relevanten Pareto-Front bei, kann das vollständige Modell verworfen werden.
-
-## 10. Pareto-Dominanz und Archive
-
-Ein Kandidat $A$ dominiert einen Kandidaten $B$, wenn
-
-$$
-N_{\mathrm{active}}^A \leq N_{\mathrm{active}}^B
-$$
-
-und
-
-$$
-L_{\mathrm{match,val}}^A \leq L_{\mathrm{match,val}}^B,
-$$
-
-wobei mindestens eine Ungleichung strikt sein muss.
-
-Folgende Archive werden gebildet:
-
-- Front pro Run
-- Front pro Methode und Gruppierungsvariante
-- Front pro Regularisierungskonfiguration
-- gepoolte Front über Apprentice-Seeds
-- gemeinsame Front aller Methoden für Fixed IC
-- gemeinsame Front aller Methoden für Varying IC
-
-Alle Punkte behalten ihre Erzeugungsmetadaten.
-Bei identischer Maske wird der Kandidat mit dem besten Validation-Expert-Matching bevorzugt.
-Bei identischer Anzahl aktiver Inputs bleibt für die geometrische Front der Kandidat mit dem kleinsten Validation-Expert-Matching.
-
-## 11. Native und threshold-assisted Ergebnisansichten
-
-### Native Sparsification
-
-Die native Ansicht verwendet für alle Methoden ausschließlich $\tau=0$.
-Sie beantwortet:
-
-> Welche Methoden erzeugen bereits während des Trainings exakt sparse Modelle?
-
-Diese Darstellung macht sichtbar, ob GO und GR native Nullgruppen erzeugen und ob grouped Lasso oder Standard-GrOWL ohne Maskenextraktion dicht bleiben.
-
-### Threshold-assisted deployment
-
-Die threshold-assisted Ansicht enthält alle vorab erzeugten Threshold-Kandidaten.
-Sie beantwortet:
-
-> Welchen besten deploybaren Performance-Sparsity-Trade-off erreicht jede Methode einschließlich dokumentierter Maskenextraktion?
-
-Die gemeinsame faire Methodenauswahl erfolgt anhand der zwei Ergebnisgrößen Anzahl aktiver Inputs und Validation-Expert-Matching.
-Der Threshold bleibt als erklärender Parameter erhalten.
-
-## 12. Darstellungen der Offline-Kandidaten
-
-Für Fixed IC und Varying IC werden getrennte Darstellungen erzeugt.
-
-Die zentrale 2D-Darstellung verwendet:
-
-- x-Achse: Anzahl aktiver Inputs
-- y-Achse: Validation-Expert-Matching
-- Farbe oder Symbol: Methode und Gruppierungsvariante
-- Hervorhebung der nichtdominierten Punkte
-
-Für grouped Lasso, Standard-GrOWL und gegebenenfalls threshold-assisted GR wird zusätzlich eine 3D-Punktwolke erzeugt:
-
-- x-Achse: Anzahl aktiver Inputs
-- y-Achse: Validation-Expert-Matching
-- z-Achse: Threshold
-- Hervorhebung der anhand von x und y nichtdominierten Punkte
-
-Es findet keine Dominanzbewertung anhand der Thresholdhöhe statt.
-Ein kleinerer Threshold ist nicht automatisch besser als ein größerer.
-
-Zusätzlich werden Run- und Seedzugehörigkeit, Checkpointschritt und Maskengröße maschinenlesbar erhalten.
-
-## 13. Hypothese für Lasso und GrOWL
-
-Die vorab festgehaltene Erwartung lautet:
-
-> Grouped Lasso und Standard-GrOWL erzeugen ohne Hard Thresholding wenig oder keine exakte Sparsity. Auch nach einem fairen Threshold-Sweep wird erwartet, dass ihr erreichbarer Expert-Matching-Sparsity-Trade-off ungünstiger als bei GO und GR ausfällt.
-
-Diese Aussage ist eine Hypothese und keine Auswahlregel.
-Lasso- oder GrOWL-Kandidaten dürfen zur gemeinsamen Pareto-Front beitragen, wenn die Ergebnisse der Hypothese widersprechen.
-
-Der Threshold-Sweep verhindert, dass Lasso oder GrOWL allein wegen fehlender mathematisch exakter Nullwerte unfair als vollständig dicht bewertet werden.
-
-## 14. Auswahl für Closed-loop-Validation
-
-Die Offline-Pareto-Front dient als günstiger Filter.
-Nur eine kleine vorab budgetierte Auswahl wird in der RBC-Simulation ausgeführt.
-
-Die Auswahl soll unterschiedliche Bereiche abdecken:
-
-- einen konservativen Kandidaten mit sehr gutem Expert Matching
-- einen Kandidaten im Knee-Bereich
-- einen aggressiven Kandidaten mit wenigen aktiven Inputs
-
-Die Auswahl kann methodenspezifische Repräsentanten enthalten, wenn dies für einen fairen Vergleich erforderlich ist.
-Identische oder nahezu identische Masken werden vor der Simulation dedupliziert.
-
-Closed-loop-Validation bedeutet:
-
-- der Apprentice steuert die Simulation selbst
-- seine Aktionen beeinflussen alle folgenden Zustände
-- gemessen werden kumulativer Reward, globaler Nusselt-Verlauf, Stabilität, Fehlläufe und Laufzeit
-- die Resultate dürfen zur finalen Modellauswahl verwendet werden
-
-Die Zahl der simulierten Kandidaten und Episoden wird vor Beginn begrenzt und anschließend berichtet.
-
-## 15. Finale Auswahl und Testevaluation
-
-Die finale Auswahl erfolgt ausschließlich aus Offline-Validation und Closed-loop-Validation.
-Der Threshold wird gemeinsam mit Modell und Maske eingefroren.
+Paket 7 untersucht Fixed IC, Paket 8 anschließend Varying IC. Beide Pakete
+vergleichen alle vorgesehenen Apprentice-Regularisierer und Gruppierungen über
+drei gepaarte Seeds, Offline-Expert-Matching und `active_inputs`.
+
+Die Produktionsruns sind ein vollständig neuer Experimentblock mit einem neuen
+Master-Seed. **GO-SC und GR-SC werden nicht aus Paket 6 übernommen**, sondern
+ebenso wie alle anderen Kombinationen neu trainiert. Paket 6 dient nur als
+methodische Vorstudie; seine Runs und Seeds gehen nicht in Paket 7/8 ein.
+
+Closed-loop-Auswahl und finale Simulation werden erst nach Abschluss der
+Trainings- und Paretoanalyse festgelegt. Testdaten beeinflussen weder Strength-,
+Checkpoint-, Threshold- noch Maskenauswahl.
+
+## Datenprotokolle
 
 ### Paket 7: Fixed IC
 
-Das ausgewählte Fixed-IC-Modell erhält eine ausführliche finale Closed-loop-Auswertung auf dem festgelegten Fixed-IC-Szenario.
-Da kein unabhängiger Split existiert, ist dies keine held-out Generalisierungsevaluation.
+Training, Offline-Validation und Closed-loop-Auswertung verwenden das gemeinsame
+Fixed-IC-Szenario. Es gibt keinen unabhängigen Testsplit; die finale Auswertung
+ist daher keine Held-out-Generalisation.
 
 ### Paket 8: Varying IC
 
-Nach Abschluss aller Entscheidungen wird das ausgewählte Varying-IC-Modell einmalig auf den Testbasen evaluiert.
-Die Testevaluation ist closed loop und verwendet vorab festgelegte Basiszustände, Spiegelungen, Offsets und Evaluationsseeds.
+- Training-Corpus ausschließlich für Apprentice-Training.
+- Validation-Corpus für Offline-Paretoanalyse und spätere Closed-loop-Auswahl.
+- Test-Corpus ausschließlich für die terminale Evaluation bereits eingefrorener
+  Modelle, Masken und Thresholds.
 
-Nach Einsicht in diese Testergebnisse werden weder Modell noch Maske, Threshold, GO-Stärke oder Checkpoint geändert.
+Varying-Rollouts speichern Split, Basis-Seed, Spiegelung, Offset,
+Evaluationsseed, Episode, Kontrollschritt und Simulationszeit.
 
-## 16. Metadaten und Rückverfolgbarkeit
+## Trainingsprotokoll
 
-Jeder Run und Kandidat speichert mindestens:
+- neuer P7-Master-Seed `20_260_829`;
+- daraus drei Apprentice- und Batch-Reihenfolge-Seedpaare;
+- dieselben drei Seedpaare für alle Methoden, Gruppierungen und Strength-Versionen;
+- 35.000 Updates für Fixed, 50.000 für Varying;
+- Regressions-Lernrate `2e-4`;
+- Trainingsbatchgröße 50/100 und Validation-Batchgröße 200/512 für
+  Fixed/Varying;
+- Validation ab Update 0 alle 25 Updates;
+- kein ergebnisabhängiger Stopp außer bei technischem numerischem Versagen;
+- kein Fine-Tuning nach Maskierung oder Training;
+- mindestens eine aktive Trainingsgruppe.
 
-- Paket- und Experimentversion
-- Git-Commit
-- Julia-Version und Manifestidentifikation
-- Fixed- oder Varying-IC-Protokoll
-- Methode
-- Gruppierungsvariante
-- Regularisierungskonfiguration
-- GO-Power beziehungsweise GR-Konfiguration
-- Apprentice-Seed
-- Netzinitialisierungsseed
-- Datenreihenfolgeseed
-- Trainingsschritt
-- Checkpoint-ID
-- Threshold
-- Definition und Normalisierung der Group Importance
-- Masken-Hash und vollständige Maske
-- Anzahl aktiver Inputs
-- Validation-Expert-Matching
-- Pareto-Status und zugehörige Front
-- Pfad oder Referenz zum Apprentice-Modell
+Die P7-Seedpaare (Apprentice/Batch-Reihenfolge) sind
+`r01=1855310136/1941818438`, `r02=1760770213/1028149301` und
+`r03=181852467/1377920448`.
 
-Für Varying-IC-Rollouts und Simulationen kommen hinzu:
+## Methodenmatrix und Strength-Versionen
 
-- Corpus-Split
-- Basis-Seed
-- Spiegelung
-- Offset
-- Episode
-- Kontrollschritt
-- Simulationszeit
-- Evaluationsseed
+Pro IC-Protokoll müssen alle acht Kombinationen ausführbar sein:
 
-Für Closed-loop-Läufe werden außerdem kumulativer Reward, Nusselt-Verlauf, Laufstatus, Abbruchgrund und Laufzeit gespeichert.
+| Methode | Channel-Coupled (GC) | Separate-Channel (SC) |
+|---|---:|---:|
+| GO | ja | ja |
+| GR | ja | ja |
+| Group Lasso | ja | ja |
+| Standard-GrOWL | ja | ja |
 
-## 17. Ergebnisartefakte
+Jede einzelne Kombination muss separat mit einer expliziten Strength startbar
+sein. Zusätzlich müssen mehrere Strength-Versionen derselben Kombination und
+die vollständige Matrix gestartet werden können. Methode, Gruppierung, Strength,
+Protokoll und Seed sind Bestandteil der Run-Identität. Für die finale
+Berichterstattung wird je Kombination nur die anhand der Validation-Ergebnisse
+passendste Strength verwendet; die übrigen Runs bleiben als Kalibrierungsdaten
+erhalten.
 
-Paket 7 erzeugt für Fixed IC:
+Als erste Startwerte werden die Werte aus `GrOWL/MAT_expert_apprentice.jl`
+übernommen:
 
-- vollständige Offline-Pareto-Daten
-- native und threshold-assisted Methodenvergleiche
-- 2D- und 3D-Pareto-Darstellungen
-- Closed-loop-Vergleiche der ausgewählten Kandidaten
-- finale Expert-Apprentice-Trajektorien
-- Sparsity-Tabelle
-- Sensor-Pattern-Plots
-- Rohdaten und aggregierte Statistiken
+| Methode | Fixed | Varying | alter Name |
+|---|---:|---:|---|
+| GO | `0.09` | `0.025` | `gro_asc` |
+| GR | `0.00004` | `0.0001` | `weighted` |
+| Group Lasso | `0.0001` | `0.00012` | `lasso` |
+| Standard-GrOWL | `0.00006` | `0.0004` | `growl` |
 
-Paket 8 erzeugt analog für Varying IC:
+Diese Werte sind Startpunkte und keine bereits ausgewählten finalen Strengths.
 
-- vollständige Offline-Pareto-Daten auf dem Validation-Split
-- native und threshold-assisted Methodenvergleiche
-- 2D- und 3D-Pareto-Darstellungen
-- Closed-loop-Validation der ausgewählten Kandidaten
-- finale Closed-loop-Testevaluation
-- Return-Verteilungen und repräsentative Trajektorien
-- Sparsity-Tabelle
-- Sensor-Pattern-Plots
-- Rohdaten und aggregierte Statistiken
+## Threshold- und Evaluationsprotokoll
 
-Alle berichteten Zahlen bleiben zu Run, Seed, Checkpoint, Maske und Threshold zurückverfolgbar.
+Jeder Basischeckpoint wird alle 25 Updates mit genau vier Mask-Thresholds
+ausgewertet:
 
-## 18. Festgelegter Cut
+```text
+(0.0, 0.001, 0.002, 0.003)
+```
 
-Paket 7 und 8 enthalten:
+Für jeden Threshold werden eine gruppenkonsistente Maske, `active_inputs` und
+das Validation-Expert-Action-Matching bestimmt. Threshold `0.0` bezeichnet die
+native exakte Nullmaske. Identische Masken dürfen nur einmal berechnet werden,
+die vier threshold-spezifischen Evaluationszeilen bleiben jedoch erhalten.
 
-- Wiederverwendung kompatibler Kandidaten aus Paket 6
-- fehlende GO- und GR-Gruppierungsvarianten
-- grouped Lasso
-- Standard-GrOWL
-- methodenspezifische Threshold-Kandidatenerzeugung
-- Offline-Pareto-Archive
-- begrenzte Closed-loop-Validation
-- finale Fixed-IC-Berichterstattung
-- finale Varying-IC-Testevaluation
+Die Thresholds sind absolut. Zunächst wird für jeden Apprentice-Input die
+L1-Summe seiner Embedding-Gewichte berechnet. Die Importance einer Gruppe ist
+das Maximum dieser Input-Importances innerhalb der Gruppe. Eine Gruppe bleibt
+aktiv, wenn ihre Importance strikt größer als der Threshold ist. Würde eine
+Maske alle Gruppen entfernen, wird deterministisch die stärkste Gruppe
+reaktiviert; bei Gleichstand gewinnt der kleinste Gruppenindex. `active_inputs`
+zählt die global expandierten eindeutigen Sensor-Kanal-Inputs. Diese
+Threshold-Importance ist von der unveränderten L2-Importance des GR-Trainings
+getrennt.
 
-Nicht enthalten sind:
+Die Pareto-Dominanz verwendet ausschließlich:
 
-- nachträgliche Änderung des Thresholdbereichs anhand von Testresultaten
-- Fine-Tuning nach Hard Thresholding
-- Simulation aller Offline-Kandidaten
-- Nutzung der Varying-IC-Testbasen zur Auswahl
-- neue Reward-Estimator- oder Reward-Modul-Experimente
-- neue physikalische Regime oder Layouts
+1. weniger oder gleich viele `active_inputs`;
+2. kleineres oder gleiches Validation-Expert-Matching;
+3. mindestens eine strikte Verbesserung.
 
-## Vor Produktionsbeginn festzulegen
+Der Threshold selbst ist keine dritte Zielgröße.
 
-Vor den ersten Paket-7- und Paket-8-Produktionsruns werden noch numerisch festgelegt:
+Wenn mindestens einer der vier Punkte zur aktuellen Run-Pareto-Front beiträgt,
+wird das Apprentice-Modell dieses Updates einmal gespeichert. Für die
+beitragenden Punkte werden Threshold, Maske, Importance-Metadaten und Messwerte
+als Kandidaten erhalten. Trägt kein Punkt bei, bleiben nur die vier schlanken
+Evaluationszeilen; die Masken und das Modell werden verworfen. Wird ein früherer
+Kandidat später vollständig dominiert, darf sein Modell nach verifizierter
+Garbage Collection entfernt werden, während seine Evaluationszeilen erhalten
+bleiben.
 
-- Checkpoint- und Validationintervall
-- vollständiger Thresholdbereich und Maximalwert
-- absolute oder normalisierte Group Importance
-- genaue Definition der global eindeutigen aktiven Inputs
-- konservative, mittlere und aggressive Inputbereiche
-- Zahl der Closed-loop-Kandidaten pro Methode oder gemeinsamer Front
-- Closed-loop-Episodenbudget
-- Fixed-IC-Berichtsprotokoll
-- Varying-IC-Validation- und Testfälle
+Nach dem Training werden Fronten pro Run und eine gepoolte Front pro
+Konfiguration und Strength gebildet. Ein eigener Analyseworker wartet auf die
+drei Seeds und erzeugt einen Pareto-Plot mit sämtlichen Evaluationspunkten,
+Threshold-Farben, Seed-Markern und hervorgehobener gepoolter Front. Modelle
+mehrerer Threshold-Kandidaten desselben Updates werden nicht dupliziert.
+
+## Paket-7-Ausführung
+
+Die Implementierung liegt in `Revision/Package7`. Ohne Launcher-Filter werden
+alle acht Default-Konfigurationen gestartet. `--config` startet eine einzelne
+Kombination; wiederholtes `--strength` erlaubt mehrere Strength-Versionen
+dieser Kombination. Jede Variante besteht aus drei Trainingsworkern und einem
+Analyse-/Plot-Waiter. Die finale Strength-Auswahl erfolgt erst nach Sichtung der
+Validation-Ergebnisse.
+
+## Spätere Closed-loop-Phase
+
+Nach dem Training werden Anzahl und Auswahlregel der Closed-loop-Kandidaten
+separat festgelegt. Vorgesehen sind mindestens ein Matching-orientierter, ein
+Knee- und ein sparsity-orientierter Kandidat. Gemessen werden Reward,
+vollständiges `state_Nu()`, Stabilität, Fehlläufe und Laufzeit. Nicht alle
+Offline-Kandidaten werden simuliert.
+
+## Noch offen für die spätere Auswahlphase
+
+1. welche zusätzlichen Strength-Versionen nach den Default-Runs nötig sind;
+2. Validation-Regel zur finalen Strength-Auswahl je Kombination;
+3. Closed-loop-Budget und Kandidatenauswahl nach Abschluss des Trainings;
+4. eigener Master-Seed und finale Detailkonfiguration für Paket 8.
+
+Alle Konfigurationen, Seeds, Evaluationspunkte, Kandidaten und final berichteten
+Werte bleiben maschinenlesbar zu Run, Checkpoint, Threshold und Maske
+rückverfolgbar.

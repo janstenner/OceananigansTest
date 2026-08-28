@@ -6,6 +6,15 @@ using SHA
 const PARETO_ARCHIVE_SCHEMA_VERSION = 2
 const PARETO_ARCHIVE_SUPPORTED_SCHEMA_VERSIONS = (1, 2)
 const PARETO_CANDIDATE_METADATA_KEYS = (
+    :input_importances,
+    :group_importances,
+    :threshold_importance_mode,
+    :mask,
+    :group_mask,
+    :global_mask,
+    :active_sensor_locations,
+)
+const PARETO_REQUIRED_CANDIDATE_METADATA_KEYS = (
     :group_importances,
     :mask,
     :group_mask,
@@ -13,6 +22,7 @@ const PARETO_CANDIDATE_METADATA_KEYS = (
     :active_sensor_locations,
 )
 const PARETO_SLIM_EVALUATION_OMIT_KEYS = (
+    :input_importances,
     :group_importances,
     :mask,
     :global_mask,
@@ -249,7 +259,7 @@ end
 function hydrate_candidate_record(
     candidate,
     run_directory::AbstractString;
-    required_keys = PARETO_CANDIDATE_METADATA_KEYS,
+    required_keys = PARETO_REQUIRED_CANDIDATE_METADATA_KEYS,
 )
     record = normalize_archive_dict(candidate)
     all(haskey(record, key) for key in required_keys) && return record

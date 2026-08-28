@@ -651,6 +651,22 @@ function group_importances(model, groups)
     return Float64[norm(view(weights_by_input, group, :)) for group in groups]
 end
 
+function threshold_importances(model, groups; mode::Symbol = :group_l2)
+    weights_by_input = transpose(model.encoder.embedding.weight)
+    if mode === :group_l2
+        input_importances = nothing
+        group_values = group_importances(model, groups)
+    elseif mode === :max_input_l1
+        input_importances = Float64.(vec(sum(abs, weights_by_input; dims = 2)))
+        group_values = Float64[maximum(view(input_importances, group)) for group in groups]
+    else
+        throw(ArgumentError(
+            "Threshold importance mode must be :group_l2 or :max_input_l1, got '$mode'.",
+        ))
+    end
+    return (; input_importances, group_importances = group_values, mode)
+end
+
 function local_input_mask(groups, active_groups, n_inputs::Integer)
     length(groups) == length(active_groups) || throw(DimensionMismatch("One activity flag is required per group."))
     result = zeros(Float32, n_inputs)
@@ -677,6 +693,22 @@ function hard_threshold_group_mask(importances, spec::HardThresholdSpec)
     return active
 end
 
+function enforce_minimum_active_groups!(active_groups, importances, minimum_active_groups::Integer)
+    0 <= minimum_active_groups <= length(active_groups) || throw(ArgumentError(
+        "minimum_active_groups must be between 0 and $(length(active_groups)).",
+    ))
+    missing = Int(minimum_active_groups) - count(active_groups)
+    missing <= 0 && return active_groups
+    ordering = sortperm(eachindex(importances); by = index -> (-importances[index], index))
+    for index in ordering
+        active_groups[index] && continue
+        active_groups[index] = true
+        missing -= 1
+        missing == 0 && break
+    end
+    return active_groups
+end
+
 function global_input_mask(
     local_mask;
     actuator_sensor_indices = actuators_to_sensors,
@@ -701,8 +733,16 @@ function global_input_mask(
     return result
 end
 
-function candidate_masks(model, threshold_specs; groups)
-    importances = group_importances(model, groups)
+function candidate_masks(
+    model,
+    threshold_specs;
+    groups,
+    threshold_importance_mode::Symbol = :group_l2,
+    threshold_minimum_active_groups::Int = 0,
+    threshold_pareto_scope::Union{Nothing, Symbol} = nothing,
+)
+    importance_data = threshold_importances(model, groups; mode = threshold_importance_mode)
+    importances = importance_data.group_importances
     n_inputs = size(transpose(model.encoder.embedding.weight), 1)
     specifications = collect(threshold_specs)
     length(unique(spec.id for spec in specifications)) == length(specifications) || error(
@@ -712,7 +752,7 @@ function candidate_masks(model, threshold_specs; groups)
     definitions = [(
         threshold_id = :native,
         threshold_kind = :native,
-        pareto_scope = :native,
+        pareto_scope = isnothing(threshold_pareto_scope) ? :native : threshold_pareto_scope,
         threshold_mode = :exact_zero,
         threshold_value = 0.0,
         analysis_scope = :package6_native_sensitivity,
@@ -723,7 +763,7 @@ function candidate_masks(model, threshold_specs; groups)
         push!(definitions, (
             threshold_id = spec.id,
             threshold_kind = :hard_threshold,
-            pareto_scope = :hard_threshold,
+            pareto_scope = isnothing(threshold_pareto_scope) ? :hard_threshold : threshold_pareto_scope,
             threshold_mode = spec.mode,
             threshold_value = spec.value,
             analysis_scope = spec.analysis_scope,
@@ -732,10 +772,16 @@ function candidate_masks(model, threshold_specs; groups)
     end
 
     return map(definitions) do definition
-        local_mask = local_input_mask(groups, definition.active_groups, n_inputs)
+        active_groups = BitVector(definition.active_groups)
+        enforce_minimum_active_groups!(
+            active_groups,
+            importances,
+            threshold_minimum_active_groups,
+        )
+        local_mask = local_input_mask(groups, active_groups, n_inputs)
         global_mask = global_input_mask(local_mask)
         active_sensor_locations = count(dropdims(any(global_mask; dims = 1); dims = 1))
-        Dict{Symbol, Any}(
+        record = Dict{Symbol, Any}(
             :threshold_id => definition.threshold_id,
             :threshold_kind => definition.threshold_kind,
             :pareto_scope => definition.pareto_scope,
@@ -743,13 +789,18 @@ function candidate_masks(model, threshold_specs; groups)
             :threshold_value => definition.threshold_value,
             :analysis_scope => definition.analysis_scope,
             :mask => local_mask,
-            :group_mask => BitVector(definition.active_groups),
+            :group_mask => active_groups,
             :global_mask => BitArray(global_mask),
-            :active_groups => count(definition.active_groups),
+            :active_groups => count(active_groups),
             :active_inputs => count(global_mask),
             :active_sensor_locations => active_sensor_locations,
+            :threshold_importance_mode => threshold_importance_mode,
             :group_importances => copy(importances),
         )
+        if !isnothing(importance_data.input_importances)
+            record[:input_importances] = copy(importance_data.input_importances)
+        end
+        return record
     end
 end
 
@@ -824,25 +875,44 @@ function evaluate_candidate_checkpoint!(
     validation_batch_size::Int = 256,
     prediction_mode::Symbol = :autoregressive,
     diagnostic_teacher_forced::Bool = true,
+    threshold_importance_mode::Symbol = :group_l2,
+    threshold_minimum_active_groups::Int = 0,
+    threshold_pareto_scope::Union{Nothing, Symbol} = nothing,
 )
-    records = candidate_masks(model, threshold_specs; groups)
+    records = candidate_masks(
+        model,
+        threshold_specs;
+        groups,
+        threshold_importance_mode,
+        threshold_minimum_active_groups,
+        threshold_pareto_scope,
+    )
+    measurements_by_mask = Dict{Any, NamedTuple}()
     for record in records
-        record[:validation_matching] = evaluate_expert_matching(
-            model,
-            validation_dataset,
-            record[:mask];
-            batch_size = validation_batch_size,
-            prediction_mode,
-        )
-        record[:validation_prediction_mode] = prediction_mode
-        if diagnostic_teacher_forced
-            record[:teacher_forced_validation_matching] = evaluate_expert_matching(
+        mask_key = Tuple(record[:group_mask])
+        measurements = get!(measurements_by_mask, mask_key) do
+            validation_matching = evaluate_expert_matching(
                 model,
                 validation_dataset,
                 record[:mask];
                 batch_size = validation_batch_size,
-                prediction_mode = :teacher_forced,
+                prediction_mode,
             )
+            teacher_forced_validation_matching = diagnostic_teacher_forced ?
+                evaluate_expert_matching(
+                    model,
+                    validation_dataset,
+                    record[:mask];
+                    batch_size = validation_batch_size,
+                    prediction_mode = :teacher_forced,
+                ) : nothing
+            (; validation_matching, teacher_forced_validation_matching)
+        end
+        record[:validation_matching] = measurements.validation_matching
+        record[:validation_prediction_mode] = prediction_mode
+        if diagnostic_teacher_forced
+            record[:teacher_forced_validation_matching] =
+                measurements.teacher_forced_validation_matching
         end
         record[:numeric_status] = isfinite(record[:validation_matching]) ? :ok : :nonfinite
         record[:method] = method
@@ -942,6 +1012,9 @@ function train_apprentice!(
     group_channels::Bool = group_channels,
     training_rng::AbstractRNG = rng,
     minimum_active_groups::Int = 1,
+    threshold_importance_mode::Symbol = :group_l2,
+    threshold_minimum_active_groups::Int = 0,
+    threshold_pareto_scope::Union{Nothing, Symbol} = nothing,
     resume::Bool = false,
 )
     method, method_config = apprentice_kind_config(method)
@@ -994,6 +1067,9 @@ function train_apprentice!(
             validation_batch_size = config.validation_batch_size,
             prediction_mode = config.validation_prediction_mode,
             diagnostic_teacher_forced = config.diagnostic_teacher_forced,
+            threshold_importance_mode,
+            threshold_minimum_active_groups,
+            threshold_pareto_scope,
         )
     end
 
@@ -1001,7 +1077,14 @@ function train_apprentice!(
         if update == config.regularized_updates + 1
             native_candidate = only(filter(
                 candidate -> candidate[:threshold_id] === :native,
-                candidate_masks(model, HardThresholdSpec[]; groups),
+                candidate_masks(
+                    model,
+                    HardThresholdSpec[];
+                    groups,
+                    threshold_importance_mode,
+                    threshold_minimum_active_groups,
+                    threshold_pareto_scope,
+                ),
             ))
             input_mask = native_candidate[:mask]
         end
@@ -1103,6 +1186,9 @@ function train_apprentice!(
                 validation_batch_size = config.validation_batch_size,
                 prediction_mode = config.validation_prediction_mode,
                 diagnostic_teacher_forced = config.diagnostic_teacher_forced,
+                threshold_importance_mode,
+                threshold_minimum_active_groups,
+                threshold_pareto_scope,
             )
         end
         if !isnothing(archive_manager) && should_save_resume(archive_manager.schedule, update)
@@ -1135,6 +1221,9 @@ function train_apprentice!(
                 validation_batch_size = config.validation_batch_size,
                 prediction_mode = config.validation_prediction_mode,
                 diagnostic_teacher_forced = config.diagnostic_teacher_forced,
+                threshold_importance_mode,
+                threshold_minimum_active_groups,
+                threshold_pareto_scope,
             )
         end
         save_resume_checkpoint!(

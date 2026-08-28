@@ -1,0 +1,39 @@
+using Test
+
+include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
+
+@testset "Package-7 pooled Pareto plot" begin
+    records = Dict{Symbol, Any}[]
+    candidate_index = 0
+    for replicate in P7_REPLICATES, (threshold_index, threshold) in enumerate(P7_THRESHOLDS)
+        candidate_index += 1
+        push!(records, Dict{Symbol, Any}(
+            :run_id => "smoke-r$replicate",
+            :candidate_id => "candidate-$candidate_index",
+            :replicate => replicate,
+            :configuration => "go-sc",
+            :regularization_strength => 0.09,
+            :update => 25 * threshold_index,
+            :threshold_id => threshold == 0 ? :native : Symbol("threshold_$threshold_index"),
+            :threshold_value => threshold,
+            :active_groups => 20 - 2 * threshold_index,
+            :active_inputs => 500 - 30 * threshold_index - replicate,
+            :validation_matching => 1e-3 * (1 + threshold_index / 2 + replicate / 10),
+            :numeric_status => :ok,
+            :pareto_scope => :package7_thresholds,
+        ))
+    end
+    front = pareto_front(records)
+    @test !isempty(front)
+    @test length(records) == 12
+    @test Set(Float64(record[:threshold_value]) for record in records) == Set(P7_THRESHOLDS)
+    mktempdir() do directory
+        options = (configuration = "go-sc", strength = 0.09)
+        paths = make_plot(options, records, front, directory)
+        @test length(paths) == 2
+        @test all(isfile, paths)
+        @test all(filesize(path) > 0 for path in paths)
+    end
+end
+
+println("package7-plot-smoke-ok")
