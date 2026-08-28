@@ -26,6 +26,9 @@ const THIRD_COLOR = "#B41A5C"
 const NEUTRAL_COLOR = "#4D4D4D"
 const GRID_COLOR = "#E6E6E6"
 const STRENGTH_COLORS = ("#2166AC", "#4393C3", "#92C5DE", "#D6604D", "#B2182B")
+# Reuse the four-color threshold palette selected from the GO-strength
+# calibration and add the earlier packages' yellow-orange for strength five.
+const EVALUATION_STRENGTH_COLORS = ("#2166AC", "#92C5DE", "#D6604D", "#67001F", GR_COLOR)
 const REPLICATE_COLORS = (GO_COLOR, GR_COLOR, THIRD_COLOR)
 const RESET_COLORS = Dict(:group => GO_COLOR, :mse => GR_COLOR, :joint => THIRD_COLOR)
 const RESET_LABELS = Dict(:group => "Group reset", :mse => "MSE reset", :joint => "Joint reset")
@@ -581,6 +584,87 @@ function pareto_y_range(data)
     return [log10(minimum(losses)) - 0.1, log10(max(maximum(losses), 0.01)) + 0.1]
 end
 
+function go_evaluations(data, strength_index)
+    selected = [item for item in data.checkpoints if
+        string_value(item, :method) == "go" &&
+        int_value(item, :strength_index) == strength_index &&
+        isfinite(float_value(item, :validation_matching)) &&
+        float_value(item, :validation_matching) > 0]
+    isempty(selected) && error("$(data.protocol): no finite GO evaluations for strength index $strength_index.")
+    Set(int_value(item, :replicate) for item in selected) == Set(P6_REPLICATES) ||
+        error("$(data.protocol): strength index $strength_index does not contain all three replicates.")
+    return selected
+end
+
+function add_all_evaluations_panel!(plot_handle, data, row, col; showlegend)
+    for strength_index in eachindex(P6_STRENGTHS[data.protocol])
+        selected = go_evaluations(data, strength_index)
+        label = @sprintf(
+            "GO strength F/V %.4g / %.4g",
+            P6_STRENGTHS[:fixed][strength_index],
+            P6_STRENGTHS[:varying][strength_index],
+        )
+        add_trace!(plot_handle, scattergl(
+            x = [int_value(item, :active_groups) for item in selected],
+            y = [float_value(item, :validation_matching) for item in selected],
+            mode = "markers", name = label,
+            marker = attr(color = EVALUATION_STRENGTH_COLORS[strength_index], size = 5, opacity = 0.42),
+            customdata = hcat(
+                [int_value(item, :replicate) for item in selected],
+                [int_value(item, :update) for item in selected],
+            ),
+            hovertemplate = "active groups=%{x}<br>validation MSE=%{y:.5g}<br>replicate=%{customdata[0]}<br>update=%{customdata[1]}<extra></extra>",
+            legendgroup = "evaluation_strength_$strength_index", showlegend = showlegend,
+        ); row, col)
+    end
+
+    pooled_front = sort([
+        item for item in data.fronts if
+        string_value(item, :front_scope) == "global_method" &&
+        string_value(item, :method) == "go"
+    ]; by = item -> int_value(item, :active_groups))
+    isempty(pooled_front) && error("$(data.protocol): pooled GO Pareto front is missing.")
+    add_trace!(plot_handle, scatter(
+        x = [int_value(item, :active_groups) for item in pooled_front],
+        y = [float_value(item, :validation_matching) for item in pooled_front],
+        mode = "lines", name = "Pooled GO Pareto front",
+        line = attr(color = NEUTRAL_COLOR, width = 2.5),
+        legendgroup = "all_evaluations_pooled_front", showlegend = showlegend,
+    ); row, col)
+end
+
+function all_evaluations_y_range(data)
+    losses = Float64[]
+    for strength_index in eachindex(P6_STRENGTHS[data.protocol])
+        append!(losses, float_value.(go_evaluations(data, strength_index), Ref(:validation_matching)))
+    end
+    return [log10(minimum(losses)) - 0.1, log10(maximum(losses)) + 0.1]
+end
+
+function make_all_evaluations_pareto_figure(data_by_protocol, output)
+    plot_handle = make_subplots(
+        rows = 1, cols = 2, horizontal_spacing = 0.10,
+        subplot_titles = reshape([
+            "A  Fixed IC: all GO evaluations",
+            "B  Varying IC: all GO evaluations",
+        ], :, 1),
+    )
+    add_all_evaluations_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true)
+    add_all_evaluations_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false)
+
+    layout = common_layout(width = 1400, height = 650, title = "Package 6: pooled evaluation landscape and Pareto front")
+    relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
+        :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Active SC groups"; range = [0, 96])),
+        :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = all_evaluations_y_range(data_by_protocol[:fixed]))),
+        :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups"; range = [0, 96])),
+        :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = all_evaluations_y_range(data_by_protocol[:varying]))),
+        :legend => row_legend(-0.16),
+        :margin => attr(l = 85, r = 35, t = 105, b = 125),
+    )))
+    PlotlyJS.savefig(plot_handle, output; width = 1400, height = 650)
+    return output
+end
+
 function make_main_figure(data_by_protocol, metrics, output)
     plot_handle = make_subplots(
         rows = 2, cols = 2,
@@ -1003,6 +1087,7 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
         println(io, "- [`figure_1_main.svg`](figure_1_main.svg): Pareto/attainment and quality-constrained strength response.")
         println(io, "- [`figure_2_terminal_test.svg`](figure_2_terminal_test.svg): Fixed `state_Nu` trajectory and Varying paired test episodes.")
         println(io, "- [`figure_s1_stability_diagnostics.svg`](figure_s1_stability_diagnostics.svg): hitting times, reset rates, and aggregate archive convergence.")
+        println(io, "- [`figure_s2_all_evaluations_pareto.svg`](figure_s2_all_evaluations_pareto.svg): all GO evaluation points pooled across replicates, colored by strength, with the pooled Pareto front.")
         println(io, "- [`table_1_summary.md`](table_1_summary.md): compact paper table.")
     end
     return path
@@ -1044,6 +1129,8 @@ function run_self_tests()
     ]
     @assert length(scientific_front(records)) == 2
     @assert rgba("#277DA1", 0.5) == "rgba(39,125,161,0.5)"
+    @assert length(EVALUATION_STRENGTH_COLORS) == 5
+    @assert last(EVALUATION_STRENGTH_COLORS) == GR_COLOR
     println("Package-6 paper figure self-tests passed.")
     return nothing
 end
@@ -1079,9 +1166,10 @@ function main(arguments = ARGS)
     main_figure = make_main_figure(data_by_protocol, metrics, joinpath(options.output_dir, "figure_1_main.svg"))
     terminal_figure = make_terminal_figure(data_by_protocol, joinpath(options.output_dir, "figure_2_terminal_test.svg"))
     supplement_figure = make_supplement_figure(data_by_protocol, joinpath(options.output_dir, "figure_s1_stability_diagnostics.svg"))
+    evaluation_figure = make_all_evaluations_pareto_figure(data_by_protocol, joinpath(options.output_dir, "figure_s2_all_evaluations_pareto.svg"))
 
     println("Package-6 paper outputs written to $(options.output_dir):")
-    for path in (main_figure, terminal_figure, supplement_figure, table_paths.markdown_path, report_path, provenance_path)
+    for path in (main_figure, terminal_figure, supplement_figure, evaluation_figure, table_paths.markdown_path, report_path, provenance_path)
         println("  $(path)")
     end
     return nothing
