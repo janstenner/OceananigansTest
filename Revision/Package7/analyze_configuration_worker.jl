@@ -1,6 +1,8 @@
 using Dates
 using JLD2
 using Printf
+using SHA
+using Statistics
 
 include(joinpath(@__DIR__, "Package7Study.jl"))
 using .Package7Study
@@ -9,6 +11,7 @@ const P7_DISTILLATION_DIRECTORY = joinpath(@__DIR__, "..", "Expert_Apprentice_Di
 include(joinpath(P7_DISTILLATION_DIRECTORY, "ParetoArchive.jl"))
 
 const DEFAULT_RESULTS_ROOT = joinpath(@__DIR__, "results")
+const P7_TEST_STEPS = 200
 const THRESHOLD_COLOR_PALETTE = ("#2166AC", "#92C5DE", "#D6604D", "#67001F")
 const REPLICATE_SYMBOLS = Dict(1 => "circle", 2 => "diamond", 3 => "square")
 
@@ -307,6 +310,206 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
     return paths
 end
 
+file_sha256(path::AbstractString) = open(path, "r") do io
+    bytes2hex(SHA.sha256(io))
+end
+
+function select_sparse_test_candidate(pooled_front)
+    qualified = filter(
+        record -> Float64(record[:validation_matching]) <= P7_QUALITY_THRESHOLD,
+        pooled_front,
+    )
+    isempty(qualified) && error(
+        "No pooled Pareto candidate satisfies validation_matching <= $P7_QUALITY_THRESHOLD.",
+    )
+    return first(sort(qualified; by = record -> (
+        Int(record[:active_inputs]),
+        Int(record[:active_groups]),
+        Float64(record[:validation_matching]),
+        Int(record[:update]),
+        string(record[:run_id]),
+        string(record[:candidate_id]),
+    )))
+end
+
+function freeze_test_candidate!(output, candidate, checkpoint_path)
+    path = joinpath(output, "selected_test_candidate.jld2")
+    atomic_save(
+        path;
+        schema_version = P7_SCHEMA_VERSION,
+        experiment = :package7_fixed_regularizer_comparison,
+        selection_source = :pooled_validation_pareto_front,
+        selection_rule = :minimum_active_inputs_under_quality_threshold,
+        quality_threshold = P7_QUALITY_THRESHOLD,
+        selection_uses_test_data = false,
+        candidate,
+        checkpoint_path,
+        checkpoint_sha256 = file_sha256(checkpoint_path),
+        frozen_before_test = true,
+        frozen_at = string(Dates.now()),
+    )
+    return path
+end
+
+function configure_test_runtime!(candidate, output)
+    run_directory = string(candidate[:source_run_directory])
+    config = normalize_archive_dict(JLD2.load(joinpath(run_directory, "config.jld2"))["config"])
+    expert_path = string(config[:expert_path])
+    ENV["DISTILLATION_PROTOCOL"] = "fixed"
+    ENV["DISTILLATION_SKIP_AUTOLOAD"] = "true"
+    ENV["DISTILLATION_GROUP_CHANNELS"] = string(Bool(config[:group_channels]))
+    ENV["DISTILLATION_ALLOW_FRESH_EXPERT"] = "false"
+    ENV["DISTILLATION_FIXED_EXPERT_PATH"] = expert_path
+    ENV["REVISION_RUN_SEED"] = string(config[:apprentice_seed])
+    ENV["REVISION_RUN_DIRECTORY"] = joinpath(output, "test", "runtime")
+    ENV["DISTILLATION_OUTPUT_DIRECTORY"] = joinpath(output, "test", "apprentice_output")
+    Base.include(@__MODULE__, joinpath(P7_DISTILLATION_DIRECTORY, "Expert_Apprentice.jl"))
+    expert_metadata = Base.invokelatest(() -> getfield(@__MODULE__, :DISTILLATION_EXPERT_METADATA))
+    string(expert_metadata[:identifier]) == string(config[:expert_identifier]) || error(
+        "Loaded Fixed expert does not match the selected candidate's training corpus.",
+    )
+    return config
+end
+
+
+function normalize_test_action(action)
+    values = Float32.(Array(action))
+    ndims(values) == 3 && size(values, 3) == 1 && (values = dropdims(values; dims = 3))
+    length(values) == 12 || error("Expected twelve actuator actions, got $(size(values)).")
+    return vec(values)
+end
+
+function run_masked_test_episode(candidate_model, input_mask)
+    runtime_rl = Base.invokelatest(() -> getfield(@__MODULE__, :RL))
+    runtime_env = Base.invokelatest(() -> getfield(@__MODULE__, :env))
+    initialize_episode = Base.invokelatest(() -> getfield(@__MODULE__, :generate_random_init))
+    nusselt_function = Base.invokelatest(() -> getfield(@__MODULE__, :state_Nu))
+    Base.invokelatest(runtime_rl.reset!, runtime_env)
+    Base.invokelatest(initialize_episode)
+    rewards = Vector{Float64}(undef, P7_TEST_STEPS)
+    state_nusselt = Vector{Float64}(undef, P7_TEST_STEPS)
+    actions = Matrix{Float32}(undef, P7_TEST_STEPS, 12)
+    for step in 1:P7_TEST_STEPS
+        action = Base.invokelatest(
+            runtime_rl.prob,
+            candidate_model,
+            runtime_env.state .* input_mask,
+            nothing,
+        ).μ[:, :, 1]
+        actions[step, :] .= normalize_test_action(action)
+        Base.invokelatest(runtime_env, action)
+        rewards[step] = mean(Float64.(runtime_env.reward))
+        state_nusselt[step] = Float64(Base.invokelatest(nusselt_function, runtime_env))
+        isfinite(rewards[step]) && isfinite(state_nusselt[step]) || error(
+            "Non-finite Package-7 test value at step $step.",
+        )
+    end
+    return (; rewards, state_nusselt, actions)
+end
+
+function write_test_csv(path, episode)
+    open(path, "w") do io
+        println(io, "step,reward,state_nusselt")
+        for step in 1:P7_TEST_STEPS
+            println(io, "$(step),$(episode.rewards[step]),$(episode.state_nusselt[step])")
+        end
+    end
+    return path
+end
+
+function make_test_plot(output, episode, candidate)
+    ensure_plotly_loaded!()
+    return Base.invokelatest(make_test_plot_loaded, output, episode, candidate)
+end
+
+function make_test_plot_loaded(output, episode, candidate)
+    plot = PlotlyJS.make_subplots(
+        rows = 1,
+        cols = 2,
+        subplot_titles = reshape(["Environment reward", "Full-state Nu"], :, 1),
+    )
+    steps = collect(1:P7_TEST_STEPS)
+    PlotlyJS.add_trace!(plot, PlotlyJS.scatter(
+        x = steps, y = episode.rewards, mode = "lines", name = "Reward",
+        line = PlotlyJS.attr(color = "#277DA1", width = 2.5),
+    ); row = 1, col = 1)
+    PlotlyJS.add_trace!(plot, PlotlyJS.scatter(
+        x = steps, y = episode.state_nusselt, mode = "lines", name = "state_Nu",
+        line = PlotlyJS.attr(color = "#F2A13A", width = 2.5),
+    ); row = 1, col = 2)
+    PlotlyJS.relayout!(plot, Dict{Symbol, Any}(
+        :template => "plotly_white",
+        :title => "Masked P7 test: $(candidate[:active_inputs]) active inputs",
+        :width => 1100,
+        :height => 500,
+        :xaxis => PlotlyJS.attr(title = "Control step"),
+        :xaxis2 => PlotlyJS.attr(title = "Control step"),
+        :yaxis => PlotlyJS.attr(title = "Mean reward"),
+        :yaxis2 => PlotlyJS.attr(title = "Nu"),
+    ))
+    path = joinpath(output, "test", "test_curves.svg")
+    PlotlyJS.savefig(plot, path; width = 1100, height = 500)
+    return path
+end
+
+function run_selected_candidate_test!(output, selected)
+    run_directory = string(selected[:source_run_directory])
+    checkpoint_path = candidate_checkpoint_for_record(run_directory, selected)
+    candidate = hydrate_candidate_record(selected, run_directory)
+    selection_path = freeze_test_candidate!(output, candidate, checkpoint_path)
+    test_directory = joinpath(output, "test")
+    mkpath(test_directory)
+    config = configure_test_runtime!(candidate, output)
+    checkpoint = JLD2.load(checkpoint_path)
+    haskey(checkpoint, "model_payload") || error("Candidate checkpoint has no model_payload: $checkpoint_path")
+    candidate_model = checkpoint["model_payload"]
+    runtime_flux = Base.invokelatest(() -> getfield(@__MODULE__, :Flux))
+    Base.invokelatest(runtime_flux.testmode!, candidate_model)
+    input_mask = Float32.(candidate[:mask])
+    runtime_env = Base.invokelatest(() -> getfield(@__MODULE__, :env))
+    length(input_mask) == size(runtime_env.state, 1) || error("Selected candidate mask has the wrong length.")
+    episode = Base.invokelatest(run_masked_test_episode, candidate_model, input_mask)
+    csv_path = write_test_csv(joinpath(test_directory, "test_episode.csv"), episode)
+    plot_path = make_test_plot(output, episode, candidate)
+    result_path = joinpath(test_directory, "test_results.jld2")
+    atomic_save(
+        result_path;
+        schema_version = P7_SCHEMA_VERSION,
+        experiment = :package7_masked_apprentice_test,
+        protocol = :fixed,
+        selection_uses_test_data = false,
+        selection_path,
+        candidate_id = string(candidate[:candidate_id]),
+        run_id = string(candidate[:run_id]),
+        configuration = string(candidate[:configuration]),
+        regularization_strength = Float64(candidate[:regularization_strength]),
+        replicate = Int(candidate[:replicate]),
+        update = Int(candidate[:update]),
+        threshold_id = Symbol(candidate[:threshold_id]),
+        threshold_value = Float64(candidate[:threshold_value]),
+        validation_matching = Float64(candidate[:validation_matching]),
+        active_groups = Int(candidate[:active_groups]),
+        active_inputs = Int(candidate[:active_inputs]),
+        input_mask,
+        checkpoint_path,
+        checkpoint_sha256 = file_sha256(checkpoint_path),
+        expert_identifier = string(config[:expert_identifier]),
+        steps = P7_TEST_STEPS,
+        rewards = episode.rewards,
+        state_nusselt = episode.state_nusselt,
+        actions = episode.actions,
+        reward_sum = sum(episode.rewards),
+        mean_reward = mean(episode.rewards),
+        sum_state_nusselt = sum(episode.state_nusselt),
+        negative_sum_state_nusselt = -sum(episode.state_nusselt),
+        mean_state_nusselt = mean(episode.state_nusselt),
+        csv_path,
+        plot_path,
+        completed_at = string(Dates.now()),
+    )
+    return (; candidate, selection_path, result_path, csv_path, plot_path)
+end
+
 function analyze_completed_runs(options, jobs)
     output = analysis_directory(options.results_root, options.experiment_id, options.configuration)
     mkpath(output)
@@ -328,6 +531,7 @@ function analyze_completed_runs(options, jobs)
         front_ids,
     )
     plot_paths = make_plot(options, records, pooled_front, output)
+    test = run_selected_candidate_test!(output, select_sparse_test_candidate(pooled_front))
     legacy_data_path = joinpath(output, "pareto_points.jld2")
     isfile(legacy_data_path) && rm(legacy_data_path; force = true)
     write_status!(
@@ -341,12 +545,19 @@ function analyze_completed_runs(options, jobs)
         csv_path,
         front_csv_path,
         plot_paths,
+        selected_test_candidate = string(test.candidate[:candidate_id]),
+        selected_test_active_inputs = Int(test.candidate[:active_inputs]),
+        selected_test_validation_matching = Float64(test.candidate[:validation_matching]),
+        selection_path = test.selection_path,
+        test_result_path = test.result_path,
+        test_csv_path = test.csv_path,
+        test_plot_path = test.plot_path,
         completed_at = string(Dates.now()),
     )
     println("Completed Package-7 Pareto analysis for $(options.configuration), λ ∈ {$(join(strengths, ", "))}.")
     println("  points/front: $(length(records)) / $(length(pooled_front))")
     println("  output: $output")
-    return (; records, pooled_front, csv_path, front_csv_path, plot_paths)
+    return (; records, pooled_front, csv_path, front_csv_path, plot_paths, test)
 end
 
 function analysis_main(arguments = ARGS)

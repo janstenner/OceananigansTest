@@ -152,8 +152,11 @@ Nach dem Training werden Fronten pro Run und eine über alle neun Runs gepoolte
 Front pro Konfiguration gebildet. Ein Analyseworker wartet auf alle übergebenen
 Strength-Replicate-Kombinationen und erzeugt einen Pareto-Plot mit sämtlichen
 Evaluationspunkten, Threshold-Farben, Seed-Markern und hervorgehobener gepoolter
-Front. Modelle mehrerer Threshold-Kandidaten desselben Updates werden nicht
-dupliziert.
+Front. Danach friert er validation-only den Kandidaten mit den wenigsten
+`active_inputs` unter `validation_matching <= 0.01` ein und führt mit dessen
+gespeicherter Maske eine 200-Schritte-Fixed-Testepisode aus. Actions,
+Reward-Verlauf und direkter `state_Nu`-Verlauf werden vollständig gespeichert.
+Modelle mehrerer Threshold-Kandidaten desselben Updates werden nicht dupliziert.
 
 ## Paket-7-Ausführung
 
@@ -166,13 +169,14 @@ kurzen timestamp-basierten Ergebnisordner; der Analyzer erhält dessen ID und di
 tatsächlich gestarteten Strengths explizit. Die finale Strength-Auswahl erfolgt
 erst nach Sichtung der Validation-Ergebnisse.
 
-## Spätere Closed-loop-Phase
+## Spätere umfassende Closed-loop-Phase
 
-Nach dem Training werden Anzahl und Auswahlregel der Closed-loop-Kandidaten
-separat festgelegt. Vorgesehen sind mindestens ein Matching-orientierter, ein
-Knee- und ein sparsity-orientierter Kandidat. Gemessen werden Reward,
-vollständiges `state_Nu()`, Stabilität, Fehlläufe und Laufzeit. Nicht alle
-Offline-Kandidaten werden simuliert.
+Die einzelne sparsity-orientierte Testepisode jedes Analyseworkers ersetzt
+nicht die spätere methodenübergreifende Auswahlphase. Für diese werden Anzahl
+und weitere Auswahlregeln separat festgelegt. Vorgesehen sind mindestens ein
+Matching-orientierter, ein Knee- und ein sparsity-orientierter Kandidat.
+Gemessen werden Reward, vollständiges `state_Nu()`, Stabilität, Fehlläufe und
+Laufzeit. Nicht alle Offline-Kandidaten werden simuliert.
 
 ## Noch offen für die spätere Auswahlphase
 

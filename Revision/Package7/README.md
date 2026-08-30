@@ -74,6 +74,11 @@ results/<timestamp>/<configuration>/analysis/
   pareto_all_points.pdf
   evaluations.csv
   pooled_pareto_front.csv
+  selected_test_candidate.jld2
+  test/
+    test_results.jld2
+    test_episode.csv
+    test_curves.svg
 ```
 
 The plot contains every 25-update evaluation from all three strengths and all
@@ -86,3 +91,11 @@ without a group-count reduction are skipped before validation. In contrast,
 marks whether each point satisfies the Fixed-IC quality criterion
 `validation_matching <= 0.01`. The same threshold is drawn as a dashed line in
 the Pareto plot. No duplicate JLD2 analysis product is written.
+
+After freezing the pooled validation results, the analyzer selects the point
+with the fewest `active_inputs` among those satisfying
+`validation_matching <= 0.01`. Ties use active groups, validation MSE, update,
+run ID and candidate ID. The selected checkpoint is evaluated once on the
+Fixed test episode with its stored input mask. `test_results.jld2` contains the
+200 actions, environment rewards and direct per-step `state_Nu` values plus
+their aggregate scores. Test data never influence the selection.

@@ -38,6 +38,12 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
     filtered = retain_successful_threshold_records(filter_fixture; context = "smoke")
     @test Symbol.(getindex.(filtered, :threshold_id)) == [:native, :fewer_groups]
     @test observed_strengths(records) == [0.09]
+    sparse = select_sparse_test_candidate(front)
+    @test sparse[:validation_matching] <= P7_QUALITY_THRESHOLD
+    @test sparse[:active_inputs] == minimum(
+        record[:active_inputs] for record in front
+        if record[:validation_matching] <= P7_QUALITY_THRESHOLD
+    )
     mktempdir() do directory
         options = (configuration = "go-sc", strengths = [999.0])
         paths = make_plot(options, records, front, directory)
@@ -54,6 +60,15 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
         front_lines = readlines(front_csv)
         @test length(front_lines) == length(front) + 1
         @test endswith(first(front_lines), ",under_quality_threshold")
+        mkpath(joinpath(directory, "test"))
+        episode = (
+            rewards = collect(range(-3.0, -2.0; length = P7_TEST_STEPS)),
+            state_nusselt = collect(range(3.0, 2.0; length = P7_TEST_STEPS)),
+            actions = zeros(Float32, P7_TEST_STEPS, 12),
+        )
+        test_plot = make_test_plot(directory, episode, sparse)
+        @test isfile(test_plot)
+        @test filesize(test_plot) > 0
     end
 end
 
