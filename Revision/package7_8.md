@@ -37,10 +37,10 @@ Evaluationsseed, Episode, Kontrollschritt und Simulationszeit.
 
 ## Trainingsprotokoll
 
-- neuer P7-Master-Seed `20_260_850`;
+- unabhängige Master-Seeds `20_260_850` (P7) und `20_260_851` (P8);
 - daraus drei Apprentice- und Batch-Reihenfolge-Seedpaare;
 - dieselben drei Seedpaare für alle Methoden, Gruppierungen und Strength-Versionen;
-- 70.000 Updates für Fixed, 50.000 für Varying;
+- 70.000 Updates für P7 Fixed, 100.000 für P8 Varying;
 - Regressions-Lernrate `2e-4`;
 - Trainingsbatchgröße 50/100 und Validation-Batchgröße 200/512 für
   Fixed/Varying;
@@ -53,6 +53,10 @@ Die P7-Seedpaare (Apprentice/Batch-Reihenfolge) sind
 `r01=996898248/1207818757`, `r02=1452413696/1103313457` und
 `r03=497948374/1844296950`.
 
+Die unabhängigen P8-Seedpaare sind
+`r01=1876371626/1786433148`, `r02=517379917/1720459459` und
+`r03=221812090/798588586`.
+
 ## Methodenmatrix und Strength-Versionen
 
 Pro IC-Protokoll müssen alle acht Kombinationen ausführbar sein:
@@ -64,7 +68,7 @@ Pro IC-Protokoll müssen alle acht Kombinationen ausführbar sein:
 | Group Lasso | ja | ja |
 | Standard-GrOWL | ja | ja |
 
-Jede Kombination startet in Paket 7 standardmäßig drei Strengths mit je drei
+Jede Kombination startet in Paket 7 und 8 standardmäßig drei Strengths mit je drei
 Replicates, also neun Trainingsworker und genau einen gemeinsamen Analyzer.
 Explizite `--strength`-Argumente können dieses editierbare Raster pro Launch
 ersetzen. Methode, Gruppierung, Strength, Protokoll und Seed sind Bestandteil
@@ -83,7 +87,7 @@ Als erste Startwerte werden die Werte aus `GrOWL/MAT_expert_apprentice.jl`
 
 Diese Werte sind Startpunkte und keine bereits ausgewählten finalen Strengths.
 
-Die aktuelle P7-Matrix verwendet jeweils den Faktor 2,5:
+Die zunächst gemeinsame P7/P8-Matrix verwendet jeweils den Faktor 2,5:
 
 | Kombination | Strengths |
 |---|---|
@@ -96,9 +100,12 @@ Die aktuelle P7-Matrix verwendet jeweils den Faktor 2,5:
 | GrOWL-GC | `(0.000048, 0.00012, 0.0003)` |
 | GrOWL-SC | `(0.000096, 0.00024, 0.0006)` |
 
-Diese Raster sind ausschließlich in `Package7Study.jl` definiert und dort
-direkt manuell editierbar. Der Analyzer erhält beim Start die tatsächlich
-verwendeten Strengths und erwartet kein festes Raster.
+P8 übernimmt zunächst dieselben numerischen Raster. Sie sind unabhängig in
+`Package7Study.jl` und `Package8Study.jl` definiert und dort direkt manuell
+editierbar. Die P8-Kommentare nennen die aus
+`GrOWL/MAT_expert_apprentice.jl` neu gelesenen Varying-Defaults: GO `0.025`,
+GR `0.0001`, Group Lasso `0.00012` und GrOWL `0.0004`. Der Analyzer erhält
+beim Start die tatsächlich verwendeten Strengths und erwartet kein festes Raster.
 
 ## Threshold- und Evaluationsprotokoll
 
@@ -132,7 +139,8 @@ Die Pareto-Dominanz verwendet ausschließlich:
 1. weniger oder gleich viele `active_inputs`;
 2. kleineres oder gleiches Validation-Expert-Matching;
 
-Wie in P6 Fixed gilt `validation_matching <= 0.01` als Qualitätskriterium.
+Als Qualitätskriterium gilt protokollabhängig
+`validation_matching <= 0.01` für P7 Fixed und `<= 0.03` für P8 Varying.
 Die gepoolte Pareto-CSV kennzeichnet dies pro Punkt, und der Plot zeigt die
 Grenze als gestrichelte horizontale Linie.
 3. mindestens eine strikte Verbesserung.
@@ -153,9 +161,12 @@ Front pro Konfiguration gebildet. Ein Analyseworker wartet auf alle übergebenen
 Strength-Replicate-Kombinationen und erzeugt einen Pareto-Plot mit sämtlichen
 Evaluationspunkten, Threshold-Farben, Seed-Markern und hervorgehobener gepoolter
 Front. Danach friert er validation-only den Kandidaten mit den wenigsten
-`active_inputs` unter `validation_matching <= 0.01` ein und führt mit dessen
-gespeicherter Maske eine 200-Schritte-Fixed-Testepisode aus. Actions,
-Reward-Verlauf und direkter `state_Nu`-Verlauf werden vollständig gespeichert.
+`active_inputs` unter der protokollspezifischen Qualitätsgrenze ein. P7 führt
+damit eine 200-Schritte-Fixed-Testepisode aus. P8 führt acht 200-Schritte-
+Episoden des unabhängigen Varying-Testsets aus (zwei Basen, beide Spiegelungen,
+Offsets 0/20). Actions, Reward-Verlauf, direkter `state_Nu`-Verlauf sowie bei
+P8 Split, Basis-Seed, Spiegelung, Offset, Evaluationsseed, Episode,
+Kontrollschritt und Simulationszeit werden vollständig gespeichert.
 Modelle mehrerer Threshold-Kandidaten desselben Updates werden nicht dupliziert.
 
 ## Paket-7-Ausführung
@@ -169,9 +180,17 @@ kurzen timestamp-basierten Ergebnisordner; der Analyzer erhält dessen ID und di
 tatsächlich gestarteten Strengths explizit. Die finale Strength-Auswahl erfolgt
 erst nach Sichtung der Validation-Ergebnisse.
 
+## Paket-8-Ausführung
+
+Die unabhängige Varying-Implementierung liegt in `Revision/Package8`. Launcher,
+Strength-Overrides, timestamp-basierte Ergebnisordner, Resume, atomare
+Evaluationen und Analyzer entsprechen P7. Training verwendet ausschließlich
+den Varying-Train-Split, Expert Matching ausschließlich den Varying-Validation-
+Split und die terminale Auswertung ausschließlich den Varying-Test-Split.
+
 ## Spätere umfassende Closed-loop-Phase
 
-Die einzelne sparsity-orientierte Testepisode jedes Analyseworkers ersetzt
+Die sparsity-orientierte terminale Auswertung jedes Analyseworkers ersetzt
 nicht die spätere methodenübergreifende Auswahlphase. Für diese werden Anzahl
 und weitere Auswahlregeln separat festgelegt. Vorgesehen sind mindestens ein
 Matching-orientierter, ein Knee- und ein sparsity-orientierter Kandidat.
@@ -182,7 +201,7 @@ Laufzeit. Nicht alle Offline-Kandidaten werden simuliert.
 
 1. Validation-Regel zur finalen Strength-Auswahl je Kombination;
 2. Closed-loop-Budget und Kandidatenauswahl nach Abschluss des Trainings;
-3. eigener Master-Seed und finale Detailkonfiguration für Paket 8.
+3. finale Strength-Raster für Paket 8 nach Sichtung der ersten Calibration-Runs.
 
 Alle Konfigurationen, Seeds, Evaluationspunkte, Kandidaten und final berichteten
 Werte bleiben maschinenlesbar zu Run, Checkpoint, Threshold und Maske
