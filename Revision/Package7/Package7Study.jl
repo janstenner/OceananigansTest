@@ -16,7 +16,7 @@ export P7_SCHEMA_VERSION, P7_MASTER_SEED, P7_UPDATES, P7_BATCH_SIZE,
        canonical_string, fingerprint, strength_tag, expected_evaluation_updates
 
 const P7_SCHEMA_VERSION = 2
-const P7_MASTER_SEED = 20_260_829
+const P7_MASTER_SEED = 20_260_833
 const P7_UPDATES = 35_000
 const P7_BATCH_SIZE = 50
 const P7_VALIDATION_BATCH_SIZE = 200
@@ -34,7 +34,7 @@ const P7_CONFIGURATION_NAMES = (
 
 const P7_STRENGTH_GRIDS = Dict(
     "go-gc" => (0.008, 0.02, 0.05),                    # inherited default: 0.09
-    "go-sc" => (0.0144, 0.036, 0.09),                  # inherited default: 0.09
+    "go-sc" => (0.016, 0.04, 0.1),                     # inherited default: 0.09
     "gr-gc" => (0.000032, 0.00008, 0.0002),            # inherited default: 0.00004
     "gr-sc" => (0.000064, 0.00016, 0.0004),            # inherited default: 0.00004
     "group-lasso-gc" => (0.000064, 0.00016, 0.0004),   # inherited default: 0.0001
