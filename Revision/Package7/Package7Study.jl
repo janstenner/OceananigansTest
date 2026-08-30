@@ -34,13 +34,13 @@ const P7_CONFIGURATION_NAMES = (
 
 const P7_STRENGTH_GRIDS = Dict(
     "go-gc" => (0.008, 0.02, 0.05),                    # inherited default: 0.09
-    "go-sc" => (0.008, 0.02, 0.05),                    # inherited default: 0.09
-    "gr-gc" => (0.000004, 0.00001, 0.000025),          # inherited default: 0.00004
-    "gr-sc" => (0.000004, 0.00001, 0.000025),          # inherited default: 0.00004
-    "group-lasso-gc" => (0.00001, 0.000025, 0.0000625), # inherited default: 0.0001
-    "group-lasso-sc" => (0.00001, 0.000025, 0.0000625), # inherited default: 0.0001
-    "growl-gc" => (0.000006, 0.000015, 0.0000375),     # inherited default: 0.00006
-    "growl-sc" => (0.000006, 0.000015, 0.0000375),     # inherited default: 0.00006
+    "go-sc" => (0.016, 0.04, 0.1),                     # inherited default: 0.09
+    "gr-gc" => (0.000016, 0.00004, 0.0001),            # inherited default: 0.00004
+    "gr-sc" => (0.000032, 0.00008, 0.0002),            # inherited default: 0.00004
+    "group-lasso-gc" => (0.000032, 0.00008, 0.0002),   # inherited default: 0.0001
+    "group-lasso-sc" => (0.000064, 0.00016, 0.0004),   # inherited default: 0.0001
+    "growl-gc" => (0.000016, 0.00004, 0.0001),         # inherited default: 0.00006
+    "growl-sc" => (0.000032, 0.00008, 0.0002),         # inherited default: 0.00006
 )
 
 const P7_CONFIGURATIONS = Dict(
