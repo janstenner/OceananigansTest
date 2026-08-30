@@ -20,7 +20,8 @@ using .Package7Study
               for name in P7_CONFIGURATION_NAMES for strength in P7_STRENGTH_GRIDS[name])
     @test length(unique(job.id for job in jobs)) == 72
     @test length(unique(job.relative_path for job in jobs)) == 72
-    @test all(job.updates == 35_000 for job in jobs)
+    @test all(job.updates == 70_000 for job in jobs)
+    @test P7_QUALITY_THRESHOLD == 1e-2
     @test all(job.experiment_id == experiment_id for job in jobs)
     @test all(first(splitpath(job.relative_path)) == experiment_id for job in jobs)
 

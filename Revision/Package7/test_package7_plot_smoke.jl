@@ -7,6 +7,7 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
     candidate_index = 0
     fixture_thresholds = (0.0, 0.004, 0.009, 0.02)
     for replicate in P7_REPLICATES, (threshold_index, threshold) in enumerate(fixture_thresholds)
+        replicate == 1 && threshold == 0.02 && continue
         candidate_index += 1
         push!(records, Dict{Symbol, Any}(
             :run_id => "smoke-r$replicate",
@@ -26,7 +27,7 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
     end
     front = pareto_front(records)
     @test !isempty(front)
-    @test length(records) == 12
+    @test length(records) == 11
     @test observed_thresholds(records) == collect(fixture_thresholds)
     @test Set(keys(threshold_colors(observed_thresholds(records)))) == Set(fixture_thresholds)
     filter_fixture = Dict{Symbol, Any}[
@@ -46,9 +47,13 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
         svg = read(first(paths), String)
         @test occursin("λ ∈ {0.09}", svg)
         @test !occursin("λ ∈ {999", svg)
+        @test occursin(">τ=0.02</text>", svg)
+        @test occursin("stroke-dasharray", svg)
         front_ids = Set(string(record[:candidate_id]) for record in front)
         front_csv = write_csv(joinpath(directory, "pooled_pareto_front.csv"), front, front_ids)
-        @test length(readlines(front_csv)) == length(front) + 1
+        front_lines = readlines(front_csv)
+        @test length(front_lines) == length(front) + 1
+        @test endswith(first(front_lines), ",under_quality_threshold")
     end
 end
 

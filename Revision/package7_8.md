@@ -40,7 +40,7 @@ Evaluationsseed, Episode, Kontrollschritt und Simulationszeit.
 - neuer P7-Master-Seed `20_260_850`;
 - daraus drei Apprentice- und Batch-Reihenfolge-Seedpaare;
 - dieselben drei Seedpaare für alle Methoden, Gruppierungen und Strength-Versionen;
-- 35.000 Updates für Fixed, 50.000 für Varying;
+- 70.000 Updates für Fixed, 50.000 für Varying;
 - Regressions-Lernrate `2e-4`;
 - Trainingsbatchgröße 50/100 und Validation-Batchgröße 200/512 für
   Fixed/Varying;
@@ -50,8 +50,8 @@ Evaluationsseed, Episode, Kontrollschritt und Simulationszeit.
 - mindestens eine aktive Trainingsgruppe.
 
 Die P7-Seedpaare (Apprentice/Batch-Reihenfolge) sind
-`r01=1855310136/1941818438`, `r02=1760770213/1028149301` und
-`r03=181852467/1377920448`.
+`r01=996898248/1207818757`, `r02=1452413696/1103313457` und
+`r03=497948374/1844296950`.
 
 ## Methodenmatrix und Strength-Versionen
 
@@ -83,15 +83,18 @@ Als erste Startwerte werden die Werte aus `GrOWL/MAT_expert_apprentice.jl`
 
 Diese Werte sind Startpunkte und keine bereits ausgewählten finalen Strengths.
 
-Die erste P7-Matrix verwendet jeweils den Faktor 2,5:
+Die aktuelle P7-Matrix verwendet jeweils den Faktor 2,5:
 
 | Kombination | Strengths |
 |---|---|
 | GO-GC | `(0.008, 0.02, 0.05)` |
-| GO-SC | `(0.008, 0.02, 0.05)` |
-| GR-GC / GR-SC | `(0.000004, 0.00001, 0.000025)` |
-| Group-Lasso-GC / Group-Lasso-SC | `(0.00001, 0.000025, 0.0000625)` |
-| GrOWL-GC / GrOWL-SC | `(0.000006, 0.000015, 0.0000375)` |
+| GO-SC | `(0.016, 0.04, 0.1)` |
+| GR-GC | `(0.000024, 0.00006, 0.00015)` |
+| GR-SC | `(0.000048, 0.00012, 0.0003)` |
+| Group-Lasso-GC | `(0.000032, 0.00008, 0.0002)` |
+| Group-Lasso-SC | `(0.000064, 0.00016, 0.0004)` |
+| GrOWL-GC | `(0.000048, 0.00012, 0.0003)` |
+| GrOWL-SC | `(0.000096, 0.00024, 0.0006)` |
 
 Diese Raster sind ausschließlich in `Package7Study.jl` definiert und dort
 direkt manuell editierbar. Der Analyzer erhält beim Start die tatsächlich
@@ -128,6 +131,10 @@ Die Pareto-Dominanz verwendet ausschließlich:
 
 1. weniger oder gleich viele `active_inputs`;
 2. kleineres oder gleiches Validation-Expert-Matching;
+
+Wie in P6 Fixed gilt `validation_matching <= 0.01` als Qualitätskriterium.
+Die gepoolte Pareto-CSV kennzeichnet dies pro Punkt, und der Plot zeigt die
+Grenze als gestrichelte horizontale Linie.
 3. mindestens eine strikte Verbesserung.
 
 Der Threshold selbst ist keine dritte Zielgröße.

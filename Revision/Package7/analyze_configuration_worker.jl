@@ -166,17 +166,18 @@ end
 function write_csv(path::AbstractString, records, front_ids)
     mkpath(dirname(path))
     open(path, "w") do io
-        println(io, "run_id,replicate,configuration,strength,update,candidate_id,threshold_id,threshold_value,active_groups,active_inputs,validation_matching,pooled_pareto")
+        println(io, "run_id,replicate,configuration,strength,update,candidate_id,threshold_id,threshold_value,active_groups,active_inputs,validation_matching,pooled_pareto,under_quality_threshold")
         for record in records
             @printf(
                 io,
-                "%s,%d,%s,%.12g,%d,%s,%s,%.12g,%d,%d,%.17g,%s\n",
+                "%s,%d,%s,%.12g,%d,%s,%s,%.12g,%d,%d,%.17g,%s,%s\n",
                 string(record[:run_id]), Int(record[:replicate]), string(record[:configuration]),
                 Float64(record[:regularization_strength]), Int(record[:update]),
                 string(record[:candidate_id]), string(record[:threshold_id]),
                 Float64(record[:threshold_value]), Int(record[:active_groups]),
                 Int(record[:active_inputs]), Float64(record[:validation_matching]),
                 string(string(record[:candidate_id]) in front_ids),
+                string(Float64(record[:validation_matching]) <= P7_QUALITY_THRESHOLD),
             )
         end
     end
@@ -221,8 +222,11 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
     thresholds = observed_thresholds(records)
     colors = threshold_colors(thresholds)
     traces = PlotlyJS.GenericTrace[]
+    shown_thresholds = Set{Float64}()
     for replicate in P7_REPLICATES, threshold in thresholds
         selected = filter(record -> Int(record[:replicate]) == replicate && Float64(record[:threshold_value]) == threshold, records)
+        show_threshold_legend = !isempty(selected) && !(threshold in shown_thresholds)
+        show_threshold_legend && push!(shown_thresholds, threshold)
         active_groups = Int.(getindex.(selected, :active_groups))
         active_inputs = Int.(getindex.(selected, :active_inputs))
         push!(traces, PlotlyJS.scatter(
@@ -231,7 +235,7 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
             mode = "markers",
             name = "τ=$(threshold)",
             legendgroup = "threshold_$(threshold)",
-            showlegend = replicate == 1,
+            showlegend = show_threshold_legend,
             marker = PlotlyJS.attr(
                 color = colors[threshold],
                 symbol = REPLICATE_SYMBOLS[replicate],
@@ -282,6 +286,16 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
         xaxis = PlotlyJS.attr(title = "Active groups"),
         yaxis = PlotlyJS.attr(title = "Validation expert-action matching (MSE)", type = "log"),
         legend = PlotlyJS.attr(title = PlotlyJS.attr(text = "Threshold")),
+        shapes = [PlotlyJS.attr(
+            type = "line",
+            xref = "paper",
+            x0 = 0,
+            x1 = 1,
+            yref = "y",
+            y0 = P7_QUALITY_THRESHOLD,
+            y1 = P7_QUALITY_THRESHOLD,
+            line = PlotlyJS.attr(color = "#555555", width = 1.5, dash = "dash"),
+        )],
     )
     plot = PlotlyJS.Plot(traces, layout)
     paths = String[]
@@ -298,8 +312,6 @@ function analyze_completed_runs(options, jobs)
     mkpath(output)
     records = reduce(vcat, (load_run_records(options, job) for job in jobs); init = Dict{Symbol, Any}[])
     strengths = observed_strengths(records)
-    thresholds = observed_thresholds(records)
-    colors = threshold_colors(thresholds)
     expected_native_count = length(jobs) * length(expected_evaluation_updates(options.expected_updates))
     native_count = count(record -> Symbol(record[:threshold_id]) === :native, records)
     native_count == expected_native_count || error(
@@ -315,20 +327,9 @@ function analyze_completed_runs(options, jobs)
         pooled_front,
         front_ids,
     )
-    data_path = atomic_save(
-        joinpath(output, "pareto_points.jld2");
-        schema_version = P7_SCHEMA_VERSION,
-        experiment = :package7_fixed_regularizer_comparison,
-        experiment_id = options.experiment_id,
-        configuration = options.configuration,
-        regularization_strengths = strengths,
-        threshold_values = thresholds,
-        threshold_colors = colors,
-        records,
-        pooled_front,
-        generated_at = string(Dates.now()),
-    )
     plot_paths = make_plot(options, records, pooled_front, output)
+    legacy_data_path = joinpath(output, "pareto_points.jld2")
+    isfile(legacy_data_path) && rm(legacy_data_path; force = true)
     write_status!(
         analysis_status_path(options.results_root, options.experiment_id, options.configuration);
         state = :complete,
@@ -339,14 +340,13 @@ function analyze_completed_runs(options, jobs)
         front_count = length(pooled_front),
         csv_path,
         front_csv_path,
-        data_path,
         plot_paths,
         completed_at = string(Dates.now()),
     )
     println("Completed Package-7 Pareto analysis for $(options.configuration), λ ∈ {$(join(strengths, ", "))}.")
     println("  points/front: $(length(records)) / $(length(pooled_front))")
     println("  output: $output")
-    return (; records, pooled_front, csv_path, front_csv_path, data_path, plot_paths)
+    return (; records, pooled_front, csv_path, front_csv_path, plot_paths)
 end
 
 function analysis_main(arguments = ARGS)

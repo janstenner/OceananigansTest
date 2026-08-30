@@ -74,7 +74,6 @@ results/<timestamp>/<configuration>/analysis/
   pareto_all_points.pdf
   evaluations.csv
   pooled_pareto_front.csv
-  pareto_points.jld2
 ```
 
 The plot contains every 25-update evaluation from all three strengths and all
@@ -83,4 +82,7 @@ data identify the strength; the x-axis shows active groups on a linear scale.
 `evaluations.csv` contains the native point from every checkpoint plus only
 those hard-threshold points that reduce the active-group count. Hard thresholds
 without a group-count reduction are skipped before validation. In contrast,
-`pooled_pareto_front.csv` contains only the pooled non-dominated points.
+`pooled_pareto_front.csv` contains only the pooled non-dominated points and
+marks whether each point satisfies the Fixed-IC quality criterion
+`validation_matching <= 0.01`. The same threshold is drawn as a dashed line in
+the Pareto plot. No duplicate JLD2 analysis product is written.

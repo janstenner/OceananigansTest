@@ -9,7 +9,7 @@ using StableRNGs
 export P7_SCHEMA_VERSION, P7_MASTER_SEED, P7_UPDATES, P7_BATCH_SIZE,
        P7_VALIDATION_BATCH_SIZE, P7_LEARNING_RATE, P7_EVALUATION_INTERVAL,
        P7_RESUME_INTERVAL, P7_GARBAGE_COLLECTION_INTERVAL, P7_REPLICATES,
-       P7_THRESHOLDS, P7_CONFIGURATION_NAMES, P7_STRENGTH_GRIDS,
+       P7_THRESHOLDS, P7_QUALITY_THRESHOLD, P7_CONFIGURATION_NAMES, P7_STRENGTH_GRIDS,
        configuration, normalize_configuration, normalize_experiment_id, seed_plan, seed_plan_hash,
        selected_variants, study_jobs, job_for, run_directory, analysis_directory,
        status_path, analysis_status_path, atomic_save, load_status, write_status!,
@@ -17,7 +17,7 @@ export P7_SCHEMA_VERSION, P7_MASTER_SEED, P7_UPDATES, P7_BATCH_SIZE,
 
 const P7_SCHEMA_VERSION = 2
 const P7_MASTER_SEED = 20_260_850
-const P7_UPDATES = 35_000
+const P7_UPDATES = 70_000
 const P7_BATCH_SIZE = 50
 const P7_VALIDATION_BATCH_SIZE = 200
 const P7_LEARNING_RATE = 2e-4
@@ -26,6 +26,7 @@ const P7_RESUME_INTERVAL = 100
 const P7_GARBAGE_COLLECTION_INTERVAL = 5
 const P7_REPLICATES = 1:3
 const P7_THRESHOLDS = (0.0, 0.003, 0.006, 0.012)
+const P7_QUALITY_THRESHOLD = 1e-2
 
 const P7_CONFIGURATION_NAMES = (
     "go-gc", "go-sc", "gr-gc", "gr-sc",
@@ -35,12 +36,12 @@ const P7_CONFIGURATION_NAMES = (
 const P7_STRENGTH_GRIDS = Dict(
     "go-gc" => (0.008, 0.02, 0.05),                    # inherited default: 0.09
     "go-sc" => (0.016, 0.04, 0.1),                     # inherited default: 0.09
-    "gr-gc" => (0.00004, 0.0001, 0.00025),             # inherited default: 0.00004
-    "gr-sc" => (0.00008, 0.0002, 0.0005),              # inherited default: 0.00004
-    "group-lasso-gc" => (0.00008, 0.0002, 0.0005),     # inherited default: 0.0001
-    "group-lasso-sc" => (0.00016, 0.0004, 0.001),      # inherited default: 0.0001
-    "growl-gc" => (0.000096, 0.00024, 0.0006),         # inherited default: 0.00006
-    "growl-sc" => (0.000192, 0.00048, 0.0012),         # inherited default: 0.00006
+    "gr-gc" => (0.000024, 0.00006, 0.00015),           # inherited default: 0.00004
+    "gr-sc" => (0.000048, 0.00012, 0.0003),            # inherited default: 0.00004
+    "group-lasso-gc" => (0.000032, 0.00008, 0.0002),   # inherited default: 0.0001
+    "group-lasso-sc" => (0.000064, 0.00016, 0.0004),   # inherited default: 0.0001
+    "growl-gc" => (0.000048, 0.00012, 0.0003),         # inherited default: 0.00006
+    "growl-sc" => (0.000096, 0.00024, 0.0006),         # inherited default: 0.00006
 )
 
 const P7_CONFIGURATIONS = Dict(
