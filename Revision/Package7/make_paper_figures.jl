@@ -439,7 +439,7 @@ function make_mask_figure(
         ))
         layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), attr(
             title = isodd(index) ? "Vertical sensor index" : "",
-            range = [8.5, 0.5], tickmode = "array", tickvals = collect(1:8),
+            range = [0.5, 8.5], tickmode = "array", tickvals = collect(1:8),
             showgrid = false, zeroline = false, showline = true, mirror = true, linecolor = "#3A3A3A",
         ))
     end
