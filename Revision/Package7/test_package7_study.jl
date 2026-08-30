@@ -4,12 +4,12 @@ include(joinpath(@__DIR__, "Package7Study.jl"))
 using .Package7Study
 
 @testset "Package-7 deterministic job matrix" begin
-    @test P7_MASTER_SEED == 20_260_829
+    @test P7_MASTER_SEED == 20_260_850
     @test all(all(isapprox(grid[index + 1] / grid[index], 2.5) for index in 1:2)
               for grid in values(P7_STRENGTH_GRIDS))
-    @test seed_plan(1) == (replicate = 1, apprentice_seed = 1_855_310_136, batch_seed = 1_941_818_438)
-    @test seed_plan(2) == (replicate = 2, apprentice_seed = 1_760_770_213, batch_seed = 1_028_149_301)
-    @test seed_plan(3) == (replicate = 3, apprentice_seed = 181_852_467, batch_seed = 1_377_920_448)
+    @test seed_plan(1) == (replicate = 1, apprentice_seed = 996_898_248, batch_seed = 1_207_818_757)
+    @test seed_plan(2) == (replicate = 2, apprentice_seed = 1_452_413_696, batch_seed = 1_103_313_457)
+    @test seed_plan(3) == (replicate = 3, apprentice_seed = 497_948_374, batch_seed = 1_844_296_950)
 
     experiment_id = "260830_120000"
     jobs = study_jobs(experiment_id)

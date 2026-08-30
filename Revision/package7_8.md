@@ -37,7 +37,7 @@ Evaluationsseed, Episode, Kontrollschritt und Simulationszeit.
 
 ## Trainingsprotokoll
 
-- neuer P7-Master-Seed `20_260_829`;
+- neuer P7-Master-Seed `20_260_850`;
 - daraus drei Apprentice- und Batch-Reihenfolge-Seedpaare;
 - dieselben drei Seedpaare für alle Methoden, Gruppierungen und Strength-Versionen;
 - 35.000 Updates für Fixed, 50.000 für Varying;
