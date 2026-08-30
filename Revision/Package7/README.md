@@ -99,3 +99,35 @@ run ID and candidate ID. The selected checkpoint is evaluated once on the
 Fixed test episode with its stored input mask. `test_results.jld2` contains the
 200 actions, environment rewards and direct per-step `state_Nu` values plus
 their aggregate scores. Test data never influence the selection.
+
+## Paper artifacts
+
+After all eight analyzers have completed, build the paper inputs with the
+experiment directory name:
+
+```bash
+julia --startup-file=no --project=. Revision/Package7/make_paper_figures.jl \
+  --experiment-id 260830_155658
+```
+
+When `--experiment-id` is omitted, the newest direct experiment directory in
+`Revision/Package7/results` is selected automatically:
+
+```bash
+julia --startup-file=no --project=. Revision/Package7/make_paper_figures.jl
+```
+
+From a Julia REPL, the equivalent call is:
+
+```julia
+include("Revision/Package7/make_paper_figures.jl")
+main(["--experiment-id", "260830_155658"])
+```
+
+The script only reads frozen analysis, test, and Fixed baseline artifacts. It
+writes the complete `figure_1_selected_sensor_masks.{svg,pdf}`, two additional
+2×2 mask figures for GO/GR and Group-Lasso/GrOWL, the corresponding selected-
+candidate table as CSV/Markdown, `figure_s1_pareto_comparison.{svg,pdf}`, a
+compact `paper_metrics.jld2`, and a SHA-256 provenance manifest below
+`results/<experiment-id>/paper/`. Use `--check-only` to validate all inputs
+without exporting figures.

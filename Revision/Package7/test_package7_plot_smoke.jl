@@ -44,6 +44,16 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
         record[:active_inputs] for record in front
         if record[:validation_matching] <= P7_QUALITY_THRESHOLD
     )
+    @test isnothing(select_sparse_test_candidate([
+        Dict{Symbol, Any}(
+            :validation_matching => 2 * P7_QUALITY_THRESHOLD,
+            :active_inputs => 1,
+            :active_groups => 1,
+            :update => 0,
+            :run_id => "nr",
+            :candidate_id => "nr",
+        ),
+    ]))
     mktempdir() do directory
         options = (configuration = "go-sc", strengths = [999.0])
         paths = make_plot(options, records, front, directory)
@@ -69,6 +79,10 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
         test_plot = make_test_plot(directory, episode, sparse)
         @test isfile(test_plot)
         @test filesize(test_plot) > 0
+        stale = joinpath(directory, "selected_test_candidate.jld2")
+        write(stale, "stale")
+        clear_selected_candidate_test!(directory)
+        @test !isfile(stale)
     end
 end
 

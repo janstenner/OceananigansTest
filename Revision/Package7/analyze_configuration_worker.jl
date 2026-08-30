@@ -319,9 +319,7 @@ function select_sparse_test_candidate(pooled_front)
         record -> Float64(record[:validation_matching]) <= P7_QUALITY_THRESHOLD,
         pooled_front,
     )
-    isempty(qualified) && error(
-        "No pooled Pareto candidate satisfies validation_matching <= $P7_QUALITY_THRESHOLD.",
-    )
+    isempty(qualified) && return nothing
     return first(sort(qualified; by = record -> (
         Int(record[:active_inputs]),
         Int(record[:active_groups]),
@@ -510,6 +508,18 @@ function run_selected_candidate_test!(output, selected)
     return (; candidate, selection_path, result_path, csv_path, plot_path)
 end
 
+function clear_selected_candidate_test!(output)
+    for path in (
+        joinpath(output, "selected_test_candidate.jld2"),
+        joinpath(output, "test", "test_results.jld2"),
+        joinpath(output, "test", "test_episode.csv"),
+        joinpath(output, "test", "test_curves.svg"),
+    )
+        isfile(path) && rm(path; force = true)
+    end
+    return nothing
+end
+
 function analyze_completed_runs(options, jobs)
     output = analysis_directory(options.results_root, options.experiment_id, options.configuration)
     mkpath(output)
@@ -531,7 +541,13 @@ function analyze_completed_runs(options, jobs)
         front_ids,
     )
     plot_paths = make_plot(options, records, pooled_front, output)
-    test = run_selected_candidate_test!(output, select_sparse_test_candidate(pooled_front))
+    selected = select_sparse_test_candidate(pooled_front)
+    test = if isnothing(selected)
+        clear_selected_candidate_test!(output)
+        nothing
+    else
+        run_selected_candidate_test!(output, selected)
+    end
     legacy_data_path = joinpath(output, "pareto_points.jld2")
     isfile(legacy_data_path) && rm(legacy_data_path; force = true)
     write_status!(
@@ -545,17 +561,18 @@ function analyze_completed_runs(options, jobs)
         csv_path,
         front_csv_path,
         plot_paths,
-        selected_test_candidate = string(test.candidate[:candidate_id]),
-        selected_test_active_inputs = Int(test.candidate[:active_inputs]),
-        selected_test_validation_matching = Float64(test.candidate[:validation_matching]),
-        selection_path = test.selection_path,
-        test_result_path = test.result_path,
-        test_csv_path = test.csv_path,
-        test_plot_path = test.plot_path,
+        selected_test_candidate = isnothing(test) ? nothing : string(test.candidate[:candidate_id]),
+        selected_test_active_inputs = isnothing(test) ? nothing : Int(test.candidate[:active_inputs]),
+        selected_test_validation_matching = isnothing(test) ? nothing : Float64(test.candidate[:validation_matching]),
+        selection_path = isnothing(test) ? nothing : test.selection_path,
+        test_result_path = isnothing(test) ? nothing : test.result_path,
+        test_csv_path = isnothing(test) ? nothing : test.csv_path,
+        test_plot_path = isnothing(test) ? nothing : test.plot_path,
         completed_at = string(Dates.now()),
     )
     println("Completed Package-7 Pareto analysis for $(options.configuration), λ ∈ {$(join(strengths, ", "))}.")
     println("  points/front: $(length(records)) / $(length(pooled_front))")
+    isnothing(test) && println("  selected test candidate: NR (no point under quality threshold)")
     println("  output: $output")
     return (; records, pooled_front, csv_path, front_csv_path, plot_paths, test)
 end
