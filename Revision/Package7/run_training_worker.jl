@@ -17,7 +17,7 @@ function worker_usage(io::IO = stdout)
     Package-7 Fixed-IC training worker.
 
     Usage:
-      julia --project=. run_training_worker.jl --config NAME --strength VALUE \\
+      julia --project=. run_training_worker.jl --experiment-id ID --config NAME --strength VALUE \\
         --replicate 1|2|3 [--results-dir PATH] [--retry-failed]
         [--smoke-updates N]
     """)
@@ -25,6 +25,7 @@ end
 
 function parse_worker_arguments(arguments)
     values = Dict{String, Any}(
+        "experiment_id" => nothing,
         "config" => nothing,
         "strength" => nothing,
         "replicate" => nothing,
@@ -51,7 +52,7 @@ function parse_worker_arguments(arguments)
             error("Unknown argument '$argument'.")
         end
     end
-    for key in ("config", "strength", "replicate")
+    for key in ("experiment_id", "config", "strength", "replicate")
         isnothing(values[key]) && error("--$(replace(key, "_" => "-")) is required.")
     end
     strength = parse(Float64, string(values["strength"]))
@@ -60,7 +61,7 @@ function parse_worker_arguments(arguments)
     !isnothing(smoke_updates) && smoke_updates < 0 && error("--smoke-updates must be nonnegative.")
     updates = isnothing(smoke_updates) ? P7_UPDATES : smoke_updates
     return (
-        job = job_for(values["config"], strength, replicate; updates),
+        job = job_for(values["experiment_id"], values["config"], strength, replicate; updates),
         results_root = abspath(string(values["results_dir"])),
         retry_failed = Bool(values["retry_failed"]),
         smoke_updates,
@@ -128,6 +129,7 @@ function archive_config(options, training_config, expert_path, inputs, initial_h
     return Dict{Symbol, Any}(
         :schema_version => P7_SCHEMA_VERSION,
         :experiment => :package7_fixed_regularizer_comparison,
+        :experiment_id => job.experiment_id,
         :scientific_scope => isnothing(options.smoke_updates) ? :package7 : :smoke_test,
         :protocol => :fixed,
         :configuration => job.configuration,
@@ -173,6 +175,7 @@ function save_summary!(manager, job, losses, elapsed_seconds)
         joinpath(manager.run_directory, "summary.jld2");
         schema_version = P7_SCHEMA_VERSION,
         experiment = :package7_fixed_regularizer_comparison,
+        experiment_id = job.experiment_id,
         completed_at = string(Dates.now()),
         run_id = job.id,
         configuration = job.configuration,
@@ -231,6 +234,7 @@ function run_loaded_worker(options, directory, expert_path)
             status_path(options.results_root, job);
             state = :complete,
             run_id = job.id,
+            experiment_id = job.experiment_id,
             configuration = job.configuration,
             replicate = job.replicate,
             update = job.updates,
@@ -247,6 +251,7 @@ function run_loaded_worker(options, directory, expert_path)
         status_path(options.results_root, job);
         state = :running,
         run_id = job.id,
+        experiment_id = job.experiment_id,
         configuration = job.configuration,
         method = job.method,
         grouping = job.grouping,
@@ -259,6 +264,7 @@ function run_loaded_worker(options, directory, expert_path)
     )
 
     println("Package 7 worker $(job.id)")
+    println("  experiment: $(job.experiment_id)")
     println("  configuration/strength: $(job.configuration) / $(job.regularization_strength)")
     println("  replicate/seeds: $(job.replicate) / $(job.apprentice_seed), $(job.batch_seed)")
     println("  updates/batches: $(job.updates) / $P7_BATCH_SIZE, validation $P7_VALIDATION_BATCH_SIZE")
@@ -293,6 +299,7 @@ function run_loaded_worker(options, directory, expert_path)
             status_path(options.results_root, job);
             state = :complete,
             run_id = job.id,
+            experiment_id = job.experiment_id,
             configuration = job.configuration,
             method = job.method,
             grouping = job.grouping,
@@ -312,6 +319,7 @@ function run_loaded_worker(options, directory, expert_path)
             status_path(options.results_root, job);
             state = :failed,
             run_id = job.id,
+            experiment_id = job.experiment_id,
             configuration = job.configuration,
             replicate = job.replicate,
             update = manager.last_evaluated_update,

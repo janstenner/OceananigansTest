@@ -1,6 +1,6 @@
 # Paket 7 und 8 — vollständiger Regularisierer- und Gruppierungsvergleich
 
-Stand: 2026-08-28
+Stand: 2026-08-30
 
 ## Ziel und Abgrenzung
 
@@ -64,13 +64,12 @@ Pro IC-Protokoll müssen alle acht Kombinationen ausführbar sein:
 | Group Lasso | ja | ja |
 | Standard-GrOWL | ja | ja |
 
-Jede einzelne Kombination muss separat mit einer expliziten Strength startbar
-sein. Zusätzlich müssen mehrere Strength-Versionen derselben Kombination und
-die vollständige Matrix gestartet werden können. Methode, Gruppierung, Strength,
-Protokoll und Seed sind Bestandteil der Run-Identität. Für die finale
-Berichterstattung wird je Kombination nur die anhand der Validation-Ergebnisse
-passendste Strength verwendet; die übrigen Runs bleiben als Kalibrierungsdaten
-erhalten.
+Jede Kombination startet in Paket 7 standardmäßig drei Strengths mit je drei
+Replicates, also neun Trainingsworker und genau einen gemeinsamen Analyzer.
+Explizite `--strength`-Argumente können dieses editierbare Raster pro Launch
+ersetzen. Methode, Gruppierung, Strength, Protokoll und Seed sind Bestandteil
+der Run-Identität. Für die finale Berichterstattung wird je Kombination nur die
+anhand der Validation-Ergebnisse passendste Strength verwendet.
 
 Als erste Startwerte werden die Werte aus `GrOWL/MAT_expert_apprentice.jl`
 übernommen:
@@ -83,6 +82,20 @@ Als erste Startwerte werden die Werte aus `GrOWL/MAT_expert_apprentice.jl`
 | Standard-GrOWL | `0.00006` | `0.0004` | `growl` |
 
 Diese Werte sind Startpunkte und keine bereits ausgewählten finalen Strengths.
+
+Die erste P7-Matrix verwendet jeweils den Faktor 2,5:
+
+| Kombination | Strengths |
+|---|---|
+| GO-GC | `(0.008, 0.02, 0.05)` |
+| GO-SC | `(0.008, 0.02, 0.05)` |
+| GR-GC / GR-SC | `(0.000004, 0.00001, 0.000025)` |
+| Group-Lasso-GC / Group-Lasso-SC | `(0.00001, 0.000025, 0.0000625)` |
+| GrOWL-GC / GrOWL-SC | `(0.000006, 0.000015, 0.0000375)` |
+
+Diese Raster sind ausschließlich in `Package7Study.jl` definiert und dort
+direkt manuell editierbar. Der Analyzer erhält beim Start die tatsächlich
+verwendeten Strengths und erwartet kein festes Raster.
 
 ## Threshold- und Evaluationsprotokoll
 
@@ -128,20 +141,23 @@ Kandidat später vollständig dominiert, darf sein Modell nach verifizierter
 Garbage Collection entfernt werden, während seine Evaluationszeilen erhalten
 bleiben.
 
-Nach dem Training werden Fronten pro Run und eine gepoolte Front pro
-Konfiguration und Strength gebildet. Ein eigener Analyseworker wartet auf die
-drei Seeds und erzeugt einen Pareto-Plot mit sämtlichen Evaluationspunkten,
-Threshold-Farben, Seed-Markern und hervorgehobener gepoolter Front. Modelle
-mehrerer Threshold-Kandidaten desselben Updates werden nicht dupliziert.
+Nach dem Training werden Fronten pro Run und eine über alle neun Runs gepoolte
+Front pro Konfiguration gebildet. Ein Analyseworker wartet auf alle übergebenen
+Strength-Replicate-Kombinationen und erzeugt einen Pareto-Plot mit sämtlichen
+Evaluationspunkten, Threshold-Farben, Seed-Markern und hervorgehobener gepoolter
+Front. Modelle mehrerer Threshold-Kandidaten desselben Updates werden nicht
+dupliziert.
 
 ## Paket-7-Ausführung
 
 Die Implementierung liegt in `Revision/Package7`. Ohne Launcher-Filter werden
-alle acht Default-Konfigurationen gestartet. `--config` startet eine einzelne
-Kombination; wiederholtes `--strength` erlaubt mehrere Strength-Versionen
-dieser Kombination. Jede Variante besteht aus drei Trainingsworkern und einem
-Analyse-/Plot-Waiter. Die finale Strength-Auswahl erfolgt erst nach Sichtung der
-Validation-Ergebnisse.
+alle acht Konfigurationen mit ihren drei Strengths gestartet. `--config` startet
+eine einzelne Kombination; wiederholtes `--strength` ersetzt für diesen Launch
+deren Standardraster. Eine Kombination besteht standardmäßig aus neun
+Trainingsworkern und einem Analyse-/Plot-Waiter. Jeder Launch schreibt in einen
+kurzen timestamp-basierten Ergebnisordner; der Analyzer erhält dessen ID und die
+tatsächlich gestarteten Strengths explizit. Die finale Strength-Auswahl erfolgt
+erst nach Sichtung der Validation-Ergebnisse.
 
 ## Spätere Closed-loop-Phase
 
@@ -153,10 +169,9 @@ Offline-Kandidaten werden simuliert.
 
 ## Noch offen für die spätere Auswahlphase
 
-1. welche zusätzlichen Strength-Versionen nach den Default-Runs nötig sind;
-2. Validation-Regel zur finalen Strength-Auswahl je Kombination;
-3. Closed-loop-Budget und Kandidatenauswahl nach Abschluss des Trainings;
-4. eigener Master-Seed und finale Detailkonfiguration für Paket 8.
+1. Validation-Regel zur finalen Strength-Auswahl je Kombination;
+2. Closed-loop-Budget und Kandidatenauswahl nach Abschluss des Trainings;
+3. eigener Master-Seed und finale Detailkonfiguration für Paket 8.
 
 Alle Konfigurationen, Seeds, Evaluationspunkte, Kandidaten und final berichteten
 Werte bleiben maschinenlesbar zu Run, Checkpoint, Threshold und Maske

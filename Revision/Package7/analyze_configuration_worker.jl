@@ -19,8 +19,9 @@ const REPLICATE_SYMBOLS = Dict(1 => "circle", 2 => "diamond", 3 => "square")
 
 function parse_arguments(arguments)
     values = Dict{String, Any}(
+        "experiment_id" => nothing,
         "config" => nothing,
-        "strength" => nothing,
+        "strengths" => Float64[],
         "results_dir" => DEFAULT_RESULTS_ROOT,
         "poll_seconds" => 60,
         "timeout_seconds" => 14 * 24 * 60 * 60,
@@ -31,11 +32,16 @@ function parse_arguments(arguments)
     while index <= length(arguments)
         argument = arguments[index]
         if argument == "--help"
-            println("Usage: analyze_configuration_worker.jl --config NAME --strength VALUE [--results-dir PATH] [--poll-seconds N] [--timeout-seconds N]")
+            println("Usage: analyze_configuration_worker.jl --experiment-id ID --config NAME --strength VALUE [--strength VALUE ...] [--results-dir PATH] [--poll-seconds N] [--timeout-seconds N]")
             return nothing
         elseif argument == "--retry-failed"
             values["retry_failed"] = true
             index += 1
+            continue
+        elseif argument == "--strength"
+            index == length(arguments) && error("Missing value after $argument.")
+            push!(values["strengths"], parse(Float64, arguments[index + 1]))
+            index += 2
             continue
         end
         index == length(arguments) && error("Missing value after $argument.")
@@ -44,11 +50,15 @@ function parse_arguments(arguments)
         values[key] = arguments[index + 1]
         index += 2
     end
+    isnothing(values["experiment_id"]) && error("--experiment-id is required.")
     isnothing(values["config"]) && error("--config is required.")
-    isnothing(values["strength"]) && error("--strength is required.")
+    strengths = unique(Float64.(values["strengths"]))
+    isempty(strengths) && error("At least one --strength is required.")
+    all(strength -> isfinite(strength) && strength > 0, strengths) || error("Strengths must be finite and positive.")
     return (
+        experiment_id = normalize_experiment_id(values["experiment_id"]),
         configuration = normalize_configuration(values["config"]),
-        strength = parse(Float64, string(values["strength"])),
+        strengths,
         results_root = abspath(string(values["results_dir"])),
         poll_seconds = parse(Int, string(values["poll_seconds"])),
         timeout_seconds = parse(Int, string(values["timeout_seconds"])),
@@ -58,7 +68,10 @@ function parse_arguments(arguments)
 end
 
 function wait_for_runs(options)
-    jobs = [job_for(options.configuration, options.strength, replicate; updates = options.expected_updates) for replicate in P7_REPLICATES]
+    jobs = [
+        job_for(options.experiment_id, options.configuration, strength, replicate; updates = options.expected_updates)
+        for strength in options.strengths for replicate in P7_REPLICATES
+    ]
     deadline = time() + options.timeout_seconds
     seen_nonfailed = Dict(job.id => false for job in jobs)
     while true
@@ -120,6 +133,7 @@ function load_run_records(options, job)
     config = normalize_archive_dict(loaded_config["config"])
     checks = (
         Symbol(config[:experiment]) === :package7_fixed_regularizer_comparison,
+        string(config[:experiment_id]) == options.experiment_id,
         string(config[:configuration]) == job.configuration,
         Symbol(config[:method]) === job.method,
         Bool(config[:group_channels]) == job.group_channels,
@@ -205,8 +219,14 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
                 opacity = 0.38,
                 line = PlotlyJS.attr(width = 0),
             ),
-            customdata = hcat(active_groups, active_inputs, Int.(getindex.(selected, :update)), fill(replicate, length(selected))),
-            hovertemplate = "groups=%{customdata[0]}<br>global inputs=%{customdata[1]}<br>MSE=%{y:.4e}<br>update=%{customdata[2]}<br>replicate=%{customdata[3]}<extra></extra>",
+            customdata = hcat(
+                active_groups,
+                active_inputs,
+                Int.(getindex.(selected, :update)),
+                fill(replicate, length(selected)),
+                Float64.(getindex.(selected, :regularization_strength)),
+            ),
+            hovertemplate = "groups=%{customdata[0]}<br>global inputs=%{customdata[1]}<br>MSE=%{y:.4e}<br>update=%{customdata[2]}<br>replicate=%{customdata[3]}<br>strength=%{customdata[4]:.4g}<extra></extra>",
         ))
     end
     front_active_groups = Int.(getindex.(pooled_front, :active_groups))
@@ -238,7 +258,7 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
     end
     layout = PlotlyJS.Layout(
         template = "plotly_white",
-        title = "Package 7 $(options.configuration), λ=$(options.strength)",
+        title = "Package 7 $(options.configuration), λ ∈ {$(join(options.strengths, ", "))}",
         xaxis = PlotlyJS.attr(title = "Active groups"),
         yaxis = PlotlyJS.attr(title = "Validation expert-action matching (MSE)", type = "log"),
         legend = PlotlyJS.attr(title = PlotlyJS.attr(text = "Threshold")),
@@ -254,10 +274,10 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
 end
 
 function analyze_completed_runs(options, jobs)
-    output = analysis_directory(options.results_root, options.configuration, options.strength)
+    output = analysis_directory(options.results_root, options.experiment_id, options.configuration)
     mkpath(output)
     records = reduce(vcat, (load_run_records(options, job) for job in jobs); init = Dict{Symbol, Any}[])
-    expected_native_count = length(P7_REPLICATES) * length(expected_evaluation_updates(options.expected_updates))
+    expected_native_count = length(jobs) * length(expected_evaluation_updates(options.expected_updates))
     native_count = count(record -> Symbol(record[:threshold_id]) === :native, records)
     native_count == expected_native_count || error(
         "Expected $expected_native_count native evaluation points, found $native_count.",
@@ -276,8 +296,9 @@ function analyze_completed_runs(options, jobs)
         joinpath(output, "pareto_points.jld2");
         schema_version = P7_SCHEMA_VERSION,
         experiment = :package7_fixed_regularizer_comparison,
+        experiment_id = options.experiment_id,
         configuration = options.configuration,
-        regularization_strength = options.strength,
+        regularization_strengths = options.strengths,
         threshold_values = collect(P7_THRESHOLDS),
         threshold_colors = copy(THRESHOLD_COLORS),
         records,
@@ -286,10 +307,11 @@ function analyze_completed_runs(options, jobs)
     )
     plot_paths = make_plot(options, records, pooled_front, output)
     write_status!(
-        analysis_status_path(options.results_root, options.configuration, options.strength);
+        analysis_status_path(options.results_root, options.experiment_id, options.configuration);
         state = :complete,
+        experiment_id = options.experiment_id,
         configuration = options.configuration,
-        regularization_strength = options.strength,
+        regularization_strengths = options.strengths,
         point_count = length(records),
         front_count = length(pooled_front),
         csv_path,
@@ -298,7 +320,7 @@ function analyze_completed_runs(options, jobs)
         plot_paths,
         completed_at = string(Dates.now()),
     )
-    println("Completed Package-7 Pareto analysis for $(options.configuration), λ=$(options.strength).")
+    println("Completed Package-7 Pareto analysis for $(options.configuration), λ ∈ {$(join(options.strengths, ", "))}.")
     println("  points/front: $(length(records)) / $(length(pooled_front))")
     println("  output: $output")
     return (; records, pooled_front, csv_path, front_csv_path, data_path, plot_paths)
@@ -307,15 +329,17 @@ end
 function analysis_main(arguments = ARGS)
     options = parse_arguments(arguments)
     isnothing(options) && return nothing
-    status = analysis_status_path(options.results_root, options.configuration, options.strength)
+    status = analysis_status_path(options.results_root, options.experiment_id, options.configuration)
     try
-        write_status!(status; state = :waiting, configuration = options.configuration,
-                      regularization_strength = options.strength, started_at = string(Dates.now()))
+        write_status!(status; state = :waiting, experiment_id = options.experiment_id,
+                      configuration = options.configuration,
+                      regularization_strengths = options.strengths, started_at = string(Dates.now()))
         jobs = wait_for_runs(options)
         return analyze_completed_runs(options, jobs)
     catch exception
-        write_status!(status; state = :failed, configuration = options.configuration,
-                      regularization_strength = options.strength,
+        write_status!(status; state = :failed, experiment_id = options.experiment_id,
+                      configuration = options.configuration,
+                      regularization_strengths = options.strengths,
                       error = sprint(showerror, exception), failed_at = string(Dates.now()))
         rethrow()
     end

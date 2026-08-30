@@ -9,13 +9,13 @@ using StableRNGs
 export P7_SCHEMA_VERSION, P7_MASTER_SEED, P7_UPDATES, P7_BATCH_SIZE,
        P7_VALIDATION_BATCH_SIZE, P7_LEARNING_RATE, P7_EVALUATION_INTERVAL,
        P7_RESUME_INTERVAL, P7_GARBAGE_COLLECTION_INTERVAL, P7_REPLICATES,
-       P7_THRESHOLDS, P7_CONFIGURATION_NAMES, P7_DEFAULT_STRENGTHS,
-       configuration, normalize_configuration, seed_plan, seed_plan_hash,
+       P7_THRESHOLDS, P7_CONFIGURATION_NAMES, P7_STRENGTH_GRIDS,
+       configuration, normalize_configuration, normalize_experiment_id, seed_plan, seed_plan_hash,
        selected_variants, study_jobs, job_for, run_directory, analysis_directory,
        status_path, analysis_status_path, atomic_save, load_status, write_status!,
        canonical_string, fingerprint, strength_tag, expected_evaluation_updates
 
-const P7_SCHEMA_VERSION = 1
+const P7_SCHEMA_VERSION = 2
 const P7_MASTER_SEED = 20_260_829
 const P7_UPDATES = 35_000
 const P7_BATCH_SIZE = 50
@@ -32,15 +32,15 @@ const P7_CONFIGURATION_NAMES = (
     "group-lasso-gc", "group-lasso-sc", "growl-gc", "growl-sc",
 )
 
-const P7_DEFAULT_STRENGTHS = Dict(
-    "go-gc" => 0.09,
-    "go-sc" => 0.09,
-    "gr-gc" => 0.00004,
-    "gr-sc" => 0.00004,
-    "group-lasso-gc" => 0.0001,
-    "group-lasso-sc" => 0.0001,
-    "growl-gc" => 0.00006,
-    "growl-sc" => 0.00006,
+const P7_STRENGTH_GRIDS = Dict(
+    "go-gc" => (0.008, 0.02, 0.05),                    # inherited default: 0.09
+    "go-sc" => (0.008, 0.02, 0.05),                    # inherited default: 0.09
+    "gr-gc" => (0.000004, 0.00001, 0.000025),          # inherited default: 0.00004
+    "gr-sc" => (0.000004, 0.00001, 0.000025),          # inherited default: 0.00004
+    "group-lasso-gc" => (0.00001, 0.000025, 0.0000625), # inherited default: 0.0001
+    "group-lasso-sc" => (0.00001, 0.000025, 0.0000625), # inherited default: 0.0001
+    "growl-gc" => (0.000006, 0.000015, 0.0000375),     # inherited default: 0.00006
+    "growl-sc" => (0.000006, 0.000015, 0.0000375),     # inherited default: 0.00006
 )
 
 const P7_CONFIGURATIONS = Dict(
@@ -63,6 +63,14 @@ function normalize_configuration(value)::String
 end
 
 configuration(value) = P7_CONFIGURATIONS[normalize_configuration(value)]
+
+function normalize_experiment_id(value)::String
+    identifier = strip(string(value))
+    occursin(r"^[A-Za-z0-9][A-Za-z0-9_-]*$", identifier) || throw(ArgumentError(
+        "Experiment ID '$value' must contain only letters, digits, underscores, and hyphens.",
+    ))
+    return identifier
+end
 
 function seed_plan(replicate::Integer)
     replicate in P7_REPLICATES || throw(ArgumentError("Replicate must be in 1:3."))
@@ -108,22 +116,24 @@ end
 function selected_variants(selection = "all", strengths = Float64[])
     if lowercase(string(selection)) == "all"
         isempty(strengths) || throw(ArgumentError("Explicit strengths require exactly one --config."))
-        return [(name = name, strength = P7_DEFAULT_STRENGTHS[name]) for name in P7_CONFIGURATION_NAMES]
+        return [(name = name, strength = strength) for name in P7_CONFIGURATION_NAMES for strength in P7_STRENGTH_GRIDS[name]]
     end
     name = normalize_configuration(selection)
-    values = isempty(strengths) ? [P7_DEFAULT_STRENGTHS[name]] : unique(Float64.(strengths))
+    values = isempty(strengths) ? collect(P7_STRENGTH_GRIDS[name]) : unique(Float64.(strengths))
     all(value -> isfinite(value) && value > 0, values) || throw(ArgumentError("Strengths must be finite and positive."))
     return [(name, strength = value) for value in values]
 end
 
-function job_for(configuration_name, strength::Real, replicate::Integer; updates::Integer = P7_UPDATES)
+function job_for(experiment_id, configuration_name, strength::Real, replicate::Integer; updates::Integer = P7_UPDATES)
+    experiment = normalize_experiment_id(experiment_id)
     name = normalize_configuration(configuration_name)
     config = configuration(name)
     seeds = seed_plan(replicate)
     tag = strength_tag(strength)
     replicate_tag = @sprintf("r%02d", replicate)
-    relative_path = joinpath(name, tag, replicate_tag)
+    relative_path = joinpath(experiment, name, tag, replicate_tag)
     return (
+        experiment_id = experiment,
         configuration = name,
         config...,
         regularization_strength = Float64(strength),
@@ -132,25 +142,25 @@ function job_for(configuration_name, strength::Real, replicate::Integer; updates
         seeds...,
         pairing_hash = seed_plan_hash(replicate),
         updates = Int(updates),
-        id = "p7_$(replace(name, "-" => "_"))_$(tag)_$(replicate_tag)",
+        id = "p7_$(experiment)_$(replace(name, "-" => "_"))_$(tag)_$(replicate_tag)",
         relative_path,
     )
 end
 
-function study_jobs(selection = "all", strengths = Float64[]; updates::Integer = P7_UPDATES)
+function study_jobs(experiment_id, selection = "all", strengths = Float64[]; updates::Integer = P7_UPDATES)
     return [
-        job_for(variant.name, variant.strength, replicate; updates)
+        job_for(experiment_id, variant.name, variant.strength, replicate; updates)
         for variant in selected_variants(selection, strengths)
         for replicate in P7_REPLICATES
     ]
 end
 
 run_directory(results_root::AbstractString, job) = joinpath(abspath(results_root), job.relative_path)
-analysis_directory(results_root::AbstractString, configuration_name, strength::Real) =
-    joinpath(abspath(results_root), normalize_configuration(configuration_name), strength_tag(strength), "analysis")
+analysis_directory(results_root::AbstractString, experiment_id, configuration_name) =
+    joinpath(abspath(results_root), normalize_experiment_id(experiment_id), normalize_configuration(configuration_name), "analysis")
 status_path(results_root::AbstractString, job) = joinpath(run_directory(results_root, job), "status.jld2")
-analysis_status_path(results_root::AbstractString, configuration_name, strength::Real) =
-    joinpath(analysis_directory(results_root, configuration_name, strength), "status.jld2")
+analysis_status_path(results_root::AbstractString, experiment_id, configuration_name) =
+    joinpath(analysis_directory(results_root, experiment_id, configuration_name), "status.jld2")
 
 function atomic_save(path::AbstractString; entries...)
     mkpath(dirname(path))

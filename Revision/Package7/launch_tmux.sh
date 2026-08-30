@@ -10,6 +10,7 @@ results_directory="${P7_RESULTS_DIR:-${script_directory}/results}"
 julia_binary="${JULIA_BIN:-julia}"
 
 configuration_selection="all"
+experiment_id=""
 declare -a explicit_strengths=()
 preview=false
 analysis_only=false
@@ -19,32 +20,22 @@ submitted=0
 skipped=0
 first_session=""
 
-declare -A default_strengths=(
-    [go-gc]="0.09"
-    [go-sc]="0.09"
-    [gr-gc]="0.00004"
-    [gr-sc]="0.00004"
-    [group-lasso-gc]="0.0001"
-    [group-lasso-sc]="0.0001"
-    [growl-gc]="0.00006"
-    [growl-sc]="0.00006"
-)
-all_configurations=(go-gc go-sc gr-gc gr-sc group-lasso-gc group-lasso-sc growl-gc growl-sc)
-
 usage() {
     cat <<'EOF'
 Usage: launch_tmux.sh [options]
 
-Without filters, starts all eight Package-7 configurations at their default
-strengths: 24 training workers and eight analysis/wait workers.
+Without filters, starts all eight Package-7 configurations at their configured
+three-strength grids: 72 training workers and eight analysis/wait workers.
 
 Options:
   --config NAME         One of go-gc, go-sc, gr-gc, gr-sc,
                         group-lasso-gc, group-lasso-sc, growl-gc, growl-sc.
   --strength VALUE      Explicit strength for one selected configuration;
-                        repeat to start multiple strength versions.
+                        repeat to replace its configured strength grid.
+  --experiment-id ID    Reuse a timestamp experiment directory. Automatically
+                        generated for a new launch; required with --analysis-only.
   --preview             Print all planned sessions without writing or launching.
-  --analysis-only       Start only the three-run analysis/wait worker(s).
+  --analysis-only       Start only the selected analysis/wait worker(s).
   --retry-failed        Permit training workers to resume failed runs.
   --results-dir PATH    Override the Package-7 result root.
   --help                Show this help.
@@ -56,6 +47,11 @@ while (($#)); do
         --config)
             (($# >= 2)) || { echo "Missing value after --config." >&2; exit 2; }
             configuration_selection="$2"
+            shift
+            ;;
+        --experiment-id)
+            (($# >= 2)) || { echo "Missing value after --experiment-id." >&2; exit 2; }
+            experiment_id="$2"
             shift
             ;;
         --strength)
@@ -77,32 +73,47 @@ while (($#)); do
     shift
 done
 
-if [[ "${configuration_selection}" == "all" ]]; then
-    ((${#explicit_strengths[@]} == 0)) || {
-        echo "--strength requires exactly one explicit --config." >&2
-        exit 2
-    }
-    selected_configurations=("${all_configurations[@]}")
-else
-    [[ -n "${default_strengths[${configuration_selection}]+x}" ]] || {
-        echo "Unknown Package-7 configuration '${configuration_selection}'." >&2
-        usage >&2
-        exit 2
-    }
-    selected_configurations=("${configuration_selection}")
-fi
+[[ "${analysis_only}" == false || -n "${experiment_id}" ]] || {
+    echo "--analysis-only requires --experiment-id so the existing runs can be located." >&2
+    exit 2
+}
+[[ -n "${experiment_id}" ]] || experiment_id="$(date -u +%y%m%d_%H%M%S)"
+[[ "${experiment_id}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+    echo "Invalid --experiment-id '${experiment_id}'. Use only letters, digits, underscores, and hyphens." >&2
+    exit 2
+}
 
+command -v "${julia_binary}" >/dev/null 2>&1 || { echo "Julia executable '${julia_binary}' was not found." >&2; exit 1; }
 if [[ "${preview}" == false ]]; then
     command -v tmux >/dev/null 2>&1 || { echo "tmux was not found in PATH." >&2; exit 1; }
-    command -v "${julia_binary}" >/dev/null 2>&1 || { echo "Julia executable '${julia_binary}' was not found." >&2; exit 1; }
 fi
 
+variant_arguments=(--print-variants --config "${configuration_selection}")
+for strength in "${explicit_strengths[@]}"; do
+    variant_arguments+=(--strength "${strength}")
+done
+variant_output="$("${julia_binary}" --startup-file=no "--project=${project_root}" "${manifest_worker}" "${variant_arguments[@]}")"
+mapfile -t variant_rows <<< "${variant_output}"
+((${#variant_rows[@]} > 0)) || { echo "No Package-7 variants selected." >&2; exit 2; }
+
+declare -A strengths_by_configuration=()
+selected_configurations=()
+for row in "${variant_rows[@]}"; do
+    IFS=$'\t' read -r configuration strength <<< "${row}"
+    if [[ -z "${strengths_by_configuration[${configuration}]+x}" ]]; then
+        selected_configurations+=("${configuration}")
+        strengths_by_configuration[${configuration}]="${strength}"
+    else
+        strengths_by_configuration[${configuration}]+=" ${strength}"
+    fi
+done
+
 launch_id="$(date -u +%Y%m%dT%H%M%SZ)_$$"
-launch_directory="${results_directory}/launches/${launch_id}"
+launch_directory="${results_directory}/${experiment_id}/launches/${launch_id}"
 log_directory="${launch_directory}/logs"
 job_manifest="${launch_directory}/jobs.tsv"
 
-manifest_arguments=(--output "${launch_directory}/study_manifest.jld2" --config "${configuration_selection}" --results-dir "${results_directory}")
+manifest_arguments=(--output "${launch_directory}/study_manifest.jld2" --experiment-id "${experiment_id}" --config "${configuration_selection}" --results-dir "${results_directory}")
 for strength in "${explicit_strengths[@]}"; do
     manifest_arguments+=(--strength "${strength}")
 done
@@ -157,46 +168,47 @@ start_session() {
 }
 
 for configuration in "${selected_configurations[@]}"; do
-    if ((${#explicit_strengths[@]} > 0)); then
-        strengths=("${explicit_strengths[@]}")
-    else
-        strengths=("${default_strengths[${configuration}]}")
-    fi
+    read -r -a strengths <<< "${strengths_by_configuration[${configuration}]}"
+    configuration_tag="${configuration//-/_}"
     for strength in "${strengths[@]}"; do
-        configuration_tag="${configuration//-/_}"
         strength_session_tag="$(safe_tag "${strength}")"
         if [[ "${analysis_only}" == false ]]; then
             for replicate in 1 2 3; do
                 replicate_tag="$(printf 'r%02d' "${replicate}")"
-                session="p7_${configuration_tag}_${strength_session_tag}_${replicate_tag}"
+                session="p7_${experiment_id}_${configuration_tag}_${strength_session_tag}_${replicate_tag}"
                 command=(
                     "${julia_binary}" --startup-file=no "--project=${project_root}" "${training_worker}"
-                    --config "${configuration}" --strength "${strength}"
+                    --experiment-id "${experiment_id}" --config "${configuration}" --strength "${strength}"
                     --replicate "${replicate}" --results-dir "${results_directory}"
                 )
                 [[ "${retry_failed}" == false ]] || command+=(--retry-failed)
                 start_session "${session}" training "${configuration}" "${strength}" "${replicate}" "${command[@]}"
             done
         fi
-        session="p7_${configuration_tag}_${strength_session_tag}_analyze"
-        analysis_command=(
-            "${julia_binary}" --startup-file=no "--project=${project_root}" "${analysis_worker}"
-            --config "${configuration}" --strength "${strength}" --results-dir "${results_directory}"
-        )
-        [[ "${retry_failed}" == false ]] || analysis_command+=(--retry-failed)
-        start_session "${session}" analysis "${configuration}" "${strength}" 0 "${analysis_command[@]}"
     done
+    session="p7_${experiment_id}_${configuration_tag}_analyze"
+    analysis_command=(
+        "${julia_binary}" --startup-file=no "--project=${project_root}" "${analysis_worker}"
+        --experiment-id "${experiment_id}" --config "${configuration}" --results-dir "${results_directory}"
+    )
+    for strength in "${strengths[@]}"; do
+        analysis_command+=(--strength "${strength}")
+    done
+    [[ "${retry_failed}" == false ]] || analysis_command+=(--retry-failed)
+    start_session "${session}" analysis "${configuration}" "${strengths[*]}" 0 "${analysis_command[@]}"
 done
 
 if [[ "${preview}" == true ]]; then
     echo
     echo "Previewed ${planned} sessions. No files or processes were created."
+    echo "Experiment ID: ${experiment_id}"
     exit 0
 fi
 
 mv "${job_manifest}.tmp" "${job_manifest}"
 {
     echo "launch_id=${launch_id}"
+    echo "experiment_id=${experiment_id}"
     echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "configuration=${configuration_selection}"
     echo "explicit_strengths=${explicit_strengths[*]}"
@@ -210,6 +222,8 @@ mv "${job_manifest}.tmp" "${job_manifest}"
 
 echo
 echo "Planned ${planned} sessions; submitted ${submitted}; skipped ${skipped} active sessions."
+echo "Experiment ID: ${experiment_id}"
+echo "Result directory: ${results_directory}/${experiment_id}"
 echo "All sessions close automatically when their worker exits."
 echo "Launch manifest: ${job_manifest}"
 echo "Inspect sessions: tmux ls"

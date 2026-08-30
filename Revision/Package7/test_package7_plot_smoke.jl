@@ -35,7 +35,7 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
     filtered = retain_successful_threshold_records(filter_fixture; context = "smoke")
     @test Symbol.(getindex.(filtered, :threshold_id)) == [:native, :fewer_groups]
     mktempdir() do directory
-        options = (configuration = "go-sc", strength = 0.09)
+        options = (configuration = "go-sc", strengths = [0.008, 0.02, 0.05])
         paths = make_plot(options, records, front, directory)
         @test length(paths) == 2
         @test all(isfile, paths)
