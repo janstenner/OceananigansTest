@@ -8,3 +8,5 @@ video_output/*
 .CondaPkg/*
 
 parameters.jld2
+
+/Revision/Baselines/results/

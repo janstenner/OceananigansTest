@@ -22,6 +22,11 @@ Sparse Sensing paper.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone
   varying-initial-condition entry points backed by the corpus.
 - `Run_Files/README.md`: Public run-file configuration and orchestration notes.
+- `Baselines/`: Four compact, parallel terminal-test reference runs for the
+  Fixed/Varying MAT experts and zero-action controllers. Each protocol uses
+  the same 200-step test cases as the revision studies and stores one atomic
+  JLD2 file per controller with rewards, full-state `state_Nu`, actions,
+  aggregate scores, and expert/test-data provenance.
 - `MAT_Stability/`: Paired package-3 MAT workers, detached tmux launcher,
   atomic JLD2 results, and strict result collector.
 - `MAT_Stability/README.md`: Server launch, restart, result, and collection

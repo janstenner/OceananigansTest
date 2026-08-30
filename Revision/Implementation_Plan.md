@@ -253,6 +253,13 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   - Es liegt genügend RBC-basierte Evidenz vor, um GO entweder mit einer begründeten Konfiguration im Paper zu behalten oder als sekundär einzustufen.
 
+- [x] **Gemeinsame Expert- und Unactuated-Testbaselines**
+
+  - Ein Fixed- und acht Varying-Testrollouts mit den veröffentlichten Experts.
+  - Dieselben Testfälle zusätzlich mit durchgehend null gesetzten Actions.
+  - Vier parallel startbare, atomare JLD2-Referenzdateien mit Reward,
+    vollständigem `state_Nu`, Actions, aggregierten Scores und Provenienz.
+
 - [ ] **Paket 7 — Apprentice Distillation unter Fixed IC mit Pareto-Set-Erzeugung**
 
   Umfang:

@@ -63,6 +63,36 @@ function case_identifier(case)
     return "test_b$(case.base_seed)_m$(case.mirror ? 1 : 0)_o$(case.offset)"
 end
 
+function baseline_case_identifier(case)
+    case === nothing && return "fixed_shared"
+    return "base_$(case.base_seed)_mirror_$(case.mirror ? 1 : 0)_offset_$(case.offset)"
+end
+
+function baseline_expert_episodes(protocol, cases, expert_identifier)
+    artifact = load_baseline_artifact(protocol, :expert; expert_identifier)
+    isnothing(artifact) && return nothing
+    by_case = Dict(string(episode.case_id) => episode for episode in artifact.episodes)
+    episodes = Dict{String, Any}()
+    for case in cases
+        baseline_id = baseline_case_identifier(case)
+        haskey(by_case, baseline_id) || error(
+            "Expert baseline $(artifact.path) is missing test case $baseline_id.",
+        )
+        raw = by_case[baseline_id]
+        rewards = Float64.(raw.rewards)
+        global_nusselt = Float64.(raw.state_nusselt)
+        actions = Float32.(raw.actions)
+        length(rewards) == TEST_STEPS && length(global_nusselt) == TEST_STEPS || error(
+            "Expert baseline case $baseline_id does not contain $TEST_STEPS steps.",
+        )
+        size(actions) == (TEST_STEPS, 12) || error(
+            "Expert baseline case $baseline_id has invalid action dimensions $(size(actions)).",
+        )
+        episodes[case_identifier(case)] = (; rewards, global_nusselt, actions)
+    end
+    return (; path = artifact.path, episodes)
+end
+
 function test_cases(protocol)
     protocol === :fixed && return [nothing]
     corpus = latest_runtime_binding(:CORPUS)
@@ -381,6 +411,24 @@ end
 
 function evaluate_controller!(output, results_root, protocol, cases, expert_identifier; candidate = nothing)
     controller_id = isnothing(candidate) ? "expert" : string(candidate[:candidate_id])
+    if isnothing(candidate)
+        baseline = baseline_expert_episodes(protocol, cases, expert_identifier)
+        if !isnothing(baseline)
+            println("  expert: using baseline artifact $(baseline.path)")
+            for case in cases
+                episode = baseline.episodes[case_identifier(case)]
+                save_cache(
+                    cache_path(output, controller_id, expert_identifier, case),
+                    episode;
+                    controller_id,
+                    expert_identifier,
+                    protocol,
+                    case,
+                )
+            end
+            return baseline.episodes
+        end
+    end
     candidate_model = nothing
     input_mask = nothing
     if !isnothing(candidate)
@@ -526,6 +574,11 @@ function finalize_test_results(options, data, output, cases, controllers)
         matrix = episode_matrix(controller.episodes, cases, :rewards)
         (id = controller.id, role = controller.role, mean_return = mean(vec(sum(matrix; dims = 2))), returns = vec(sum(matrix; dims = 2)))
     end for controller in controllers]
+    expert_baseline = load_baseline_artifact(
+        options.protocol,
+        :expert;
+        expert_identifier = data.expert_identifier,
+    )
     result_path = joinpath(output, "test_results.jld2")
     atomic_save(
         result_path;
@@ -538,6 +591,8 @@ function finalize_test_results(options, data, output, cases, controllers)
         candidate_manifest_sha256 = data.manifest_hash,
         cases,
         summaries,
+        expert_source = isnothing(expert_baseline) ? :terminal_rollout : :baseline_artifact,
+        expert_baseline_path = isnothing(expert_baseline) ? nothing : expert_baseline.path,
         csv_path,
         return_csv_path,
         reward_plot,

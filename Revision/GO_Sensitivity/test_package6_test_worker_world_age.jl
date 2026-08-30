@@ -1,3 +1,4 @@
+using JLD2
 using Test
 
 module Package6TestWorkerWorldAgeHarness
@@ -90,6 +91,51 @@ using .Package6TestWorkerWorldAgeHarness
             case = nothing,
         )
         @test !isnothing(Package6TestWorkerWorldAgeHarness.completed_episode_status(output, data, 0, 1))
+    end
+
+
+    mktempdir() do baseline_root
+        previous = get(ENV, "REVISION_BASELINE_RESULTS_DIR", nothing)
+        try
+            ENV["REVISION_BASELINE_RESULTS_DIR"] = baseline_root
+            path = joinpath(baseline_root, "fixed", "expert.jld2")
+            mkpath(dirname(path))
+            baseline_episode = (
+                case_id = "fixed_shared",
+                choice = nothing,
+                rewards = fill(-2.0, Package6TestWorkerWorldAgeHarness.TEST_STEPS),
+                state_nusselt = collect(1.0:Package6TestWorkerWorldAgeHarness.TEST_STEPS),
+                actions = zeros(Float32, Package6TestWorkerWorldAgeHarness.TEST_STEPS, 12),
+            )
+            JLD2.jldsave(
+                path;
+                status = :complete,
+                protocol = :fixed,
+                controller = :expert,
+                steps = Package6TestWorkerWorldAgeHarness.TEST_STEPS,
+                case_count = 1,
+                expert_sha256 = "abc123",
+                episodes = [baseline_episode],
+            )
+            loaded = Package6TestWorkerWorldAgeHarness.baseline_expert_episodes(
+                :fixed,
+                [nothing],
+                "sha256:abc123",
+            )
+            @test !isnothing(loaded)
+            @test loaded.episodes["fixed_shared"].global_nusselt == baseline_episode.state_nusselt
+            @test_throws ErrorException Package6TestWorkerWorldAgeHarness.baseline_expert_episodes(
+                :fixed,
+                [nothing],
+                "sha256:different",
+            )
+        finally
+            if isnothing(previous)
+                delete!(ENV, "REVISION_BASELINE_RESULTS_DIR")
+            else
+                ENV["REVISION_BASELINE_RESULTS_DIR"] = previous
+            end
+        end
     end
 end
 

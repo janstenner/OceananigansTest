@@ -16,8 +16,13 @@ const PROTOCOL_NAMES = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
 const QUALITY_THRESHOLDS = P6_QUALITY_THRESHOLDS
 const QUALITY_TARGETS = (12, 6, 3, 2)
 const HITTING_TARGETS = (48, 24, 12, 6, 3, 1)
-const CONTROLLER_ORDER = ("expert", "C_match", "C_sparse")
-const CONTROLLER_NAMES = Dict("expert" => "Expert", "C_match" => "C_match", "C_sparse" => "C_sparse")
+const CONTROLLER_ORDER = ("expert", "C_match", "C_sparse", "unactuated")
+const CONTROLLER_NAMES = Dict(
+    "expert" => "Expert",
+    "C_match" => "C_match",
+    "C_sparse" => "C_sparse",
+    "unactuated" => "Unactuated",
+)
 
 # The method colors deliberately reuse two colors from the MAT-stability study.
 const GO_COLOR = "#277DA1"
@@ -33,7 +38,12 @@ const ALTERNATIVE_EVALUATION_COLORS = ("#E4E0F3", "#E1EFF5", "#FDEAE6", "#F8E9ED
 const REPLICATE_COLORS = (GO_COLOR, GR_COLOR, THIRD_COLOR)
 const RESET_COLORS = Dict(:group => GO_COLOR, :mse => GR_COLOR, :joint => THIRD_COLOR)
 const RESET_LABELS = Dict(:group => "Group reset", :mse => "MSE reset", :joint => "Joint reset")
-const CONTROLLER_COLORS = Dict("expert" => NEUTRAL_COLOR, "C_match" => GO_COLOR, "C_sparse" => GR_COLOR)
+const CONTROLLER_COLORS = Dict(
+    "expert" => NEUTRAL_COLOR,
+    "C_match" => GO_COLOR,
+    "C_sparse" => GR_COLOR,
+    "unactuated" => "#9A9A9A",
+)
 
 function usage(io::IO = stdout)
     println(io, """
@@ -205,6 +215,73 @@ function load_candidates(path, protocol)
     return candidates
 end
 
+function paper_case_identifier(protocol, episode)
+    protocol === :fixed && return "fixed_shared"
+    choice = episode.choice
+    Symbol(choice.split) === :test || error("Varying baseline contains a non-test episode.")
+    return "test_b$(choice.base_seed)_m$(choice.mirror ? 1 : 0)_o$(choice.offset)"
+end
+
+function baseline_csv_rows(protocol, controller, artifact)
+    episode_rows = Dict{Symbol, String}[]
+    return_rows = Dict{Symbol, String}[]
+    for episode in artifact.episodes
+        case_id = paper_case_identifier(protocol, episode)
+        rewards = Float64.(episode.rewards)
+        state_nusselt = Float64.(episode.state_nusselt)
+        length(rewards) == 200 && length(state_nusselt) == 200 || error(
+            "Baseline case $case_id does not contain 200 steps.",
+        )
+        for step in 1:200
+            push!(episode_rows, Dict(
+                :controller => controller,
+                :role => controller,
+                :case => case_id,
+                :step => string(step),
+                :reward => string(rewards[step]),
+                :global_nusselt => string(state_nusselt[step]),
+            ))
+        end
+        push!(return_rows, Dict(
+            :controller => controller,
+            :role => controller,
+            :case => case_id,
+            :return => string(sum(rewards)),
+        ))
+    end
+    return episode_rows, return_rows
+end
+
+function apply_baseline_artifacts(protocol, candidate_path, test_episodes, test_returns)
+    manifest = JLD2.load(candidate_path)
+    expert_identifier = string(manifest["expert_identifier"])
+    expected_cases = Set(
+        string_value(row, :case) for row in test_episodes
+        if string_value(row, :role) == "expert"
+    )
+    used_paths = String[]
+    for controller in ("expert", "unactuated")
+        artifact = load_baseline_artifact(
+            protocol,
+            Symbol(controller);
+            expert_identifier = controller == "expert" ? expert_identifier : nothing,
+        )
+        isnothing(artifact) && continue
+        rows, returns = baseline_csv_rows(protocol, controller, artifact)
+        observed_cases = Set(string_value(row, :case) for row in returns)
+        observed_cases == expected_cases || error(
+            "$(protocol)/$controller baseline cases differ from the Package-6 test set.",
+        )
+        filter!(row -> string_value(row, :role) != controller, test_episodes)
+        filter!(row -> string_value(row, :role) != controller, test_returns)
+        append!(test_episodes, rows)
+        append!(test_returns, returns)
+        push!(used_paths, artifact.path)
+        println("$(uppercasefirst(string(protocol))) paper data: using $controller baseline $(artifact.path)")
+    end
+    return test_episodes, test_returns, used_paths
+end
+
 function load_protocol(results_dir, protocol)
     paths = required_paths(results_dir, protocol)
     for path in values(paths)
@@ -212,6 +289,16 @@ function load_protocol(results_dir, protocol)
     end
     status = validate_status(paths[:status], protocol)
     candidates = load_candidates(paths[:candidates], protocol)
+    test_episodes, test_returns, baseline_paths = apply_baseline_artifacts(
+        protocol,
+        paths[:candidates],
+        read_csv(paths[:test_episodes]),
+        read_csv(paths[:test_returns]),
+    )
+    for path in baseline_paths
+        controller = splitext(basename(path))[1]
+        paths[Symbol("baseline_$(controller)")] = path
+    end
     return (;
         protocol,
         paths,
@@ -223,8 +310,8 @@ function load_protocol(results_dir, protocol)
         hitting = read_csv(paths[:hitting]),
         resets = read_csv(paths[:resets]),
         archive = read_csv(paths[:archive]),
-        test_episodes = read_csv(paths[:test_episodes]),
-        test_returns = read_csv(paths[:test_returns]),
+        test_episodes,
+        test_returns,
     )
 end
 
@@ -786,7 +873,11 @@ function make_terminal_figure(data_by_protocol, output)
             x = [int_value(row, :step) for row in selected],
             y = [float_value(row, :global_nusselt) for row in selected],
             mode = "lines", name = CONTROLLER_NAMES[role], legendgroup = role,
-            line = attr(color = CONTROLLER_COLORS[role], width = role == "expert" ? 2.5 : 2.0),
+            line = attr(
+                color = CONTROLLER_COLORS[role],
+                width = role == "expert" ? 2.5 : 2.0,
+                dash = role == "unactuated" ? "dash" : "solid",
+            ),
             showlegend = true,
         ); row = 1, col = 1)
     end
@@ -1121,7 +1212,7 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
         println(io, "\nRetention is evaluated only after each method-specific pooled front has been formed. A retained count of all GO points means that none of the GO front points is dominated in the combined front; it does not mean that every individual GO point dominates every GR point.\n")
 
         println(io, "## 5. Selection-inert terminal test confirmation\n")
-        println(io, "Candidates were loaded from the immutable validation-only manifest. Test mean Nu is the mean of the stored per-step `state_Nu` values over the 200-step episodes; lower is better. The test data are not used to change a candidate, strength, or training decision.\n")
+        println(io, "Candidates were loaded from the immutable validation-only manifest. Matching Revision/Baselines artifacts replace the expert rows and add the unactuated controller when available. Test mean Nu is the mean of the stored per-step `state_Nu` values over the 200-step episodes; lower is better. The test data are not used to change a candidate, strength, or training decision.\n")
         println(io, "| Protocol | Controller | Cases | Mean Nu | Median case Nu | Case range | Mean raw 200-step return |")
         println(io, "|---|---|---:|---:|---:|---:|---:|")
         for row in metrics.terminal
@@ -1183,6 +1274,59 @@ function run_self_tests()
     @assert length(EVALUATION_STRENGTH_COLORS) == 5
     @assert last(EVALUATION_STRENGTH_COLORS) == GR_COLOR
     @assert length(ALTERNATIVE_EVALUATION_COLORS) == 5
+    mktempdir() do directory
+        previous = get(ENV, "REVISION_BASELINE_RESULTS_DIR", nothing)
+        try
+            ENV["REVISION_BASELINE_RESULTS_DIR"] = joinpath(directory, "baselines")
+            manifest_path = joinpath(directory, "candidate_manifest.jld2")
+            JLD2.jldsave(manifest_path; expert_identifier = "sha256:testexpert")
+            for (controller, value) in ((:expert, 2.5), (:unactuated, 4.0))
+                path = baseline_artifact_path(:fixed, controller)
+                mkpath(dirname(path))
+                episode = (
+                    case_id = "fixed_shared",
+                    choice = nothing,
+                    rewards = fill(-value, 200),
+                    state_nusselt = fill(value, 200),
+                    actions = zeros(Float32, 200, 12),
+                )
+                JLD2.jldsave(
+                    path;
+                    status = :complete,
+                    protocol = :fixed,
+                    controller,
+                    steps = 200,
+                    case_count = 1,
+                    expert_sha256 = controller === :expert ? "testexpert" : "",
+                    episodes = [episode],
+                )
+            end
+            old_episodes = [Dict(
+                :controller => "expert", :role => "expert", :case => "fixed_shared",
+                :step => "1", :reward => "-99", :global_nusselt => "99",
+            )]
+            old_returns = [Dict(
+                :controller => "expert", :role => "expert", :case => "fixed_shared", :return => "-99",
+            )]
+            episodes, returns, paths = apply_baseline_artifacts(
+                :fixed,
+                manifest_path,
+                old_episodes,
+                old_returns,
+            )
+            @assert length(paths) == 2
+            @assert count(row -> row[:role] == "expert", episodes) == 200
+            @assert count(row -> row[:role] == "unactuated", episodes) == 200
+            @assert only(row[:global_nusselt] for row in episodes if row[:role] == "expert" && row[:step] == "1") == "2.5"
+            @assert length(returns) == 2
+        finally
+            if isnothing(previous)
+                delete!(ENV, "REVISION_BASELINE_RESULTS_DIR")
+            else
+                ENV["REVISION_BASELINE_RESULTS_DIR"] = previous
+            end
+        end
+    end
     println("Package-6 paper figure self-tests passed.")
     return nothing
 end

@@ -613,7 +613,11 @@ function write_report(options, audit, metrics, paths, manifest_path, test_result
         else
             loaded = JLD2.load(test_result)
             println(io, "\n## Terminal test (selection-inert)\n")
-            println(io, "The Fixed protocol uses the shared 200-step episode; the Varying protocol uses all eight predeclared test episodes. Only the expert and frozen GO candidate(s) were rolled out. These returns were not used for selection or training.\n")
+            expert_source = haskey(loaded, "expert_source") ? Symbol(loaded["expert_source"]) : :terminal_rollout
+            source_text = expert_source === :baseline_artifact ?
+                "The expert values were reused from the matching Revision/Baselines artifact; the frozen GO candidate(s) were rolled out here." :
+                "The expert and frozen GO candidate(s) were rolled out here."
+            println(io, "The Fixed protocol uses the shared 200-step episode; the Varying protocol uses all eight predeclared test episodes. $source_text These returns were not used for selection or training.\n")
             for summary in loaded["summaries"]
                 @printf(io, "- `%s` (%s): mean 200-step return %.6f.\n", string(summary.id), string(summary.role), Float64(summary.mean_return))
             end

@@ -15,7 +15,8 @@ export P6_SCHEMA_VERSION, P6_MASTER_SEED, P6_STRENGTHS, P6_GR_STRENGTH,
        normalize_protocol, seed_plan, seed_plan_hash, study_jobs, analysis_jobs,
        job_for, run_id, run_relative_path, run_directory, status_path,
        canonical_string, fingerprint, atomic_save, load_status, write_status!,
-       expected_evaluation_updates, short_path_components
+       expected_evaluation_updates, short_path_components,
+       baseline_artifact_path, load_baseline_artifact
 
 const P6_SCHEMA_VERSION = 1
 const P6_MASTER_SEED = 20_260_812
@@ -35,6 +36,48 @@ const P6_VALIDATION_BATCH_SIZE = Dict(:fixed => 200, :varying => 512)
 const P6_REPLICATES = 1:3
 const P6_POLL_SECONDS = 60
 const P6_TIMEOUT_SECONDS = 14 * 24 * 60 * 60
+
+function baseline_artifact_path(protocol, controller; results_root = nothing)
+    normalized_protocol = normalize_protocol(protocol)
+    normalized_controller = Symbol(lowercase(string(controller)))
+    normalized_controller in (:expert, :unactuated) || throw(
+        ArgumentError("Baseline controller must be expert or unactuated."),
+    )
+    root = isnothing(results_root) ? get(
+        ENV,
+        "REVISION_BASELINE_RESULTS_DIR",
+        joinpath(@__DIR__, "..", "Baselines", "results"),
+    ) : string(results_root)
+    return abspath(joinpath(root, string(normalized_protocol), "$(normalized_controller).jld2"))
+end
+
+"""Load and validate an optional Revision/Baselines artifact."""
+function load_baseline_artifact(
+    protocol,
+    controller;
+    results_root = nothing,
+    expert_identifier = nothing,
+)
+    normalized_protocol = normalize_protocol(protocol)
+    normalized_controller = Symbol(lowercase(string(controller)))
+    path = baseline_artifact_path(normalized_protocol, normalized_controller; results_root)
+    isfile(path) || return nothing
+    loaded = JLD2.load(path)
+    string(loaded["status"]) == "complete" || error("Baseline artifact is incomplete: $path")
+    Symbol(loaded["protocol"]) === normalized_protocol || error("Baseline protocol mismatch: $path")
+    Symbol(loaded["controller"]) === normalized_controller || error("Baseline controller mismatch: $path")
+    Int(loaded["steps"]) == 200 || error("Baseline artifact must contain 200-step episodes: $path")
+    episodes = loaded["episodes"]
+    Int(loaded["case_count"]) == length(episodes) || error("Baseline case count mismatch: $path")
+    if normalized_controller === :expert && !isnothing(expert_identifier)
+        expected = replace(string(expert_identifier), r"^sha256:" => "")
+        observed = string(loaded["expert_sha256"])
+        observed == expected || error(
+            "Baseline expert sha256:$observed does not match the Package-6 expert $(expert_identifier).",
+        )
+    end
+    return (; path, loaded, episodes)
+end
 
 function normalize_protocol(value)::Symbol
     protocol = Symbol(lowercase(string(value)))
