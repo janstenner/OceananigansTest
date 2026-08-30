@@ -14,6 +14,8 @@ RUN_SEED=600600
 PREVIEW=false
 OVERWRITE=false
 ALLOW_FRESH_EXPERT=false
+OPENBLAS_THREADS=3
+OMP_THREADS=1
 
 usage() {
     cat <<'EOF'
@@ -31,6 +33,8 @@ Options:
   --fixed-expert-path PATH           Fixed-IC expert checkpoint.
   --varying-expert-path PATH         Varying-IC expert checkpoint.
   --run-seed N                       Initialization seed; default: 600600.
+  --openblas-threads N               OpenBLAS threads per worker; default: 3.
+  --omp-threads N                    OpenMP threads per worker; default: 1.
   --preview                          Print jobs and commands; start nothing.
   --overwrite                        Regenerate matching worker files.
   --allow-fresh-expert               Smoke tests only; no production expert.
@@ -47,6 +51,12 @@ while (($#)); do
         --fixed-expert-path|--fixed_expert_path) FIXED_EXPERT_PATH="$2"; shift 2 ;;
         --varying-expert-path|--varying_expert_path) VARYING_EXPERT_PATH="$2"; shift 2 ;;
         --run-seed|--run_seed) RUN_SEED="$2"; shift 2 ;;
+        --openblas-threads|--openblas_threads)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            OPENBLAS_THREADS="$2"; shift 2 ;;
+        --omp-threads|--omp_threads)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            OMP_THREADS="$2"; shift 2 ;;
         --preview) PREVIEW=true; shift ;;
         --overwrite) OVERWRITE=true; shift ;;
         --allow-fresh-expert) ALLOW_FRESH_EXPERT=true; shift ;;
@@ -67,6 +77,14 @@ done
 [[ "$RUN_SEED" =~ ^[0-9]+$ ]] || {
     echo "--run-seed must be non-negative." >&2; exit 2;
 }
+[[ "$OPENBLAS_THREADS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "--openblas-threads must be positive." >&2; exit 2;
+}
+[[ "$OMP_THREADS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "--omp-threads must be positive." >&2; exit 2;
+}
+export OPENBLAS_NUM_THREADS="$OPENBLAS_THREADS"
+export OMP_NUM_THREADS="$OMP_THREADS"
 command -v "$JULIA_BIN" >/dev/null || {
     echo "Julia executable not found: $JULIA_BIN" >&2; exit 1;
 }
@@ -155,6 +173,8 @@ for ((slot=0; slot<WORKER_COUNT; slot++)); do
     {
         echo '#!/usr/bin/env bash'
         echo 'set -uo pipefail'
+        printf 'export OPENBLAS_NUM_THREADS=%q\n' "$OPENBLAS_THREADS"
+        printf 'export OMP_NUM_THREADS=%q\n' "$OMP_THREADS"
         echo 'slot_failed=0'
         for ((index=slot; index<${#JOBS[@]}; index+=WORKER_COUNT)); do
             row="${JOBS[index]}"

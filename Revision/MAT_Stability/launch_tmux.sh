@@ -9,6 +9,8 @@ PROTOCOL="all"
 PREVIEW=false
 WORKER_DRY_RUN=false
 OVERWRITE=false
+OPENBLAS_THREADS=3
+OMP_THREADS=1
 
 usage() {
     cat <<'EOF'
@@ -23,6 +25,8 @@ Options:
   --preview                     Print the frozen plan and commands; start nothing.
   --dry-run-workers             Start zero-episode verification workers.
   --overwrite                   Re-run already complete matching results.
+  --openblas-threads N          OpenBLAS threads per worker; default: 3.
+  --omp-threads N               OpenMP threads per worker; default: 1.
   --help                        Show this message.
 
 Set JULIA_BIN if Julia is not available as `julia` on PATH.
@@ -44,6 +48,12 @@ while (($#)); do
         --preview) PREVIEW=true; shift ;;
         --dry-run-workers|--dry_run_workers) WORKER_DRY_RUN=true; shift ;;
         --overwrite) OVERWRITE=true; shift ;;
+        --openblas-threads|--openblas_threads)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            OPENBLAS_THREADS="$2"; shift 2 ;;
+        --omp-threads|--omp_threads)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            OMP_THREADS="$2"; shift 2 ;;
         --help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -53,6 +63,14 @@ done
     echo "--protocol must be all, fixed, or varying." >&2
     exit 2
 }
+[[ "$OPENBLAS_THREADS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "--openblas-threads must be positive." >&2; exit 2;
+}
+[[ "$OMP_THREADS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "--omp-threads must be positive." >&2; exit 2;
+}
+export OPENBLAS_NUM_THREADS="$OPENBLAS_THREADS"
+export OMP_NUM_THREADS="$OMP_THREADS"
 command -v "$JULIA_BIN" >/dev/null || {
     echo "Julia executable not found: $JULIA_BIN" >&2
     exit 1
@@ -138,7 +156,7 @@ for row in "${JOBS[@]}"; do
     logfile="$LAUNCH_DIR/${protocol}_$(printf '%02d' "$replicate")_${config}.log"
     command="$(worker_command "$row")"
     printf -v quoted_logfile '%q' "$logfile"
-    shell_command="set -o pipefail; ${command}2>&1 | tee -a ${quoted_logfile}"
+    shell_command="set -o pipefail; export OPENBLAS_NUM_THREADS=${OPENBLAS_THREADS}; export OMP_NUM_THREADS=${OMP_THREADS}; ${command}2>&1 | tee -a ${quoted_logfile}"
     printf -v quoted_shell_command '%q' "$shell_command"
 
     if tmux has-session -t "=$session" 2>/dev/null; then

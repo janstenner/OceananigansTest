@@ -12,6 +12,8 @@ PROTOCOL="all"
 MAX_WORKERS=20
 PREVIEW=false
 OVERWRITE=false
+OPENBLAS_THREADS=3
+OMP_THREADS=1
 
 usage() {
     cat <<'EOF'
@@ -28,6 +30,8 @@ Options:
   --package3-dir PATH            Override the Package-3 result directory.
   --preview                      Print the plan and worker commands; start nothing.
   --overwrite                    Re-run matching jobs and validations.
+  --openblas-threads N           OpenBLAS threads per worker; default: 3.
+  --omp-threads N                OpenMP threads per worker; default: 1.
   --help                         Show this message.
 
 Hyphen and underscore spellings (--n-runs/--n_runs) are both accepted.
@@ -45,6 +49,12 @@ while (($#)); do
         --package3-dir|--package3_dir) PACKAGE3_DIR="$2"; shift 2 ;;
         --preview) PREVIEW=true; shift ;;
         --overwrite) OVERWRITE=true; shift ;;
+        --openblas-threads|--openblas_threads)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            OPENBLAS_THREADS="$2"; shift 2 ;;
+        --omp-threads|--omp_threads)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            OMP_THREADS="$2"; shift 2 ;;
         --help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -60,6 +70,14 @@ done
 [[ "$PROTOCOL" =~ ^(all|fixed|varying)$ ]] || {
     echo "--protocol must be all, fixed, or varying." >&2; exit 2;
 }
+[[ "$OPENBLAS_THREADS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "--openblas-threads must be positive." >&2; exit 2;
+}
+[[ "$OMP_THREADS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "--omp-threads must be positive." >&2; exit 2;
+}
+export OPENBLAS_NUM_THREADS="$OPENBLAS_THREADS"
+export OMP_NUM_THREADS="$OMP_THREADS"
 command -v "$JULIA_BIN" >/dev/null || { echo "Julia executable not found: $JULIA_BIN" >&2; exit 1; }
 
 if [[ "$PREVIEW" == true ]]; then
@@ -134,6 +152,8 @@ for ((slot=0; slot<WORKER_COUNT; slot++)); do
     {
         echo '#!/usr/bin/env bash'
         echo 'set -uo pipefail'
+        printf 'export OPENBLAS_NUM_THREADS=%q\n' "$OPENBLAS_THREADS"
+        printf 'export OMP_NUM_THREADS=%q\n' "$OMP_THREADS"
         echo 'slot_failed=0'
         for ((index=slot; index<${#JOBS[@]}; index+=WORKER_COUNT)); do
             row="${JOBS[index]}"

@@ -17,6 +17,8 @@ submitted=0
 skipped=0
 planned=0
 first_session=""
+openblas_threads=3
+omp_threads=1
 
 usage() {
     cat <<'EOF'
@@ -32,6 +34,8 @@ Options:
   --analysis-only        Start only the selected analysis/wait session(s).
   --parallel-test        Run every terminal test episode in its own process.
   --results-dir PATH     Override the result root.
+  --openblas-threads N   OpenBLAS threads per worker (default: 3).
+  --omp-threads N        OpenMP threads per worker (default: 1).
   --help                 Show this help.
 
 The analysis workers poll every 60 seconds for at most 14 days and terminate
@@ -54,11 +58,26 @@ while (($#)); do
             results_directory="$2"
             shift
             ;;
+        --openblas-threads)
+            (($# >= 2)) || { echo "Missing value after --openblas-threads." >&2; exit 2; }
+            openblas_threads="$2"
+            shift
+            ;;
+        --omp-threads)
+            (($# >= 2)) || { echo "Missing value after --omp-threads." >&2; exit 2; }
+            omp_threads="$2"
+            shift
+            ;;
         --help) usage; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
     esac
     shift
 done
+
+[[ "${openblas_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--openblas-threads must be positive." >&2; exit 2; }
+[[ "${omp_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--omp-threads must be positive." >&2; exit 2; }
+export OPENBLAS_NUM_THREADS="${openblas_threads}"
+export OMP_NUM_THREADS="${omp_threads}"
 
 case "${protocol_selection}" in
     all) protocols=(fixed varying) ;;
@@ -116,7 +135,7 @@ start_session() {
         return
     fi
     printf -v quoted_logfile "%q" "${logfile}"
-    shell_command="set -o pipefail; ${worker_command}2>&1 | tee -a ${quoted_logfile}"
+    shell_command="set -o pipefail; export OPENBLAS_NUM_THREADS=${openblas_threads}; export OMP_NUM_THREADS=${omp_threads}; ${worker_command}2>&1 | tee -a ${quoted_logfile}"
     printf -v quoted_shell_command "%q" "${shell_command}"
     tmux_command="bash -lc ${quoted_shell_command}"
     tmux new-session -d -s "${session}" "${tmux_command}"
@@ -172,6 +191,8 @@ mv "${job_manifest}.tmp" "${job_manifest}"
     echo "protocol=${protocol_selection}"
     echo "analysis_only=${analysis_only}"
     echo "parallel_test=${parallel_test}"
+    echo "openblas_threads=${openblas_threads}"
+    echo "omp_threads=${omp_threads}"
     echo "planned_sessions=${planned}"
     echo "submitted_sessions=${submitted}"
     echo "skipped_active_sessions=${skipped}"

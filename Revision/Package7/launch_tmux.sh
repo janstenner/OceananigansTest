@@ -19,6 +19,8 @@ planned=0
 submitted=0
 skipped=0
 first_session=""
+openblas_threads=3
+omp_threads=1
 
 usage() {
     cat <<'EOF'
@@ -38,6 +40,8 @@ Options:
   --analysis-only       Start only the selected analysis/wait worker(s).
   --retry-failed        Permit training workers to resume failed runs.
   --results-dir PATH    Override the Package-7 result root.
+  --openblas-threads N  OpenBLAS threads per worker (default: 3).
+  --omp-threads N       OpenMP threads per worker (default: 1).
   --help                Show this help.
 EOF
 }
@@ -64,6 +68,16 @@ while (($#)); do
             results_directory="$2"
             shift
             ;;
+        --openblas-threads)
+            (($# >= 2)) || { echo "Missing value after --openblas-threads." >&2; exit 2; }
+            openblas_threads="$2"
+            shift
+            ;;
+        --omp-threads)
+            (($# >= 2)) || { echo "Missing value after --omp-threads." >&2; exit 2; }
+            omp_threads="$2"
+            shift
+            ;;
         --preview) preview=true ;;
         --analysis-only) analysis_only=true ;;
         --retry-failed) retry_failed=true ;;
@@ -72,6 +86,11 @@ while (($#)); do
     esac
     shift
 done
+
+[[ "${openblas_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--openblas-threads must be positive." >&2; exit 2; }
+[[ "${omp_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--omp-threads must be positive." >&2; exit 2; }
+export OPENBLAS_NUM_THREADS="${openblas_threads}"
+export OMP_NUM_THREADS="${omp_threads}"
 
 [[ "${analysis_only}" == false || -n "${experiment_id}" ]] || {
     echo "--analysis-only requires --experiment-id so the existing runs can be located." >&2
@@ -158,7 +177,7 @@ start_session() {
         return
     fi
     printf -v quoted_logfile "%q" "${logfile}"
-    shell_command="set -o pipefail; ${worker_command}2>&1 | tee -a ${quoted_logfile}"
+    shell_command="set -o pipefail; export OPENBLAS_NUM_THREADS=${openblas_threads}; export OMP_NUM_THREADS=${omp_threads}; ${worker_command}2>&1 | tee -a ${quoted_logfile}"
     printf -v quoted_shell_command "%q" "${shell_command}"
     tmux_command="bash -lc ${quoted_shell_command}"
     tmux new-session -d -s "${session}" "${tmux_command}"
@@ -214,6 +233,8 @@ mv "${job_manifest}.tmp" "${job_manifest}"
     echo "explicit_strengths=${explicit_strengths[*]}"
     echo "analysis_only=${analysis_only}"
     echo "retry_failed=${retry_failed}"
+    echo "openblas_threads=${openblas_threads}"
+    echo "omp_threads=${omp_threads}"
     echo "planned_sessions=${planned}"
     echo "submitted_sessions=${submitted}"
     echo "skipped_active_sessions=${skipped}"

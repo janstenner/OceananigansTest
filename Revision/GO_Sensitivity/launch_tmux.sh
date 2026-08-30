@@ -13,6 +13,8 @@ grouping_selection=all
 submitted=0
 skipped=0
 first_session=""
+openblas_threads=3
+omp_threads=1
 
 fixed_grouped_strengths=(0.003 0.006 0.01 0.03 0.06 0.09)
 fixed_separate_strengths=(0.0015 0.003 0.006 0.01 0.02 0.03)
@@ -32,6 +34,8 @@ Options:
   --protocol VALUE   Select all, fixed, or varying workers (default: all).
   --grouping VALUE   Select all, grouped, or separate workers (default: all).
   --preview          Print the 22 planned sessions without starting them.
+  --openblas-threads N  OpenBLAS threads per worker (default: 3).
+  --omp-threads N       OpenMP threads per worker (default: 1).
   --help             Show this message.
 
 Environment:
@@ -64,6 +68,16 @@ while (($#)); do
             grouping_selection="$2"
             shift
             ;;
+        --openblas-threads)
+            (($# >= 2)) || { echo "Missing value after --openblas-threads." >&2; exit 2; }
+            openblas_threads="$2"
+            shift
+            ;;
+        --omp-threads)
+            (($# >= 2)) || { echo "Missing value after --omp-threads." >&2; exit 2; }
+            omp_threads="$2"
+            shift
+            ;;
         --help)
             usage
             exit 0
@@ -76,6 +90,11 @@ while (($#)); do
     esac
     shift
 done
+
+[[ "${openblas_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--openblas-threads must be positive." >&2; exit 2; }
+[[ "${omp_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--omp-threads must be positive." >&2; exit 2; }
+export OPENBLAS_NUM_THREADS="${openblas_threads}"
+export OMP_NUM_THREADS="${omp_threads}"
 
 case "${protocol_selection}" in
     all) protocols=(fixed varying) ;;
@@ -160,7 +179,7 @@ start_worker() {
     fi
 
     printf -v quoted_logfile "%q" "${logfile}"
-    shell_command="set -o pipefail; ${worker_command}2>&1 | tee -a ${quoted_logfile}"
+    shell_command="set -o pipefail; export OPENBLAS_NUM_THREADS=${openblas_threads}; export OMP_NUM_THREADS=${omp_threads}; ${worker_command}2>&1 | tee -a ${quoted_logfile}"
     printf -v quoted_shell_command "%q" "${shell_command}"
     tmux_command="bash -lc ${quoted_shell_command}"
     tmux new-session -d -s "${session}" "${tmux_command}"

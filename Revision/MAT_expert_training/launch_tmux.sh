@@ -8,6 +8,8 @@ results_directory="${MAT_EXPERT_RESULTS_DIR:-${script_directory}/results}"
 source_results_directory="${MAT_IPPO_RESULTS_DIR:-${script_directory}/../MAT_IPPO_Comparison/results}"
 distillation_experts_directory="${DISTILLATION_EXPERTS_DIR:-${script_directory}/../Expert_Apprentice_Distillation/experts}"
 preview=false
+openblas_threads=3
+omp_threads=1
 
 usage() {
     cat <<'EOF'
@@ -29,6 +31,8 @@ Options:
   --distillation-experts-dir PATH
                               Override tracked Distillation expert root.
   --preview                   Validate and print commands; start nothing.
+  --openblas-threads N        OpenBLAS threads per worker (default: 3).
+  --omp-threads N             OpenMP threads per worker (default: 1).
   --help                      Show this message.
 
 Environment:
@@ -57,6 +61,16 @@ while (($#)); do
             preview=true
             shift
             ;;
+        --openblas-threads|--openblas_threads)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            openblas_threads="$2"
+            shift 2
+            ;;
+        --omp-threads|--omp_threads)
+            (($# >= 2)) || { echo "Missing value after $1." >&2; exit 2; }
+            omp_threads="$2"
+            shift 2
+            ;;
         --help)
             usage
             exit 0
@@ -68,6 +82,11 @@ while (($#)); do
             ;;
     esac
 done
+
+[[ "${openblas_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--openblas-threads must be positive." >&2; exit 2; }
+[[ "${omp_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--omp-threads must be positive." >&2; exit 2; }
+export OPENBLAS_NUM_THREADS="${openblas_threads}"
+export OMP_NUM_THREADS="${omp_threads}"
 
 command -v "${julia_binary}" >/dev/null 2>&1 || {
     echo "Julia executable '${julia_binary}' was not found." >&2
@@ -151,7 +170,7 @@ start_session() {
         "${session}" "${role}" "${protocol}" "${rank}" "${run_id}" "${logfile}" \
         >> "${launch_directory}/jobs.tsv"
     printf -v quoted_logfile '%q' "${logfile}"
-    local shell_command="set -o pipefail; ${command}2>&1 | tee -a ${quoted_logfile}"
+    local shell_command="set -o pipefail; export OPENBLAS_NUM_THREADS=${openblas_threads}; export OMP_NUM_THREADS=${omp_threads}; ${command}2>&1 | tee -a ${quoted_logfile}"
     printf -v quoted_shell_command '%q' "${shell_command}"
     tmux new-session -d -s "${session}" "bash -lc ${quoted_shell_command}"
     echo "Started ${session}; log: ${logfile}"
