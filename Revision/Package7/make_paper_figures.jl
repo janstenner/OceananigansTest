@@ -4,6 +4,7 @@ using JLD2
 using PlotlyJS
 using Printf
 using SHA
+using Statistics
 
 include(joinpath(@__DIR__, "Package7Study.jl"))
 using .Package7Study
@@ -273,7 +274,7 @@ function table_rows(configurations, expert, unactuated)
         validation_mse = missing,
         strength = missing,
         mask_threshold = missing,
-        sum_state_nusselt = Float64(expert.episode.sum_state_nusselt),
+        mean_state_nusselt = mean(Float64.(expert.episode.state_nusselt)),
         minimum_native_active_groups_under_quality_threshold = missing,
     )]
     for configuration in P7_CONFIGURATION_NAMES
@@ -287,7 +288,7 @@ function table_rows(configurations, expert, unactuated)
                 validation_mse = missing,
                 strength = missing,
                 mask_threshold = missing,
-                sum_state_nusselt = missing,
+                mean_state_nusselt = missing,
                 minimum_native_active_groups_under_quality_threshold = data.minimum_native_groups,
             ))
             continue
@@ -301,7 +302,7 @@ function table_rows(configurations, expert, unactuated)
             validation_mse = Float64(data.selected[:validation_matching]),
             strength = Float64(data.selected[:regularization_strength]),
             mask_threshold = Float64(data.selected[:threshold_value]),
-            sum_state_nusselt = Float64(data.test["sum_state_nusselt"]),
+            mean_state_nusselt = mean(Float64.(data.test["state_nusselt"])),
             minimum_native_active_groups_under_quality_threshold = data.minimum_native_groups,
         ))
     end
@@ -313,7 +314,7 @@ function table_rows(configurations, expert, unactuated)
         validation_mse = missing,
         strength = missing,
         mask_threshold = missing,
-        sum_state_nusselt = Float64(unactuated.episode.sum_state_nusselt),
+        mean_state_nusselt = mean(Float64.(unactuated.episode.state_nusselt)),
         minimum_native_active_groups_under_quality_threshold = missing,
     ))
     return rows
@@ -327,7 +328,7 @@ function write_table(output, rows)
     headers = (
         :configuration, :active_groups, :global_sc_sparsity_percent,
         :global_gc_sparsity_percent, :validation_mse, :strength,
-        :mask_threshold, :sum_state_nusselt,
+        :mask_threshold, :mean_state_nusselt,
         :minimum_native_active_groups_under_quality_threshold,
     )
     open(csv_path, "w") do io
@@ -339,12 +340,12 @@ function write_table(output, rows)
     fmt(value, format) = value === missing ? "" : Printf.format(Printf.Format(format), value)
     open(markdown_path, "w") do io
         println(io, "# Package 7 selected candidates\n")
-        println(io, "| Configuration | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test sum(state_Nu) | Minimum native groups under quality threshold |")
+        println(io, "| Configuration | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test mean(state_Nu) | Minimum native groups under quality threshold |")
         println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")
         for row in rows
-            println(io, "| $(row.configuration) | $(fmt(row.active_groups, "%d")) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.sum_state_nusselt, "%.6f")) | $(fmt(row.minimum_native_active_groups_under_quality_threshold, "%d")) |")
+            println(io, "| $(row.configuration) | $(fmt(row.active_groups, "%d")) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) | $(fmt(row.minimum_native_active_groups_under_quality_threshold, "%d")) |")
         end
-        println(io, "\nQuality means validation MSE <= $(P7_QUALITY_THRESHOLD). SC sparsity uses 8×48×3 channel inputs; GC sparsity treats a location as occupied when any channel is active. The final column is the only candidate-independent measurement.")
+        println(io, "\nQuality means validation MSE <= $(P7_QUALITY_THRESHOLD). Test mean(state_Nu) is the mean of the 200 stored per-step state_Nu values; lower is better. SC sparsity uses 8×48×3 channel inputs; GC sparsity treats a location as occupied when any channel is active. The final column is the only candidate-independent measurement.")
     end
     return (; csv_path, markdown_path)
 end

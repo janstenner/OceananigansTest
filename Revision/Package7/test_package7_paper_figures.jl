@@ -118,10 +118,11 @@ end
             ])
             @test length(artifacts.rows) == 10
             @test artifacts.rows[1].configuration == "Full sensor set expert"
-            @test artifacts.rows[1].sum_state_nusselt == 545.0
+            @test artifacts.rows[1].mean_state_nusselt ≈ 2.725
             @test artifacts.rows[end].configuration == "Unactuated"
-            @test artifacts.rows[end].sum_state_nusselt == 800.0
+            @test artifacts.rows[end].mean_state_nusselt == 4.0
             go_gc = only(row for row in artifacts.rows if row.configuration == "go-gc")
+            @test go_gc.mean_state_nusselt == 2.75
             @test go_gc.global_sc_sparsity_percent == 50.0
             @test go_gc.global_gc_sparsity_percent == 0.0
             growl_gc = only(row for row in artifacts.rows if row.configuration == "growl-gc")
