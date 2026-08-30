@@ -32,6 +32,10 @@ function write_fixture_baseline(root, controller, value)
 end
 
 @testset "Package-7 paper artifacts" begin
+    @test vec(panel_titles()) == [
+        "GO - GC", "GO - SC", "GR - GC", "GR - SC",
+        "Group Lasso - GC", "Group Lasso - SC", "GrOWL - GC", "GrOWL - SC",
+    ]
     mktempdir() do directory
         latest_root = joinpath(directory, "latest")
         mkpath(joinpath(latest_root, "260101_010101", "go-gc"))

@@ -16,9 +16,12 @@ const PAPER_METHOD_NAMES = Dict(
 const PAPER_THRESHOLD_COLORS = ("#2166AC", "#92C5DE", "#D6604D", "#67001F")
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
 const PAPER_CHANNEL_NAMES = ("Buoyancy b", "Vertical velocity w", "Horizontal velocity u")
-const PAPER_INACTIVE_COLOR = "#151515"
+const PAPER_INACTIVE_COLOR = "#F2F2F2"
 const PAPER_GRID_COLOR = "#E6E6E6"
 const DEFAULT_P7_RESULTS = joinpath(@__DIR__, "results")
+const STRIPE_CHANNEL_WIDTH = 4
+const STRIPE_SENSOR_WIDTH = 3 * STRIPE_CHANNEL_WIDTH + 1
+const STRIPE_COLUMN_COUNT = 48 * STRIPE_SENSOR_WIDTH - 1
 
 function usage(io::IO = stdout)
     println(io, """
@@ -348,22 +351,27 @@ end
 
 function panel_titles(methods = PAPER_METHODS)
     return reshape([
-        "$(PAPER_METHOD_NAMES[method]) — $(uppercase(grouping))"
-        for grouping in PAPER_GROUPINGS for method in methods
-    ], length(methods), 2)
+        "$(PAPER_METHOD_NAMES[method]) - $(uppercase(grouping))"
+        for method in methods for grouping in PAPER_GROUPINGS
+    ], :, 1)
 end
 
 function stripe_matrix(mask)
-    values = Matrix{Float64}(undef, 8, 48 * 3)
-    text = Matrix{String}(undef, 8, 48 * 3)
+    values = fill(NaN, 8, STRIPE_COLUMN_COUNT)
+    text = fill("", 8, STRIPE_COLUMN_COUNT)
     for vertical in 1:8, horizontal in 1:48, channel in 1:3
-        column = 3 * (horizontal - 1) + channel
         active = Bool(mask[channel, horizontal, vertical])
-        values[vertical, column] = active ? channel : 0
-        text[vertical, column] = "x=$horizontal, z=$vertical<br>$(PAPER_CHANNEL_NAMES[channel]): $(active ? "active" : "inactive")"
+        start = (horizontal - 1) * STRIPE_SENSOR_WIDTH + (channel - 1) * STRIPE_CHANNEL_WIDTH + 1
+        for column in start:(start + STRIPE_CHANNEL_WIDTH - 1)
+            values[vertical, column] = active ? channel : 0
+            text[vertical, column] = "x=$horizontal, z=$vertical<br>$(PAPER_CHANNEL_NAMES[channel]): $(active ? "active" : "inactive")"
+        end
     end
     return values, text
 end
+
+stripe_sensor_center(horizontal) =
+    (horizontal - 1) * STRIPE_SENSOR_WIDTH + (3 * STRIPE_CHANNEL_WIDTH + 1) / 2
 
 const STRIPE_COLORSCALE = [
     [0.0, PAPER_INACTIVE_COLOR], [1 / 6, PAPER_INACTIVE_COLOR],
@@ -398,6 +406,7 @@ function make_mask_figure(
         else
             values, text = stripe_matrix(data.selected[:global_mask])
             add_trace!(plot, heatmap(
+                x = collect(1:STRIPE_COLUMN_COUNT), y = collect(1:8),
                 z = values, text = text, zmin = 0, zmax = 3,
                 colorscale = STRIPE_COLORSCALE, showscale = false,
                 hovertemplate = "%{text}<extra></extra>",
@@ -423,8 +432,8 @@ function make_mask_figure(
     for index in 1:(2 * row_count)
         layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), attr(
             title = index > 2 * (row_count - 1) ? "Horizontal sensor index" : "",
-            range = [0.5, 144.5], tickmode = "array",
-            tickvals = [3 * (value - 1) + 2 for value in 1:4:48],
+            range = [0.5, STRIPE_COLUMN_COUNT + 0.5], tickmode = "array",
+            tickvals = [stripe_sensor_center(value) for value in 1:4:48],
             ticktext = string.(1:4:48), showgrid = false, zeroline = false,
             showline = true, mirror = true, linecolor = "#3A3A3A",
         ))
@@ -531,7 +540,7 @@ function make_pareto_figure(configurations, output)
         ))
     end
     isempty(all_losses) && error("No finite Package-7 evaluation losses were found.")
-    y_range = [log10(minimum(all_losses)) - 0.15, log10(maximum(all_losses)) + 0.15]
+    y_range = [log10(minimum(all_losses)) - 0.15, log10(10.0)]
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => 1450, :height => 1650,
         :title => attr(text = "Package 7: evaluation landscapes and pooled Pareto fronts", x = 0.5, xanchor = "center"),
