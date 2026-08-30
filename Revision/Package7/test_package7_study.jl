@@ -26,7 +26,7 @@ using .Package7Study
 
     single = study_jobs(experiment_id, "go-sc")
     @test length(single) == 9
-    @test Set(job.regularization_strength for job in single) == Set([0.016, 0.04, 0.1])
+    @test Set(job.regularization_strength for job in single) == Set([0.0144, 0.036, 0.09])
 
     sweep = study_jobs(experiment_id, "go-sc", [0.007, 0.0175, 0.04375])
     @test length(sweep) == 9

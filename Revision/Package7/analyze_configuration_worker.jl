@@ -9,12 +9,7 @@ const P7_DISTILLATION_DIRECTORY = joinpath(@__DIR__, "..", "Expert_Apprentice_Di
 include(joinpath(P7_DISTILLATION_DIRECTORY, "ParetoArchive.jl"))
 
 const DEFAULT_RESULTS_ROOT = joinpath(@__DIR__, "results")
-const THRESHOLD_COLORS = Dict(
-    0.0 => "#2166AC",
-    0.0015 => "#92C5DE",
-    0.003 => "#D6604D",
-    0.005 => "#67001F",
-)
+const THRESHOLD_COLOR_PALETTE = ("#2166AC", "#92C5DE", "#D6604D", "#67001F")
 const REPLICATE_SYMBOLS = Dict(1 => "circle", 2 => "diamond", 3 => "square")
 
 function parse_arguments(arguments)
@@ -143,7 +138,6 @@ function load_run_records(options, job)
         Int(config[:apprentice_seed]) == job.apprentice_seed,
         Int(config[:batch_order_seed]) == job.batch_seed,
         Int(config[:regularized_updates]) == options.expected_updates,
-        Float64.(config[:threshold_values]) == collect(P7_THRESHOLDS),
         Symbol(config[:threshold_importance_mode]) === :max_input_l1,
         Int(config[:threshold_minimum_active_groups]) == 1,
     )
@@ -163,7 +157,7 @@ function load_run_records(options, job)
         record[:source_run_directory] = directory
         record[:configuration] = job.configuration
         record[:replicate] = job.replicate
-        record[:regularization_strength] = job.regularization_strength
+        record[:regularization_strength] = Float64(config[:regularization_strength])
         push!(records, record)
     end
     return retain_successful_threshold_records(records; context = job.id)
@@ -189,6 +183,29 @@ function write_csv(path::AbstractString, records, front_ids)
     return path
 end
 
+function observed_strengths(records)
+    strengths = sort!(unique(Float64(record[:regularization_strength]) for record in records))
+    isempty(strengths) && error("Cannot determine used strengths from an empty evaluation set.")
+    all(strength -> isfinite(strength) && strength > 0, strengths) || error(
+        "Evaluation records contain an invalid regularization strength.",
+    )
+    return strengths
+end
+
+function observed_thresholds(records)
+    thresholds = sort!(unique(Float64(record[:threshold_value]) for record in records))
+    isempty(thresholds) && error("Cannot determine used thresholds from an empty evaluation set.")
+    all(threshold -> isfinite(threshold) && threshold >= 0, thresholds) || error(
+        "Evaluation records contain an invalid threshold value.",
+    )
+    return thresholds
+end
+
+threshold_colors(thresholds) = Dict(
+    threshold => THRESHOLD_COLOR_PALETTE[mod1(index, length(THRESHOLD_COLOR_PALETTE))]
+    for (index, threshold) in enumerate(thresholds)
+)
+
 function ensure_plotly_loaded!()
     isdefined(@__MODULE__, :PlotlyJS) || Base.eval(@__MODULE__, :(using PlotlyJS))
     return nothing
@@ -200,8 +217,11 @@ function make_plot(options, records, pooled_front, output_directory)
 end
 
 function make_plot_loaded(options, records, pooled_front, output_directory)
+    strengths = observed_strengths(records)
+    thresholds = observed_thresholds(records)
+    colors = threshold_colors(thresholds)
     traces = PlotlyJS.GenericTrace[]
-    for replicate in P7_REPLICATES, threshold in P7_THRESHOLDS
+    for replicate in P7_REPLICATES, threshold in thresholds
         selected = filter(record -> Int(record[:replicate]) == replicate && Float64(record[:threshold_value]) == threshold, records)
         active_groups = Int.(getindex.(selected, :active_groups))
         active_inputs = Int.(getindex.(selected, :active_inputs))
@@ -213,7 +233,7 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
             legendgroup = "threshold_$(threshold)",
             showlegend = replicate == 1,
             marker = PlotlyJS.attr(
-                color = THRESHOLD_COLORS[threshold],
+                color = colors[threshold],
                 symbol = REPLICATE_SYMBOLS[replicate],
                 size = 5,
                 opacity = 0.38,
@@ -258,7 +278,7 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
     end
     layout = PlotlyJS.Layout(
         template = "plotly_white",
-        title = "Package 7 $(options.configuration), λ ∈ {$(join(options.strengths, ", "))}",
+        title = "Package 7 $(options.configuration), λ ∈ {$(join(strengths, ", "))}",
         xaxis = PlotlyJS.attr(title = "Active groups"),
         yaxis = PlotlyJS.attr(title = "Validation expert-action matching (MSE)", type = "log"),
         legend = PlotlyJS.attr(title = PlotlyJS.attr(text = "Threshold")),
@@ -277,6 +297,9 @@ function analyze_completed_runs(options, jobs)
     output = analysis_directory(options.results_root, options.experiment_id, options.configuration)
     mkpath(output)
     records = reduce(vcat, (load_run_records(options, job) for job in jobs); init = Dict{Symbol, Any}[])
+    strengths = observed_strengths(records)
+    thresholds = observed_thresholds(records)
+    colors = threshold_colors(thresholds)
     expected_native_count = length(jobs) * length(expected_evaluation_updates(options.expected_updates))
     native_count = count(record -> Symbol(record[:threshold_id]) === :native, records)
     native_count == expected_native_count || error(
@@ -298,9 +321,9 @@ function analyze_completed_runs(options, jobs)
         experiment = :package7_fixed_regularizer_comparison,
         experiment_id = options.experiment_id,
         configuration = options.configuration,
-        regularization_strengths = options.strengths,
-        threshold_values = collect(P7_THRESHOLDS),
-        threshold_colors = copy(THRESHOLD_COLORS),
+        regularization_strengths = strengths,
+        threshold_values = thresholds,
+        threshold_colors = colors,
         records,
         pooled_front,
         generated_at = string(Dates.now()),
@@ -311,7 +334,7 @@ function analyze_completed_runs(options, jobs)
         state = :complete,
         experiment_id = options.experiment_id,
         configuration = options.configuration,
-        regularization_strengths = options.strengths,
+        regularization_strengths = strengths,
         point_count = length(records),
         front_count = length(pooled_front),
         csv_path,
@@ -320,7 +343,7 @@ function analyze_completed_runs(options, jobs)
         plot_paths,
         completed_at = string(Dates.now()),
     )
-    println("Completed Package-7 Pareto analysis for $(options.configuration), λ ∈ {$(join(options.strengths, ", "))}.")
+    println("Completed Package-7 Pareto analysis for $(options.configuration), λ ∈ {$(join(strengths, ", "))}.")
     println("  points/front: $(length(records)) / $(length(pooled_front))")
     println("  output: $output")
     return (; records, pooled_front, csv_path, front_csv_path, data_path, plot_paths)

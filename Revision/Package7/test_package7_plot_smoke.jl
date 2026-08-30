@@ -5,7 +5,8 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
 @testset "Package-7 pooled Pareto plot" begin
     records = Dict{Symbol, Any}[]
     candidate_index = 0
-    for replicate in P7_REPLICATES, (threshold_index, threshold) in enumerate(P7_THRESHOLDS)
+    fixture_thresholds = (0.0, 0.004, 0.009, 0.02)
+    for replicate in P7_REPLICATES, (threshold_index, threshold) in enumerate(fixture_thresholds)
         candidate_index += 1
         push!(records, Dict{Symbol, Any}(
             :run_id => "smoke-r$replicate",
@@ -26,7 +27,8 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
     front = pareto_front(records)
     @test !isempty(front)
     @test length(records) == 12
-    @test Set(Float64(record[:threshold_value]) for record in records) == Set(P7_THRESHOLDS)
+    @test observed_thresholds(records) == collect(fixture_thresholds)
+    @test Set(keys(threshold_colors(observed_thresholds(records)))) == Set(fixture_thresholds)
     filter_fixture = Dict{Symbol, Any}[
         Dict(:update => 0, :threshold_id => :native, :active_groups => 5),
         Dict(:update => 0, :threshold_id => :same_groups, :active_groups => 5),
@@ -34,12 +36,16 @@ include(joinpath(@__DIR__, "analyze_configuration_worker.jl"))
     ]
     filtered = retain_successful_threshold_records(filter_fixture; context = "smoke")
     @test Symbol.(getindex.(filtered, :threshold_id)) == [:native, :fewer_groups]
+    @test observed_strengths(records) == [0.09]
     mktempdir() do directory
-        options = (configuration = "go-sc", strengths = [0.008, 0.02, 0.05])
+        options = (configuration = "go-sc", strengths = [999.0])
         paths = make_plot(options, records, front, directory)
         @test length(paths) == 2
         @test all(isfile, paths)
         @test all(filesize(path) > 0 for path in paths)
+        svg = read(first(paths), String)
+        @test occursin("λ ∈ {0.09}", svg)
+        @test !occursin("λ ∈ {999", svg)
         front_ids = Set(string(record[:candidate_id]) for record in front)
         front_csv = write_csv(joinpath(directory, "pooled_pareto_front.csv"), front, front_ids)
         @test length(readlines(front_csv)) == length(front) + 1
