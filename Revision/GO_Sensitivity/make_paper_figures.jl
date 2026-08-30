@@ -29,6 +29,7 @@ const STRENGTH_COLORS = ("#2166AC", "#4393C3", "#92C5DE", "#D6604D", "#B2182B")
 # Reuse the four-color threshold palette selected from the GO-strength
 # calibration and add the earlier packages' yellow-orange for strength five.
 const EVALUATION_STRENGTH_COLORS = ("#2166AC", "#92C5DE", "#D6604D", "#67001F", GR_COLOR)
+const ALTERNATIVE_EVALUATION_COLORS = ("#E4E0F3", "#E1EFF5", "#FDEAE6", "#F8E9ED", "#FFF2DC")
 const REPLICATE_COLORS = (GO_COLOR, GR_COLOR, THIRD_COLOR)
 const RESET_COLORS = Dict(:group => GO_COLOR, :mse => GR_COLOR, :joint => THIRD_COLOR)
 const RESET_LABELS = Dict(:group => "Group reset", :mse => "MSE reset", :joint => "Joint reset")
@@ -633,6 +634,50 @@ function add_all_evaluations_panel!(plot_handle, data, row, col; showlegend)
     ); row, col)
 end
 
+function add_alternative_evaluations_panel!(plot_handle, data, row, col; showlegend)
+    for strength_index in eachindex(P6_STRENGTHS[data.protocol])
+        selected = filter(
+            item -> float_value(item, :validation_matching) <= 1.0,
+            go_evaluations(data, strength_index),
+        )
+        isempty(selected) && continue
+        label = @sprintf(
+            "GO strength F/V %.4g / %.4g",
+            P6_STRENGTHS[:fixed][strength_index],
+            P6_STRENGTHS[:varying][strength_index],
+        )
+        add_trace!(plot_handle, scattergl(
+            x = [int_value(item, :active_groups) for item in selected],
+            y = [float_value(item, :validation_matching) for item in selected],
+            mode = "markers", name = label,
+            marker = attr(color = ALTERNATIVE_EVALUATION_COLORS[strength_index], size = 5),
+            customdata = hcat(
+                [int_value(item, :replicate) for item in selected],
+                [int_value(item, :update) for item in selected],
+            ),
+            hovertemplate = "active groups=%{x}<br>validation MSE=%{y:.5g}<br>replicate=%{customdata[0]}<br>update=%{customdata[1]}<extra></extra>",
+            legendgroup = "alternative_evaluation_strength_$strength_index", showlegend = showlegend,
+        ); row, col)
+    end
+end
+
+function move_glimages_behind_cartesian!(path)
+    svg = read(path, String)
+    matches = collect(eachmatch(r"<g class=\"glimages\">.*?</g>"s, svg))
+    length(matches) == 1 || error("Expected exactly one Plotly glimages layer in $path, found $(length(matches)).")
+    glimages = only(matches).match
+    without_glimages = replace(svg, glimages => ""; count = 1)
+    cartesian_marker = "<g class=\"cartesianlayer\">"
+    occursin(cartesian_marker, without_glimages) || error("Plotly cartesian layer is missing from $path.")
+    reordered = replace(without_glimages, cartesian_marker => glimages * cartesian_marker; count = 1)
+    temporary = path * ".tmp"
+    open(temporary, "w") do io
+        write(io, reordered)
+    end
+    mv(temporary, path; force = true)
+    return path
+end
+
 function all_evaluations_y_range(data)
     losses = Float64[]
     for strength_index in eachindex(P6_STRENGTHS[data.protocol])
@@ -665,7 +710,7 @@ function make_all_evaluations_pareto_figure(data_by_protocol, output)
     return output
 end
 
-function make_main_figure(data_by_protocol, metrics, output)
+function make_main_figure(data_by_protocol, metrics, output; include_evaluations = false)
     plot_handle = make_subplots(
         rows = 2, cols = 2,
         horizontal_spacing = 0.10, vertical_spacing = 0.23,
@@ -674,6 +719,10 @@ function make_main_figure(data_by_protocol, metrics, output)
             "C  Fixed IC: strength-sparsity response", "D  Varying IC: strength-sparsity response",
         ], :, 1),
     )
+    if include_evaluations
+        add_alternative_evaluations_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true)
+        add_alternative_evaluations_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false)
+    end
     add_pareto_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true, legend_id = "legend")
     add_pareto_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false, legend_id = "legend")
     response_legend_labels = Dict(replicate => begin
@@ -705,9 +754,9 @@ function make_main_figure(data_by_protocol, metrics, output)
     layout = common_layout(width = 1400, height = 1120, title = "Package 6: sensitivity, reproducibility, and Pareto performance")
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Active SC groups")),
-        :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = pareto_y_range(data_by_protocol[:fixed]))),
+        :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = include_evaluations ? [pareto_y_range(data_by_protocol[:fixed])[1], 0.0] : pareto_y_range(data_by_protocol[:fixed]))),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups")),
-        :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = pareto_y_range(data_by_protocol[:varying]))),
+        :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = include_evaluations ? [pareto_y_range(data_by_protocol[:varying])[1], 0.0] : pareto_y_range(data_by_protocol[:varying]))),
         :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:fixed]), ticktext = string.(P6_STRENGTHS[:fixed]))),
         :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE <= $(QUALITY_THRESHOLDS[:fixed]))"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
         :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:varying]), ticktext = string.(P6_STRENGTHS[:varying]))),
@@ -716,6 +765,7 @@ function make_main_figure(data_by_protocol, metrics, output)
         :legend2 => row_legend(-0.085),
     )))
     PlotlyJS.savefig(plot_handle, output; width = 1400, height = 1120)
+    include_evaluations && move_glimages_behind_cartesian!(output)
     return output
 end
 
@@ -1085,6 +1135,7 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
 
         println(io, "## Figure files\n")
         println(io, "- [`figure_1_main.svg`](figure_1_main.svg): Pareto/attainment and quality-constrained strength response.")
+        println(io, "- [`figure_1_main_alternative.svg`](figure_1_main_alternative.svg): main figure with all GO evaluations at `MSE <= 1` in the Pareto panels.")
         println(io, "- [`figure_2_terminal_test.svg`](figure_2_terminal_test.svg): Fixed `state_Nu` trajectory and Varying paired test episodes.")
         println(io, "- [`figure_s1_stability_diagnostics.svg`](figure_s1_stability_diagnostics.svg): hitting times, reset rates, and aggregate archive convergence.")
         println(io, "- [`figure_s2_all_evaluations_pareto.svg`](figure_s2_all_evaluations_pareto.svg): all GO evaluation points pooled across replicates, colored by strength, with the pooled Pareto front.")
@@ -1131,6 +1182,7 @@ function run_self_tests()
     @assert rgba("#277DA1", 0.5) == "rgba(39,125,161,0.5)"
     @assert length(EVALUATION_STRENGTH_COLORS) == 5
     @assert last(EVALUATION_STRENGTH_COLORS) == GR_COLOR
+    @assert length(ALTERNATIVE_EVALUATION_COLORS) == 5
     println("Package-6 paper figure self-tests passed.")
     return nothing
 end
@@ -1164,12 +1216,18 @@ function main(arguments = ARGS)
     provenance_path = write_provenance(options.output_dir, data_by_protocol)
 
     main_figure = make_main_figure(data_by_protocol, metrics, joinpath(options.output_dir, "figure_1_main.svg"))
+    alternative_main_figure = make_main_figure(
+        data_by_protocol,
+        metrics,
+        joinpath(options.output_dir, "figure_1_main_alternative.svg");
+        include_evaluations = true,
+    )
     terminal_figure = make_terminal_figure(data_by_protocol, joinpath(options.output_dir, "figure_2_terminal_test.svg"))
     supplement_figure = make_supplement_figure(data_by_protocol, joinpath(options.output_dir, "figure_s1_stability_diagnostics.svg"))
     evaluation_figure = make_all_evaluations_pareto_figure(data_by_protocol, joinpath(options.output_dir, "figure_s2_all_evaluations_pareto.svg"))
 
     println("Package-6 paper outputs written to $(options.output_dir):")
-    for path in (main_figure, terminal_figure, supplement_figure, evaluation_figure, table_paths.markdown_path, report_path, provenance_path)
+    for path in (main_figure, alternative_main_figure, terminal_figure, supplement_figure, evaluation_figure, table_paths.markdown_path, report_path, provenance_path)
         println("  $(path)")
     end
     return nothing
