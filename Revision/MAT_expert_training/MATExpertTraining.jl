@@ -18,7 +18,9 @@ export CANDIDATES, DEFAULT_RESULTS_DIRECTORY, DEFAULT_SOURCE_RESULTS_DIRECTORY,
        run_training_worker, run_test_protocol_worker, candidate_ready,
        protocol_ready_for_test, test_complete, source_checkpoint_path,
        best_so_far_checkpoint_path, best_so_far_expert_path, finalize_best_so_far!,
-       publish_distillation_experts!, experts_published
+       publish_distillation_experts!, experts_published,
+       DEFAULT_RA1E5_RESULTS_DIRECTORY, DEFAULT_RA1E5_MASTER_SEED,
+       freeze_ra1e5_experiment!, ra1e5_candidates, run_ra1e5_training_worker
 
 const SCHEMA_VERSION = 3
 const REVISION_DIRECTORY = normpath(joinpath(@__DIR__, ".."))
@@ -50,6 +52,28 @@ const BEST_LOCK_WAIT_SECONDS = 600.0
 # Julia/CUDA/hardware environments. This tolerance is still orders of magnitude
 # below the smallest score gap in either frozen ranking.
 const VALIDATION_SCORE_ATOL = 1e-5
+
+const RA1E5_SCHEMA_VERSION = 1
+const RA1E5_PROTOCOL = :varying_ra1e5
+const RA1E5_RAYLEIGH = 1.0e5
+const RA1E5_WINDOW = 100
+const DEFAULT_RA1E5_MASTER_SEED = 20_260_901
+const DEFAULT_RA1E5_RESULTS_DIRECTORY = joinpath(@__DIR__, "results_ra1e5")
+const RA1E5_CORPUS_PATH = joinpath(
+    REVISION_DIRECTORY,
+    "VaryingIC_Corpus",
+    "varying_ic_corpus_Ra1e5.jld2",
+)
+const RA1E5_CORPUS_SOURCE_PATH = joinpath(
+    REVISION_DIRECTORY,
+    "VaryingIC_Corpus",
+    "VaryingICCorpus_Ra1e5.jl",
+)
+const RA1E5_RUN_FILE_PATH = joinpath(
+    REVISION_DIRECTORY,
+    "Run_Files",
+    "VaryingIC_MAT_Ra1e5.jl",
+)
 
 const CANDIDATES = (
     (
@@ -1806,5 +1830,7 @@ function run_test_protocol_worker(;
         isdir(lock) && rm(lock; recursive = true, force = true)
     end
 end
+
+include(joinpath(@__DIR__, "Ra1e5ExpertTraining.jl"))
 
 end
