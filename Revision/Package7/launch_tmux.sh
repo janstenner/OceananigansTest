@@ -12,6 +12,7 @@ julia_binary="${JULIA_BIN:-julia}"
 configuration_selection="all"
 experiment_id=""
 declare -a explicit_strengths=()
+declare -a explicit_thresholds=()
 preview=false
 analysis_only=false
 retry_failed=false
@@ -34,6 +35,9 @@ Options:
                         group-lasso-gc, group-lasso-sc, growl-gc, growl-sc.
   --strength VALUE      Explicit strength for one selected configuration;
                         repeat to replace its configured strength grid.
+  --threshold VALUE     Explicit positive mask threshold for one selected
+                        configuration; repeat to replace the three nonzero
+                        defaults. Native threshold 0.0 remains automatic.
   --experiment-id ID    Reuse a timestamp experiment directory. Automatically
                         generated for a new launch; required with --analysis-only.
   --preview             Print all planned sessions without writing or launching.
@@ -61,6 +65,11 @@ while (($#)); do
         --strength)
             (($# >= 2)) || { echo "Missing value after --strength." >&2; exit 2; }
             explicit_strengths+=("$2")
+            shift
+            ;;
+        --threshold)
+            (($# >= 2)) || { echo "Missing value after --threshold." >&2; exit 2; }
+            explicit_thresholds+=("$2")
             shift
             ;;
         --results-dir)
@@ -96,6 +105,10 @@ export OMP_NUM_THREADS="${omp_threads}"
     echo "--analysis-only requires --experiment-id so the existing runs can be located." >&2
     exit 2
 }
+[[ "${configuration_selection}" != all || ${#explicit_thresholds[@]} -eq 0 ]] || {
+    echo "Explicit --threshold values require exactly one --config." >&2
+    exit 2
+}
 [[ -n "${experiment_id}" ]] || experiment_id="$(date -u +%y%m%d_%H%M%S)"
 [[ "${experiment_id}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
     echo "Invalid --experiment-id '${experiment_id}'. Use only letters, digits, underscores, and hyphens." >&2
@@ -110,6 +123,9 @@ fi
 variant_arguments=(--print-variants --config "${configuration_selection}")
 for strength in "${explicit_strengths[@]}"; do
     variant_arguments+=(--strength "${strength}")
+done
+for threshold in "${explicit_thresholds[@]}"; do
+    variant_arguments+=(--threshold "${threshold}")
 done
 variant_output="$("${julia_binary}" --startup-file=no "--project=${project_root}" "${manifest_worker}" "${variant_arguments[@]}")"
 mapfile -t variant_rows <<< "${variant_output}"
@@ -135,6 +151,9 @@ job_manifest="${launch_directory}/jobs.tsv"
 manifest_arguments=(--output "${launch_directory}/study_manifest.jld2" --experiment-id "${experiment_id}" --config "${configuration_selection}" --results-dir "${results_directory}")
 for strength in "${explicit_strengths[@]}"; do
     manifest_arguments+=(--strength "${strength}")
+done
+for threshold in "${explicit_thresholds[@]}"; do
+    manifest_arguments+=(--threshold "${threshold}")
 done
 
 if [[ "${preview}" == false ]]; then
@@ -200,6 +219,9 @@ for configuration in "${selected_configurations[@]}"; do
                     --experiment-id "${experiment_id}" --config "${configuration}" --strength "${strength}"
                     --replicate "${replicate}" --results-dir "${results_directory}"
                 )
+                for threshold in "${explicit_thresholds[@]}"; do
+                    command+=(--threshold "${threshold}")
+                done
                 [[ "${retry_failed}" == false ]] || command+=(--retry-failed)
                 start_session "${session}" training "${configuration}" "${strength}" "${replicate}" "${command[@]}"
             done
@@ -231,6 +253,7 @@ mv "${job_manifest}.tmp" "${job_manifest}"
     echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "configuration=${configuration_selection}"
     echo "explicit_strengths=${explicit_strengths[*]}"
+    echo "explicit_thresholds=${explicit_thresholds[*]}"
     echo "analysis_only=${analysis_only}"
     echo "retry_failed=${retry_failed}"
     echo "openblas_threads=${openblas_threads}"

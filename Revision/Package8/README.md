@@ -41,6 +41,17 @@ bash Revision/Package8/launch_tmux.sh --config go-sc \
   --strength 0.01 --strength 0.025 --strength 0.0625
 ```
 
+Repeated `--threshold` replaces the three positive mask thresholds for one
+selected configuration; native `0.0` remains automatic:
+
+```bash
+bash Revision/Package8/launch_tmux.sh --config growl-gc \
+  --threshold 0.02 --threshold 0.04 --threshold 0.08
+```
+
+The Package-8 Replicate seeds remain unchanged. Threshold values are read from
+the completed evaluations by the analyzer and paper-figure code.
+
 Only rerun analyzers for an existing experiment:
 
 ```bash

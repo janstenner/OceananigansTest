@@ -11,7 +11,7 @@ export P7_SCHEMA_VERSION, P7_MASTER_SEED, P7_UPDATES, P7_BATCH_SIZE,
        P7_RESUME_INTERVAL, P7_GARBAGE_COLLECTION_INTERVAL, P7_REPLICATES,
        P7_THRESHOLDS, P7_QUALITY_THRESHOLD, P7_CONFIGURATION_NAMES, P7_STRENGTH_GRIDS,
        configuration, normalize_configuration, normalize_experiment_id, seed_plan, seed_plan_hash,
-       selected_variants, study_jobs, job_for, run_directory, analysis_directory,
+       selected_variants, resolved_thresholds, study_jobs, job_for, run_directory, analysis_directory,
        status_path, analysis_status_path, atomic_save, load_status, write_status!,
        canonical_string, fingerprint, strength_tag, expected_evaluation_updates
 
@@ -27,6 +27,15 @@ const P7_GARBAGE_COLLECTION_INTERVAL = 5
 const P7_REPLICATES = 1:3
 const P7_THRESHOLDS = (0.0, 0.003, 0.006, 0.012)
 const P7_QUALITY_THRESHOLD = 1e-2
+
+function resolved_thresholds(values = Float64[])
+    isempty(values) && return collect(P7_THRESHOLDS)
+    custom = sort!(unique(Float64.(values)))
+    all(value -> isfinite(value) && value > 0, custom) || throw(ArgumentError(
+        "Custom mask thresholds must be finite and positive; native threshold 0.0 is automatic.",
+    ))
+    return vcat(0.0, custom)
+end
 
 const P7_CONFIGURATION_NAMES = (
     "go-gc", "go-sc", "gr-gc", "gr-sc",

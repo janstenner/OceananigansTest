@@ -39,6 +39,21 @@ bash Revision/Package7/launch_tmux.sh \
   --strength 0.0375
 ```
 
+Repeated `--threshold` replaces the three positive mask thresholds for one
+selected configuration. The native `0.0` point remains automatic:
+
+```bash
+bash Revision/Package7/launch_tmux.sh \
+  --config growl-gc \
+  --threshold 0.02 \
+  --threshold 0.04 \
+  --threshold 0.08
+```
+
+This still uses the package's unchanged three paired Replicate seeds. Custom
+thresholds are stored in every run configuration and the launch manifest; the
+analyzer and paper plots recover their values directly from the evaluations.
+
 Each new launch automatically receives a short UTC timestamp ID such as
 `260830_120000`. Use that ID to resume or rerun only the analyzer:
 

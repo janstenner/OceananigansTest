@@ -8,13 +8,14 @@ function parse_arguments(arguments)
     experiment_id = nothing
     selection = "all"
     strengths = Float64[]
+    thresholds = Float64[]
     results_root = joinpath(@__DIR__, "results")
     print_variants = false
     index = 1
     while index <= length(arguments)
         argument = arguments[index]
         argument == "--help" && begin
-            println("Usage: prepare_manifest.jl [--print-variants] [--output PATH --experiment-id ID] [--config all|NAME] [--strength VALUE ...] [--results-dir PATH]")
+            println("Usage: prepare_manifest.jl [--print-variants] [--output PATH --experiment-id ID] [--config all|NAME] [--strength VALUE ...] [--threshold VALUE ...] [--results-dir PATH]")
             return nothing
         end
         if argument == "--print-variants"
@@ -32,6 +33,8 @@ function parse_arguments(arguments)
             selection = value
         elseif argument == "--strength"
             push!(strengths, parse(Float64, value))
+        elseif argument == "--threshold"
+            push!(thresholds, parse(Float64, value))
         elseif argument == "--results-dir"
             results_root = value
         else
@@ -40,18 +43,25 @@ function parse_arguments(arguments)
         index += 2
     end
     if print_variants
-        return (; output = nothing, experiment_id = nothing, selection, strengths,
+        lowercase(string(selection)) == "all" && !isempty(thresholds) && error(
+            "Explicit mask thresholds require exactly one --config.",
+        )
+        return (; output = nothing, experiment_id = nothing, selection, strengths, thresholds,
                 results_root = abspath(results_root), print_variants)
     end
     isnothing(output) && error("--output is required.")
     isnothing(experiment_id) && error("--experiment-id is required.")
+    lowercase(string(selection)) == "all" && !isempty(thresholds) && error(
+        "Explicit mask thresholds require exactly one --config.",
+    )
     return (; output = abspath(output), experiment_id = normalize_experiment_id(experiment_id),
-            selection, strengths, results_root = abspath(results_root), print_variants)
+            selection, strengths, thresholds, results_root = abspath(results_root), print_variants)
 end
 
 function prepare_manifest(options)
     variants = selected_variants(options.selection, options.strengths)
     jobs = study_jobs(options.experiment_id, options.selection, options.strengths)
+    thresholds = resolved_thresholds(options.thresholds)
     length(unique(job.id for job in jobs)) == length(jobs) || error("Duplicate Package-8 run IDs.")
     length(unique(job.relative_path for job in jobs)) == length(jobs) || error("Duplicate Package-8 run paths.")
     atomic_save(
@@ -65,7 +75,7 @@ function prepare_manifest(options)
         terminal_data_split = :test,
         master_seed = P8_MASTER_SEED,
         seed_plan = [seed_plan(replicate) for replicate in P8_REPLICATES],
-        threshold_values = collect(P8_THRESHOLDS),
+        threshold_values = thresholds,
         threshold_mode = :absolute,
         threshold_importance_mode = :max_input_l1,
         threshold_group_aggregation = :maximum,

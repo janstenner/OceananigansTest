@@ -22,6 +22,10 @@ using .Package7Study
     @test length(unique(job.relative_path for job in jobs)) == 72
     @test all(job.updates == 70_000 for job in jobs)
     @test P7_QUALITY_THRESHOLD == 1e-2
+    @test resolved_thresholds() == collect(P7_THRESHOLDS)
+    @test resolved_thresholds([0.08, 0.02, 0.04, 0.04]) == [0.0, 0.02, 0.04, 0.08]
+    @test_throws ArgumentError resolved_thresholds([0.0, 0.02])
+    @test_throws ArgumentError resolved_thresholds([-0.01])
     @test all(job.experiment_id == experiment_id for job in jobs)
     @test all(first(splitpath(job.relative_path)) == experiment_id for job in jobs)
 

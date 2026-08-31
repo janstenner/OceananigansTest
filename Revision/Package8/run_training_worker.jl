@@ -18,7 +18,7 @@ function worker_usage(io::IO = stdout)
 
     Usage:
       julia --project=. run_training_worker.jl --experiment-id ID --config NAME --strength VALUE \\
-        --replicate 1|2|3 [--results-dir PATH] [--retry-failed]
+        --replicate 1|2|3 [--threshold VALUE ...] [--results-dir PATH] [--retry-failed]
         [--smoke-updates N]
     """)
 end
@@ -32,6 +32,7 @@ function parse_worker_arguments(arguments)
         "results_dir" => P8_DEFAULT_RESULTS_ROOT,
         "retry_failed" => false,
         "smoke_updates" => nothing,
+        "thresholds" => Float64[],
     )
     index = 1
     while index <= length(arguments)
@@ -42,6 +43,10 @@ function parse_worker_arguments(arguments)
         elseif argument == "--retry-failed"
             values["retry_failed"] = true
             index += 1
+        elseif argument == "--threshold"
+            index == length(arguments) && error("Missing value after $argument.")
+            push!(values["thresholds"], parse(Float64, arguments[index + 1]))
+            index += 2
         elseif startswith(argument, "--")
             index == length(arguments) && error("Missing value after $argument.")
             key = replace(argument[3:end], "-" => "_")
@@ -65,6 +70,7 @@ function parse_worker_arguments(arguments)
         results_root = abspath(string(values["results_dir"])),
         retry_failed = Bool(values["retry_failed"]),
         smoke_updates,
+        thresholds = resolved_thresholds(values["thresholds"]),
     )
 end
 
@@ -124,11 +130,11 @@ function parameter_hash(model)
     return bytes2hex(SHA.sha256(take!(io)))
 end
 
-function threshold_specs()
+function threshold_specs(thresholds)
     return [
         HardThresholdSpec(Symbol("threshold_", replace(string(value), "." => "p")), :absolute, value;
                           analysis_scope = :package8)
-        for value in P8_THRESHOLDS[2:end]
+        for value in thresholds[2:end]
     ]
 end
 
@@ -162,7 +168,7 @@ function archive_config(options, training_config, expert_path, inputs, initial_h
         :validation_prediction_mode => training_config.validation_prediction_mode,
         :diagnostic_teacher_forced => training_config.diagnostic_teacher_forced,
         :evaluation_interval => P8_EVALUATION_INTERVAL,
-        :threshold_values => collect(P8_THRESHOLDS),
+        :threshold_values => copy(options.thresholds),
         :threshold_mode => :absolute,
         :threshold_importance_mode => :max_input_l1,
         :threshold_group_aggregation => :maximum,
@@ -281,7 +287,7 @@ function run_loaded_worker(options, directory, expert_path)
     println("  configuration/strength: $(job.configuration) / $(job.regularization_strength)")
     println("  replicate/seeds: $(job.replicate) / $(job.apprentice_seed), $(job.batch_seed)")
     println("  updates/batches: $(job.updates) / $P8_BATCH_SIZE, validation $P8_VALIDATION_BATCH_SIZE")
-    println("  thresholds: $(join(P8_THRESHOLDS, ", ")); importance: max input L1")
+    println("  thresholds: $(join(options.thresholds, ", ")); importance: max input L1")
     println("  resume: $resume")
     println("  output: $directory")
 
@@ -294,7 +300,7 @@ function run_loaded_worker(options, directory, expert_path)
             validation_dataset = inputs.validation_dataset,
             config = training_config,
             archive_manager = manager,
-            threshold_specs = threshold_specs(),
+            threshold_specs = threshold_specs(options.thresholds),
             group_rows_by_overlap = true,
             group_channels = job.group_channels,
             training_rng = StableRNG(job.batch_seed),
