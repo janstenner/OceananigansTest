@@ -4,6 +4,42 @@ This directory continues all ten validation-ranked final MAT checkpoints for
 Fixed IC and Varying IC. It is a separate expert-production
 experiment and does not alter the MAT stability or MAT-IPPO comparison runs.
 
+## Ra = 10^5 Varying-IC training
+
+The independent Ra=10^5 path starts fresh MAT agents with the dedicated
+`VaryingIC_MAT_Ra1e5.jl` run file and `varying_ic_corpus_Ra1e5.jld2`. It does
+not depend on the Ra=10^4 MAT-IPPO ranking. For a fixed training budget:
+
+```bash
+bash Revision/MAT_expert_training/launch_tmux_ra1e5.sh \
+  --runs 10 --episodes 4000
+```
+
+For a shared threshold stop:
+
+```bash
+bash Revision/MAT_expert_training/launch_tmux_ra1e5.sh \
+  --runs 10 --threshold -610.0
+```
+
+In threshold mode, the first worker whose mean over the latest 100 completed
+episode rewards is strictly greater than the supplied value requests the stop.
+Every other worker finishes its active episode and saves before exiting. In
+episode mode, every worker independently reaches the requested episode count.
+
+The launcher defaults to master seed `20260901`, three OpenBLAS threads, and one
+OpenMP thread per worker. `--master-seed`, `--openblas-threads`,
+`--omp-threads`, and `--results-dir` override these defaults. Use `--preview`
+to inspect the deterministic Run/IC seed plan before the corpus is complete.
+
+Results default to `results_ra1e5`. `experiment_manifest.jld2` freezes the
+corpus, run-file hashes, seed plan, and stop configuration. Every worker writes
+an atomic `resume/latest.jld2` after every episode and a `final.jld2` on normal
+completion. Across all workers, `varying/best_so_far.jld2` and the compact,
+metadata-free `varying/expert.jld2` always represent the largest rolling-100
+reward mean observed so far. Rerunning the identical launch command resumes
+incomplete workers.
+
 ## Stop rules
 
 - Fixed IC: the loaded source/resume policy and then the current policy after
