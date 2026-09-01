@@ -167,7 +167,10 @@ function load_configuration(options, configuration)
     )
     status = JLD2.load(paths.status)
     Symbol(status["state"]) === :complete || error("$configuration analysis status is not complete.")
-    string(status["experiment_id"]) == options.experiment_id || error("$configuration experiment mismatch.")
+    stored_experiment_id = string(status["experiment_id"])
+    if stored_experiment_id != options.experiment_id
+        @warn "$configuration experiment mismatch; continuing with relocated analysis artifacts." selected_experiment_id=options.experiment_id stored_experiment_id analysis_directory=paths.root
+    end
     string(status["configuration"]) == configuration || error("$configuration status mismatch.")
     evaluations = read_csv(paths.evaluations)
     front = read_csv(paths.front)
