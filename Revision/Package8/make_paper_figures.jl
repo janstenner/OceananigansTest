@@ -14,7 +14,9 @@ const PAPER_GROUPINGS = ("gc", "sc")
 const PAPER_METHOD_NAMES = Dict(
     "go" => "GO", "gr" => "GR", "group-lasso" => "Group Lasso", "growl" => "GrOWL",
 )
-const PAPER_THRESHOLD_COLORS = ("#2166AC", "#92C5DE", "#D6604D", "#67001F")
+const PAPER_ZERO_THRESHOLD_COLOR = "#277DA1"
+const PAPER_DEFAULT_THRESHOLD_COLORS = ("#F2A13A", "#EE8D32", "#E6782B", "#D96624")
+const PAPER_EXTRA_THRESHOLD_COLORS = ("#D73027", "#B2182B", "#8B0A1A", "#67000D")
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
 const PAPER_CHANNEL_NAMES = ("Buoyancy b", "Vertical velocity w", "Horizontal velocity u")
 const PAPER_INACTIVE_COLOR = "#F2F2F2"
@@ -468,12 +470,31 @@ function make_mask_figure(
     return paths
 end
 
-function threshold_colors(configurations)
+function threshold_styles(configurations)
     thresholds = sort!(unique(reduce(vcat, [
         [float_value(row, :threshold_value) for row in data.evaluations]
         for data in values(configurations)
     ])))
-    return thresholds, Dict(value => PAPER_THRESHOLD_COLORS[mod1(index, length(PAPER_THRESHOLD_COLORS))] for (index, value) in enumerate(thresholds))
+    is_default(value) = any(reference -> isapprox(value, reference; atol = 1e-12, rtol = 1e-10), P8_THRESHOLDS)
+    zero = filter(iszero, thresholds)
+    defaults = filter(value -> !iszero(value) && is_default(value), thresholds)
+    extras = filter(value -> !iszero(value) && !is_default(value), thresholds)
+    ordered = vcat(zero, defaults, extras)
+    colors = Dict{Float64, String}()
+    ranks = Dict{Float64, Int}()
+    for value in zero
+        colors[value] = PAPER_ZERO_THRESHOLD_COLOR
+        ranks[value] = 50
+    end
+    for (index, value) in enumerate(defaults)
+        colors[value] = PAPER_DEFAULT_THRESHOLD_COLORS[mod1(index, length(PAPER_DEFAULT_THRESHOLD_COLORS))]
+        ranks[value] = 100 + index
+    end
+    for (index, value) in enumerate(extras)
+        colors[value] = PAPER_EXTRA_THRESHOLD_COLORS[mod1(index, length(PAPER_EXTRA_THRESHOLD_COLORS))]
+        ranks[value] = 200 + index
+    end
+    return ordered, colors, ranks
 end
 
 function move_glimages_behind_cartesian!(path)
@@ -491,7 +512,7 @@ function move_glimages_behind_cartesian!(path)
 end
 
 function make_pareto_figure(configurations, output)
-    thresholds, colors = threshold_colors(configurations)
+    thresholds, colors, legend_ranks = threshold_styles(configurations)
     plot = make_subplots(rows = 4, cols = 2, vertical_spacing = 0.055, horizontal_spacing = 0.07, subplot_titles = panel_titles())
     shapes = Any[]
     all_losses = Float64[]
@@ -500,23 +521,25 @@ function make_pareto_figure(configurations, output)
     for (row, method) in enumerate(PAPER_METHODS), (col, grouping) in enumerate(PAPER_GROUPINGS)
         data = configurations["$method-$grouping"]
         index = 2 * (row - 1) + col
+        eligible = filter(item ->
+            isfinite(float_value(item, :validation_matching)) &&
+            float_value(item, :validation_matching) > 0,
+            data.evaluations,
+        )
+        append!(all_losses, float_value.(eligible, Ref(:validation_matching)))
+        if !isempty(eligible)
+            maxima[grouping] = max(maxima[grouping], maximum(int_value(item, :active_groups) for item in eligible))
+        end
         for threshold in thresholds
-            selected = filter(item ->
-                float_value(item, :threshold_value) == threshold &&
-                isfinite(float_value(item, :validation_matching)) &&
-                float_value(item, :validation_matching) > 0,
-                data.evaluations,
-            )
+            selected = filter(item -> float_value(item, :threshold_value) == threshold, eligible)
             isempty(selected) && continue
-            append!(all_losses, float_value.(selected, Ref(:validation_matching)))
-            maxima[grouping] = max(maxima[grouping], maximum(int_value(item, :active_groups) for item in selected))
             showlegend = !(threshold in shown_thresholds)
             showlegend && push!(shown_thresholds, threshold)
             add_trace!(plot, scattergl(
                 x = int_value.(selected, Ref(:active_groups)),
                 y = float_value.(selected, Ref(:validation_matching)),
                 mode = "markers", name = "τ=$(threshold)", showlegend = showlegend,
-                legendgroup = "threshold_$threshold",
+                legendgroup = "threshold_$threshold", legendrank = legend_ranks[threshold],
                 marker = attr(
                     color = colors[threshold], size = 4, opacity = 0.32,
                     symbol = [("circle", "diamond", "square")[int_value(item, :replicate)] for item in selected],
@@ -535,15 +558,16 @@ function make_pareto_figure(configurations, output)
             x = int_value.(front, Ref(:active_groups)),
             y = float_value.(front, Ref(:validation_matching)),
             mode = "lines+markers", name = "Pooled Pareto front",
-            legendgroup = "pooled_front", showlegend = index == 1,
-            line = attr(color = "#111111", width = 2.2), marker = attr(color = "#111111", size = 6, symbol = "circle-open"),
+            legendgroup = "pooled_front", legendrank = 300, showlegend = index == 1,
+            line = attr(color = "#111111", width = 2.2),
+            marker = attr(color = "#111111", size = 6, symbol = "circle-open"),
         ); row, col)
         if !isnothing(data.selected)
             add_trace!(plot, scatter(
                 x = [Int(data.selected[:active_groups])],
                 y = [Float64(data.selected[:validation_matching])],
                 mode = "markers", name = "Selected test candidate",
-                legendgroup = "selected", showlegend = index == 1,
+                legendgroup = "selected", legendrank = 400, showlegend = index == 1,
                 marker = attr(color = "#F2C14E", size = 14, symbol = "star", line = attr(color = "#111111", width = 1.2)),
             ); row, col)
         end
