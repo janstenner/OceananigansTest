@@ -7,13 +7,13 @@ using .NoiseStudy
 const PROJECT_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 @testset "Noise Study job and seed plan" begin
-    @test length(job_records(:fixed)) == 24
-    @test length(job_records(:varying)) == 24
+    @test length(job_records(:fixed)) == 30
+    @test length(job_records(:varying)) == 30
     @test count(job -> job.noise_level == 0, job_records(:fixed)) == 3
     @test all(job -> job.replicate_count == 10, filter(job -> job.noise_level > 0, job_records(:fixed)))
     @test level_tag.(NOISE_LEVELS) == (
         "n_0p00", "n_0p01", "n_0p05", "n_0p10",
-        "n_0p20", "n_0p30", "n_0p40", "n_0p50",
+        "n_0p20", "n_0p30", "n_0p40", "n_0p50", "n_0p70", "n_1p00",
     )
     paired = noise_seed(:varying, 0.05, 3, 7)
     @test paired == noise_seed(:varying, 0.05, 3, 7)

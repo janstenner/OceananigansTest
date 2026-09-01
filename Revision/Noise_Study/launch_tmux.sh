@@ -31,14 +31,14 @@ usage() {
     cat <<'EOF'
 Usage: bash Revision/Noise_Study/launch_tmux.sh [options]
 
-Without filters, creates/reuses one frozen manifest per protocol and starts 48
-self-closing tmux sessions: three controllers times eight noise levels times two
+Without filters, creates/reuses one frozen manifest per protocol and starts 60
+self-closing tmux sessions: three controllers times ten noise levels times two
 protocols. One session owns all cases and replicates for its combination.
 
   --protocol all|fixed|varying
   --controller all|expert|sparse|c_match
   --noise-level LEVEL       Repeat to select from 0, 0.01, 0.05, 0.10, 0.20,
-                            0.30, 0.40, 0.50.
+                            0.30, 0.40, 0.50, 0.70, 1.00.
   --experiment-id ID        Reuse an existing experiment; generated otherwise.
   --results-dir PATH
   --package7-results PATH
@@ -93,7 +93,7 @@ done
 
 protocols=(fixed varying)
 controllers=(expert sparse c_match)
-levels=(0 0.01 0.05 0.10 0.20 0.30 0.40 0.50)
+levels=(0 0.01 0.05 0.10 0.20 0.30 0.40 0.50 0.70 1.00)
 [[ "${protocol_selection}" == all ]] || protocols=("${protocol_selection}")
 [[ "${controller_selection}" == all ]] || controllers=("${controller_selection}")
 if ((${#explicit_levels[@]})); then
@@ -108,6 +108,8 @@ if ((${#explicit_levels[@]})); then
             0.3|0.30) normalized=0.30 ;;
             0.4|0.40) normalized=0.40 ;;
             0.5|0.50) normalized=0.50 ;;
+            0.7|0.70) normalized=0.70 ;;
+            1|1.0|1.00) normalized=1.00 ;;
             *) echo "Unsupported --noise-level '${requested}'." >&2; exit 2 ;;
         esac
         [[ " ${levels[*]} " == *" ${normalized} "* ]] || levels+=("${normalized}")
@@ -129,6 +131,8 @@ level_tag() {
         0.30) echo n_0p30 ;;
         0.40) echo n_0p40 ;;
         0.50) echo n_0p50 ;;
+        0.70) echo n_0p70 ;;
+        1.00) echo n_1p00 ;;
         *) return 2 ;;
     esac
 }

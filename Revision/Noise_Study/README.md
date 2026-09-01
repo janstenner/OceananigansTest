@@ -23,7 +23,7 @@ rule, both selection files, checkpoint hashes, masks, and expert identity.
 ## Noise protocol
 
 - additive, zero-mean, independent Gaussian measurement noise;
-- levels `(0.0, 0.01, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50)`;
+- levels `(0.0, 0.01, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.70, 1.00)`;
 - ten noise replicates per test case at every nonzero level;
 - one Fixed test case and eight Varying test cases;
 - deterministic mean actions and 200 control steps;
@@ -44,7 +44,7 @@ same standardized white-noise sequence for every paired run.
 
 ## Launching
 
-Preview the complete 48-session launch without writing files:
+Preview the complete 60-session launch without writing files:
 
 ```bash
 bash Revision/Noise_Study/launch_tmux.sh --preview
@@ -63,6 +63,8 @@ bash Revision/Noise_Study/launch_tmux.sh --protocol fixed
 bash Revision/Noise_Study/launch_tmux.sh --protocol varying --noise-level 0.10
 bash Revision/Noise_Study/launch_tmux.sh --experiment-id ID \
   --noise-level 0.30 --noise-level 0.40 --noise-level 0.50
+bash Revision/Noise_Study/launch_tmux.sh --experiment-id ID \
+  --noise-level 0.70 --noise-level 1.00
 bash Revision/Noise_Study/launch_tmux.sh --controller c_match --retry-failed
 ```
 

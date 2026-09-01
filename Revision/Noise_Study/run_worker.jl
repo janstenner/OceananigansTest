@@ -18,7 +18,7 @@ function usage()
       --manifest PATH
       --protocol fixed|varying
       --controller expert|sparse|c_match
-      --noise-level 0|0.01|0.05|0.10|0.20|0.30|0.40|0.50
+      --noise-level 0|0.01|0.05|0.10|0.20|0.30|0.40|0.50|0.70|1.00
       --results-dir PATH
       --retry-failed
       --help
