@@ -17,6 +17,9 @@ Sparse Sensing paper.
 - `package7_8.md`: Shared detailed workflow for the Fixed-IC and Varying-IC
   apprentice Pareto selection, threshold expansion, closed-loop validation,
   and final evaluation packages.
+- `package10.md`: Frozen controller, channel-scale, white-noise, pairing,
+  worker-ownership, persistence, and launch protocol for the Package-10 sensor-
+  noise study.
 - `Run_Files/FixedIC_MAT.jl` and `Run_Files/FixedIC_IPPO.jl`: Standalone
   fixed-initial-condition entry points.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone
@@ -132,6 +135,16 @@ Sparse Sensing paper.
   remains available through `closed_loop=false`.
 - `GO_Sensitivity/README.md`: Windows-local pilot invocation, fixed pilot
   configuration, restart behavior, result inspection, and result layout.
+- `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
+  paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
+  resolution, exact protocol-specific physical-channel scales, frozen
+  manifests, and restart-safe result paths.
+- `Noise_Study/run_worker.jl` and `launch_tmux.sh`: One worker per protocol,
+  controller, and noise level; clean baseline import; sequential complete-grid
+  noisy rollouts; atomic per-episode persistence; and a filtered persistent
+  30-session tmux launcher without an analysis worker.
+- `Noise_Study/README.md`: Package-10 protocol, server commands, restart
+  behavior, output layout, and validation commands.
 
 ## Revision Run Files
 
@@ -319,6 +332,31 @@ Every shard stores the checkpoint SHA-256 identifier, and the loader rejects
 shards from different experts within one dataset. A freshly initialized MAT is
 permitted only behind an explicit smoke-test flag.
 
+## Sensor-Noise Study
+
+Package 10 compares exactly the dense expert, the validation-only sparsest SC
+Package-7/8 apprentice, and the Package-6 `C_match` apprentice. Across the four
+frozen SC candidates, sparse selection first minimizes `active_inputs` and then
+validation MSE among ties. This resolves to Fixed `go-sc` and Varying `gr-sc`.
+Noise results must never change these selections.
+
+The only noise model is zero-mean iid Gaussian measurement noise at levels
+`0.0/0.01/0.05/0.10/0.20`. Nonzero levels use ten paired replicates per test
+case. Fixed owns one case and Varying the existing eight cases. The noise seed
+must not contain the controller identity.
+
+Protocol-specific `b/w/u` scales are exact sample standard deviations from the
+corresponding distillation training corpus. Position encoding is removed before
+scale estimation, remains noiseless during rollouts, and is added only after
+one unique physical `3 × 48 × 8` noise tensor has been generated. Local MAT
+windows are reconstructed afterwards, and sparse masks are applied last.
+
+Each worker owns one `(protocol, controller, noise level)` combination. Clean
+workers import existing frozen baselines once; noisy workers run all ten
+replicates and every protocol test case sequentially. Per-episode files and
+worker status/results are atomic and restart-validated. The initial launcher
+starts no analysis worker.
+
 ## Maintenance Rules
 
 - Keep `Implementation_Plan.md` synchronized with revision-scope decisions and
@@ -338,6 +376,12 @@ permitted only behind an explicit smoke-test flag.
   update and re-run the reconstruction audit.
 - Preserve the package-3 configuration names, flags, paired seed plan, exact
   episode budgets, atomic per-configuration saves, and restart-safe paths.
+- Preserve Package-10 validation-only controller selection, the Fixed `go-sc`
+  and Varying `gr-sc` sparse resolution unless upstream frozen validation
+  artifacts legitimately change, Package-6 `C_match` provenance, controller-
+  independent paired noise seeds, protocol-specific physical channel scales,
+  noiseless position encoding, global-before-local noise injection, ten
+  nonzero-level replicates, and one-worker-per-combination ownership.
 - Do not treat offsets or reflections of one basis snapshot as independent
   basis snapshots.
 - Keep the stored field orientation compatible with `set!(model, u=..., w=...,

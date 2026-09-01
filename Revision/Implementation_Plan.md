@@ -1,6 +1,6 @@
 # Implementation Plan for the Paper Revision
 
-Stand: 2026-08-09
+Stand: 2026-09-01
 
 Dieser Plan enthält nur ganze, in sinnvoller Reihenfolge abzuarbeitende Implementierungs- und Experimentpakete.
 Nur die Paketüberschriften sind abhakbar.
@@ -298,29 +298,61 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   - Das finale Varying-IC-Modell folgt aus einem gespeicherten, leckagefreien und reproduzierbaren Pareto Set.
 
-- [ ] **Paket 9 — Baselines bei gleicher Sensorzahl**
+- [x] **Paket 9 — Baselines bei gleicher Sensorzahl — GESTRICHEN**
 
-  Umfang:
+  Status:
 
-  - Random-Mask-Baseline mit derselben Gesamtzahl aktiver Inputs wie das ausgewählte Sparse-Modell.
-  - Uniform beziehungsweise geometrisch gleichmäßig verteilte Maske mit derselben Gesamtzahl aktiver Inputs.
-  - Offline-Screening der Random Masks anhand des Expert Matchings.
-  - Apprentice-Training und Closed-Loop-Vergleich unter denselben Daten-, Seed- und Testbedingungen.
-  - Lasso und Standard-GrOWL werden nur dann als Paper-Baselines geführt, wenn sie mit demselben Pareto- und Performanceprotokoll ausgewertet werden.
+  - Dieses Experiment wurde bewusst aus dem Revisionsumfang entfernt und wird
+    nicht durchgeführt. Die Paketnummer und der ursprünglich vorgesehene
+    Umfang bleiben zur Dokumentation der Scope-Entscheidung erhalten.
 
-  Abschluss:
+  Ursprünglich vorgesehener Umfang — entfällt:
 
-  - Die finale Sensorselektion ist gegen günstige, gleich große Masken und alle im Paper verbleibenden Sparsity-Baselines verglichen.
+  - ~~Random-Mask-Baseline mit derselben Gesamtzahl aktiver Inputs wie das ausgewählte Sparse-Modell.~~
+  - ~~Uniform beziehungsweise geometrisch gleichmäßig verteilte Maske mit derselben Gesamtzahl aktiver Inputs.~~
+  - ~~Offline-Screening der Random Masks anhand des Expert Matchings.~~
+  - ~~Apprentice-Training und Closed-Loop-Vergleich unter denselben Daten-, Seed- und Testbedingungen.~~
+  - ~~Lasso und Standard-GrOWL werden nur dann als Paper-Baselines geführt, wenn sie mit demselben Pareto- und Performanceprotokoll ausgewertet werden.~~
+
+  Entscheidung:
+
+  - Es sind keine Implementierung, Produktionsruns oder Auswertung für die
+    Baselines bei gleicher Sensorzahl mehr erforderlich.
 
 - [ ] **Paket 10 — Test unter Sensorrauschen**
+
+  Detailplanung: `Revision/package10.md`
 
   Umfang:
 
   - Post-hoc-Sensorrauschen ausschließlich während der Anwendung und ohne Retraining.
-  - Gemeinsame festgelegte Rauschstufen relativ zu den kanalweisen Datenskalen.
-  - Auswertung des finalen dichten Experts und des finalen Sparse Apprentices auf denselben Testfällen und Rauschrealisierungen.
+  - Weißes additives Gaußrauschen mit den gemeinsamen festen Rauschstufen
+    `0.0/0.01/0.05/0.10/0.20` relativ zu protokollspezifischen kanalweisen
+    Datenskalen.
+  - Auswertung des finalen dichten Experts, des validation-only sparsesten
+    SC-Apprentices und des Paket-6-`C_match`-Kandidaten auf denselben Testfällen
+    und gepaarten Rauschrealisierungen.
+  - Sparse-Auswahl ausschließlich unter den eingefrorenen SC-Kandidaten durch
+    minimale `active_inputs` und danach minimale Validation-MSE bei Gleichstand;
+    damit Fixed `go-sc` und Varying `gr-sc`.
+  - Zehn Rauschreplikate pro nichtverschwindendem Level und Testfall; Level
+    `0.0` importiert die vorhandenen sauberen Baselines ohne Replikate.
   - Getrennte Ergebnisse für Fixed IC und Varying IC.
   - Vergleich des Performanceabfalls relativ zur jeweils ungestörten Auswertung.
+
+  Implementierungsstand:
+
+  - `Revision/Noise_Study` enthält die eingefrorene Manifest- und
+    Kandidatenauflösung, exakte Trainingscorpus-Kanalskalen nach Entfernung der
+    Positionskodierung, controller-unabhängige gepaarte Noise-Seeds, atomare
+    Clean-/Noise-Worker und einen filterbaren restart-sicheren tmux-Launcher.
+  - Ein Worker besitzt jeweils eine Kombination aus Protokoll, Controller und
+    Rauschlevel und führt alle zugehörigen Fälle und Replikate hintereinander
+    aus. Der vollständige Launch umfasst 30 selbstschließende Sessions.
+  - Der erste Produktionslauncher startet bewusst keinen Analysis-Worker; die
+    spätere Auswertung folgt als separates Julia-Skript.
+  - Das Paket bleibt bis zu den Produktionsruns und ihrer separaten Auswertung
+    offen.
 
   Abschluss:
 
