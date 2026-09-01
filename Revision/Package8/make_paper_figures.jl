@@ -338,6 +338,16 @@ end
 
 csv_value(value) = value === missing ? "" : string(value)
 
+function active_groups_value(row)
+    row.active_groups === missing && return ""
+    total = endswith(row.configuration, "-gc") ? 32 :
+            endswith(row.configuration, "-sc") ? 96 :
+            error("Cannot determine total group count for $(row.configuration).")
+    return "$(row.active_groups)/$total"
+end
+
+table_value(row, key) = key === :active_groups ? active_groups_value(row) : csv_value(getproperty(row, key))
+
 function write_table(output, rows)
     csv_path = joinpath(output, "table_1_selected_candidates.csv")
     markdown_path = joinpath(output, "table_1_selected_candidates.md")
@@ -350,7 +360,7 @@ function write_table(output, rows)
     open(csv_path, "w") do io
         println(io, join(string.(headers), ','))
         for row in rows
-            println(io, join((csv_value(getproperty(row, key)) for key in headers), ','))
+            println(io, join((table_value(row, key) for key in headers), ','))
         end
     end
     fmt(value, format) = value === missing ? "" : Printf.format(Printf.Format(format), value)
@@ -359,7 +369,7 @@ function write_table(output, rows)
         println(io, "| Configuration | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test mean(state_Nu) | Minimum native groups under quality threshold |")
         println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")
         for row in rows
-            println(io, "| $(row.configuration) | $(fmt(row.active_groups, "%d")) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) | $(fmt(row.minimum_native_active_groups_under_quality_threshold, "%d")) |")
+            println(io, "| $(row.configuration) | $(active_groups_value(row)) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) | $(fmt(row.minimum_native_active_groups_under_quality_threshold, "%d")) |")
         end
         println(io, "\nQuality means validation MSE <= $(P8_QUALITY_THRESHOLD). Test mean(state_Nu) is the mean over all stored per-step state_Nu values from the eight 200-step Varying test episodes; lower is better. SC sparsity uses 8×48×3 channel inputs; GC sparsity treats a location as occupied when any channel is active. The final column is the only candidate-independent measurement.")
     end

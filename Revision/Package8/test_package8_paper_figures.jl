@@ -143,6 +143,8 @@ end
             @test all(isfile, artifacts.pareto_paths)
             @test all(filesize(path) > 0 for path in vcat(artifacts.mask_paths, artifacts.pareto_paths))
             @test length(readlines(artifacts.table.csv_path)) == 11
+            @test occursin("go-gc,4/32,", read(artifacts.table.csv_path, String))
+            @test occursin("| go-sc | 4/96 |", read(artifacts.table.markdown_path, String))
             @test occursin("Full sensor set expert", read(artifacts.table.markdown_path, String))
             @test isfile(joinpath(output, "paper_metrics.jld2"))
         finally
@@ -156,4 +158,3 @@ end
 end
 
 println("package8-paper-figure-tests-ok")
-
