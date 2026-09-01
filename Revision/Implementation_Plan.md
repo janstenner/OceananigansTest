@@ -327,7 +327,7 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   - Post-hoc-Sensorrauschen ausschließlich während der Anwendung und ohne Retraining.
   - Weißes additives Gaußrauschen mit den gemeinsamen festen Rauschstufen
-    `0.0/0.01/0.05/0.10/0.20` relativ zu protokollspezifischen kanalweisen
+    `0.0/0.01/0.05/0.10/0.20/0.30/0.40/0.50` relativ zu protokollspezifischen kanalweisen
     Datenskalen.
   - Auswertung des finalen dichten Experts, des validation-only sparsesten
     SC-Apprentices und des Paket-6-`C_match`-Kandidaten auf denselben Testfällen
@@ -348,14 +348,17 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Clean-/Noise-Worker und einen filterbaren restart-sicheren tmux-Launcher.
   - Ein Worker besitzt jeweils eine Kombination aus Protokoll, Controller und
     Rauschlevel und führt alle zugehörigen Fälle und Replikate hintereinander
-    aus. Der vollständige Launch umfasst 30 selbstschließende Sessions.
+    aus. Der vollständige Launch umfasst 48 selbstschließende Sessions; über
+    wiederholte `--noise-level`-Argumente lassen sich insbesondere nur die
+    Ergänzungslevel `0.30/0.40/0.50` starten.
   - Der erste Produktionslauncher startet bewusst keinen Analysis-Worker; die
     spätere Auswertung folgt als separates Julia-Skript.
   - `Noise_Study/make_paper_tables.jl` erzeugt unabhängig vom Launcher eine
     CSV- und Markdown-Ergebnistabelle über Controller, Rauschlevel und mittleres
     Testset-`state_Nu`. Ohne Argument verwendet es je Protokoll die neueste
     Experiment-ID; unterschiedliche IDs führen nur zu einer Warnung, und noch
-    fehlende Workerresultate werden als `NA` erhalten.
+    fehlende Workerresultate werden als `NA` erhalten. Die Kandidaten erscheinen
+    in der Reihenfolge Expert, `C_match`, Sparse.
   - Das Paket bleibt bis zu den Produktionsruns und ihrer separaten Auswertung
     offen.
 

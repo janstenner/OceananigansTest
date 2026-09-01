@@ -23,7 +23,7 @@ rule, both selection files, checkpoint hashes, masks, and expert identity.
 ## Noise protocol
 
 - additive, zero-mean, independent Gaussian measurement noise;
-- levels `(0.0, 0.01, 0.05, 0.10, 0.20)`;
+- levels `(0.0, 0.01, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50)`;
 - ten noise replicates per test case at every nonzero level;
 - one Fixed test case and eight Varying test cases;
 - deterministic mean actions and 200 control steps;
@@ -44,7 +44,7 @@ same standardized white-noise sequence for every paired run.
 
 ## Launching
 
-Preview the complete 30-session launch without writing files:
+Preview the complete 48-session launch without writing files:
 
 ```bash
 bash Revision/Noise_Study/launch_tmux.sh --preview
@@ -61,6 +61,8 @@ Useful restricted launches include:
 ```bash
 bash Revision/Noise_Study/launch_tmux.sh --protocol fixed
 bash Revision/Noise_Study/launch_tmux.sh --protocol varying --noise-level 0.10
+bash Revision/Noise_Study/launch_tmux.sh --experiment-id ID \
+  --noise-level 0.30 --noise-level 0.40 --noise-level 0.50
 bash Revision/Noise_Study/launch_tmux.sh --controller c_match --retry-failed
 ```
 
@@ -73,6 +75,9 @@ On its first real launch it creates one manifest per selected protocol under
 `results/<experiment-id>/manifests/`. Exact Varying scale computation reads all
 40 training shards and can take several minutes. Existing manifests are reused;
 `--rebuild-manifest` deliberately recomputes and replaces them.
+Workers also accept newly added supported noise levels when reusing an older
+manifest whose recorded grid ends at `0.20`; the frozen scales and controller
+selection remain unchanged.
 
 ## Worker ownership and restart
 
@@ -100,7 +105,8 @@ Without arguments it independently chooses the newest Fixed and Varying
 experiment directories. Different experiment IDs only produce warnings and are
 combined. Incomplete worker cells are written as `NA`. The script creates a
 wide CSV and Markdown table with the mean test-set `state_Nu` for every
-controller and noise level, plus compact JLD2 metrics and SHA-256 provenance.
+controller and noise level, ordered as expert, `C_match`, then sparse, plus
+compact JLD2 metrics and SHA-256 provenance.
 
 ## Validation
 

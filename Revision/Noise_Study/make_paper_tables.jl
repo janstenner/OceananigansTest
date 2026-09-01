@@ -9,7 +9,7 @@ using .NoiseStudy
 
 const DEFAULT_NOISE_RESULTS = joinpath(@__DIR__, "results")
 const PAPER_PROTOCOLS = (:fixed, :varying)
-const PAPER_CONTROLLERS = (:expert, :sparse, :c_match)
+const PAPER_CONTROLLERS = (:expert, :c_match, :sparse)
 const PAPER_CONTROLLER_LABELS = Dict(
     :expert => "Dense expert",
     :sparse => "Sparse apprentice",

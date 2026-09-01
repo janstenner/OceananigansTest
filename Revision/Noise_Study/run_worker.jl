@@ -18,7 +18,7 @@ function usage()
       --manifest PATH
       --protocol fixed|varying
       --controller expert|sparse|c_match
-      --noise-level 0|0.01|0.05|0.10|0.20
+      --noise-level 0|0.01|0.05|0.10|0.20|0.30|0.40|0.50
       --results-dir PATH
       --retry-failed
       --help
@@ -88,7 +88,9 @@ end
 
 function validate_manifest(options, manifest)
     Symbol(manifest[:protocol]) === options.protocol || error("Worker/manifest protocol mismatch.")
-    options.noise_level in Float64.(manifest[:noise_levels]) || error("Noise level is absent from the manifest.")
+    if !(options.noise_level in Float64.(manifest[:noise_levels]))
+        @warn "Noise level is absent from the existing manifest; continuing with a supported level added after manifest creation." noise_level=options.noise_level manifest_path=options.manifest_path
+    end
     Int(manifest[:replicate_count]) == NOISE_REPLICATES || error("Unexpected replicate count in manifest.")
     Int(manifest[:test_steps]) == NOISE_TEST_STEPS || error("Unexpected test horizon in manifest.")
     return controller_from_manifest(manifest, options.controller)

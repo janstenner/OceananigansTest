@@ -21,7 +21,7 @@ function usage()
 
     Building a manifest computes exact protocol-specific channel standard
     deviations from the complete distillation training corpus. --print-jobs
-    only prints the fixed 15-worker grid and does not read result artifacts.
+    only prints the fixed 24-worker grid and does not read result artifacts.
     """)
 end
 

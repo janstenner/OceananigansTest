@@ -45,7 +45,7 @@ z ~ N(0, 1)
 Die festen Rauschlevel sind:
 
 ```text
-(0.0, 0.01, 0.05, 0.10, 0.20)
+(0.0, 0.01, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50)
 ```
 
 Die drei `scale[c]` sind protokollspezifische Sample-Standardabweichungen der
@@ -85,7 +85,7 @@ Fall.
 ## Worker- und Launcherdesign
 
 `Revision/Noise_Study/launch_tmux.sh` startet einen Worker pro
-`(Protokoll, Controller, Rauschlevel)`. Ohne Filter sind dies 30 selbst-
+`(Protokoll, Controller, Rauschlevel)`. Ohne Filter sind dies 48 selbst-
 schließende tmux-Sessions.
 
 Ein Worker besitzt seine vollständige Kombination:
