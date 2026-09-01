@@ -40,6 +40,37 @@ metadata-free `varying/expert.jld2` always represent the largest rolling-100
 reward mean observed so far. Rerunning the identical launch command resumes
 incomplete workers.
 
+## Ra = 5 × 10^4 Varying-IC training
+
+The Ra=5e4 path is a separate, paired copy of the Ra=1e5 experiment. It uses
+`VaryingIC_MAT_Ra5e4.jl`, `varying_ic_corpus_Ra5e4.jld2`, and the independent
+result root `results_ra5e4`. The default master seed remains `20260901`, so the
+Run/IC seed pairs match the Ra=1e5 experiment exactly.
+
+Generate its corpus first:
+
+```julia
+include("Revision/VaryingIC_Corpus/VaryingICCorpus_Ra5e4.jl")
+generate_default_corpus!(rng=StableRNG(DEIN_SEED))
+```
+
+Then launch either a fixed episode budget:
+
+```bash
+bash Revision/MAT_expert_training/launch_tmux_ra5e4.sh \
+  --runs 10 --episodes 4000
+```
+
+or a shared rolling-100 threshold stop:
+
+```bash
+bash Revision/MAT_expert_training/launch_tmux_ra5e4.sh \
+  --runs 10 --threshold -610.0
+```
+
+Resume checkpoints, experiment fingerprints, stop behavior, logs,
+`best_so_far.jld2`, and compact `expert.jld2` follow the Ra=1e5 layout.
+
 ## Stop rules
 
 - Fixed IC: the loaded source/resume policy and then the current policy after

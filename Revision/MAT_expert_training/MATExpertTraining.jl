@@ -20,7 +20,9 @@ export CANDIDATES, DEFAULT_RESULTS_DIRECTORY, DEFAULT_SOURCE_RESULTS_DIRECTORY,
        best_so_far_checkpoint_path, best_so_far_expert_path, finalize_best_so_far!,
        publish_distillation_experts!, experts_published,
        DEFAULT_RA1E5_RESULTS_DIRECTORY, DEFAULT_RA1E5_MASTER_SEED,
-       freeze_ra1e5_experiment!, ra1e5_candidates, run_ra1e5_training_worker
+       freeze_ra1e5_experiment!, ra1e5_candidates, run_ra1e5_training_worker,
+       DEFAULT_RA5E4_RESULTS_DIRECTORY, DEFAULT_RA5E4_MASTER_SEED,
+       freeze_ra5e4_experiment!, ra5e4_candidates, run_ra5e4_training_worker
 
 const SCHEMA_VERSION = 3
 const REVISION_DIRECTORY = normpath(joinpath(@__DIR__, ".."))
@@ -73,6 +75,29 @@ const RA1E5_RUN_FILE_PATH = joinpath(
     REVISION_DIRECTORY,
     "Run_Files",
     "VaryingIC_MAT_Ra1e5.jl",
+)
+
+const RA5E4_SCHEMA_VERSION = 1
+const RA5E4_PROTOCOL = :varying_ra5e4
+const RA5E4_RAYLEIGH = 5.0e4
+const RA5E4_WINDOW = 100
+# Deliberately paired with the Ra=1e5 experiment for direct comparison.
+const DEFAULT_RA5E4_MASTER_SEED = DEFAULT_RA1E5_MASTER_SEED
+const DEFAULT_RA5E4_RESULTS_DIRECTORY = joinpath(@__DIR__, "results_ra5e4")
+const RA5E4_CORPUS_PATH = joinpath(
+    REVISION_DIRECTORY,
+    "VaryingIC_Corpus",
+    "varying_ic_corpus_Ra5e4.jld2",
+)
+const RA5E4_CORPUS_SOURCE_PATH = joinpath(
+    REVISION_DIRECTORY,
+    "VaryingIC_Corpus",
+    "VaryingICCorpus_Ra5e4.jl",
+)
+const RA5E4_RUN_FILE_PATH = joinpath(
+    REVISION_DIRECTORY,
+    "Run_Files",
+    "VaryingIC_MAT_Ra5e4.jl",
 )
 
 const CANDIDATES = (
@@ -1832,5 +1857,6 @@ function run_test_protocol_worker(;
 end
 
 include(joinpath(@__DIR__, "Ra1e5ExpertTraining.jl"))
+include(joinpath(@__DIR__, "Ra5e4ExpertTraining.jl"))
 
 end
