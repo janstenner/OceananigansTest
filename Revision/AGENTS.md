@@ -143,6 +143,10 @@ Sparse Sensing paper.
   controller, and noise level; clean baseline import; sequential complete-grid
   noisy rollouts; atomic per-episode persistence; and a filtered persistent
   30-session tmux launcher without an analysis worker.
+- `Noise_Study/make_paper_tables.jl`: Standalone Package-10 paper-table builder
+  that independently resolves the newest Fixed/Varying experiment IDs, warns
+  but continues across mixed IDs, preserves incomplete cells as `NA`, and
+  writes mean test-set `state_Nu` tables plus JLD2/provenance artifacts.
 - `Noise_Study/README.md`: Package-10 protocol, server commands, restart
   behavior, output layout, and validation commands.
 

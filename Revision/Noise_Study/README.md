@@ -89,8 +89,18 @@ worker validates and skips matching complete episodes. It writes a compact
 record their traceback in `status.jld2` and require `--retry-failed`.
 
 There is intentionally no analysis worker in this package yet. The later
-standalone Julia analysis will consume the atomic episode files and worker
-summaries.
+standalone analysis consumes the atomic worker summaries. The first paper-table
+script is:
+
+```bash
+julia --startup-file=no --project=. Revision/Noise_Study/make_paper_tables.jl
+```
+
+Without arguments it independently chooses the newest Fixed and Varying
+experiment directories. Different experiment IDs only produce warnings and are
+combined. Incomplete worker cells are written as `NA`. The script creates a
+wide CSV and Markdown table with the mean test-set `state_Nu` for every
+controller and noise level, plus compact JLD2 metrics and SHA-256 provenance.
 
 ## Validation
 

@@ -351,6 +351,11 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     aus. Der vollständige Launch umfasst 30 selbstschließende Sessions.
   - Der erste Produktionslauncher startet bewusst keinen Analysis-Worker; die
     spätere Auswertung folgt als separates Julia-Skript.
+  - `Noise_Study/make_paper_tables.jl` erzeugt unabhängig vom Launcher eine
+    CSV- und Markdown-Ergebnistabelle über Controller, Rauschlevel und mittleres
+    Testset-`state_Nu`. Ohne Argument verwendet es je Protokoll die neueste
+    Experiment-ID; unterschiedliche IDs führen nur zu einer Warnung, und noch
+    fehlende Workerresultate werden als `NA` erhalten.
   - Das Paket bleibt bis zu den Produktionsruns und ihrer separaten Auswertung
     offen.
 
