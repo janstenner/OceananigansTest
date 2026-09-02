@@ -142,13 +142,22 @@ Sparse Sensing paper.
 - `Noise_Study/run_worker.jl` and `launch_tmux.sh`: One worker per protocol,
   controller, and noise level; clean baseline import; sequential complete-grid
   noisy rollouts; atomic per-episode persistence; and a filtered persistent
-  30-session tmux launcher without an analysis worker.
+  60-session tmux launcher without an analysis worker.
 - `Noise_Study/make_paper_tables.jl`: Standalone Package-10 paper-table builder
   that independently resolves the newest Fixed/Varying experiment IDs, warns
   but continues across mixed IDs, preserves incomplete cells as `NA`, and
   writes mean test-set `state_Nu` tables plus JLD2/provenance artifacts.
+- `Noise_Study/results/results_notes.md`: Completed Package-10 protocol,
+  channel-scale calculation, quantitative sensor-noise results, and bounded
+  robustness--sparsity/Pareto interpretation.
 - `Noise_Study/README.md`: Package-10 protocol, server commands, restart
   behavior, output layout, and validation commands.
+- `Higher_Ra_Study/extract_experts.jl`: Selects the best available Ra=5e4 and
+  Ra=1e5 MAT checkpoints by rolling-100 episode reward, publishes compact
+  agent-only experts, renders MAT-IPPO-style learning curves, and evaluates
+  both experts on their protocol-specific test sets.
+- `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert-extraction stage and
+  planned local higher-Ra distillation-corpus plus GO/GR study workflow.
 
 ## Revision Run Files
 
@@ -345,9 +354,9 @@ validation MSE among ties. This resolves to Fixed `go-sc` and Varying `gr-sc`.
 Noise results must never change these selections.
 
 The only noise model is zero-mean iid Gaussian measurement noise at levels
-`0.0/0.01/0.05/0.10/0.20`. Nonzero levels use ten paired replicates per test
-case. Fixed owns one case and Varying the existing eight cases. The noise seed
-must not contain the controller identity.
+`0.0/0.01/0.05/0.10/0.20/0.30/0.40/0.50/0.70/1.00`. Nonzero levels use ten
+paired replicates per test case. Fixed owns one case and Varying the existing
+eight cases. The noise seed must not contain the controller identity.
 
 Protocol-specific `b/w/u` scales are exact sample standard deviations from the
 corresponding distillation training corpus. Position encoding is removed before

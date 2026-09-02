@@ -319,7 +319,7 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Es sind keine Implementierung, Produktionsruns oder Auswertung für die
     Baselines bei gleicher Sensorzahl mehr erforderlich.
 
-- [ ] **Paket 10 — Test unter Sensorrauschen**
+- [x] **Paket 10 — Test unter Sensorrauschen**
 
   Detailplanung: `Revision/package10.md`
 
@@ -359,12 +359,39 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Experiment-ID; unterschiedliche IDs führen nur zu einer Warnung, und noch
     fehlende Workerresultate werden als `NA` erhalten. Die Kandidaten erscheinen
     in der Reihenfolge Expert, `C_match`, Sparse.
-  - Das Paket bleibt bis zu den Produktionsruns und ihrer separaten Auswertung
-    offen.
+  - `Noise_Study/results/results_notes.md` dokumentiert den abgeschlossenen
+    Aufbau, die protokollspezifische Berechnung der Kanalskalen, die vollständigen
+    mittleren Testset-`state_Nu`-Ergebnisse und die beobachtete Abstufung der
+    Rauschrobustheit von Dense über `C_match` bis zum sparsesten Apprentice.
+  - Alle 60 Produktionsworker der Experiment-ID `260901_130952` sind vollständig;
+    Paper-Tabelle und interpretierende Ergebnisnotizen liegen vor.
 
   Abschluss:
 
   - Der Robustheitsverlust von Expert und Apprentice unter Sensorrauschen ist reproduzierbar und quantitativ vergleichbar.
+
+- [ ] **Higher-Ra-Studie — Ra=5e4 und Ra=1e5**
+
+  Detailplanung: `Revision/Higher_Ra_Study/Higher_Ra_Study.md`
+
+  Implementierungsstand:
+
+  - `Higher_Ra_Study/extract_experts.jl` selektiert je Rayleigh-Zahl den besten
+    verfügbaren MAT-Checkpoint nach dem mittleren Reward der letzten 100
+    Episoden, publiziert einen agent-only Expert mit leerer Trajectory und
+    Pufferlänge eins, erzeugt Median-/IQR- und Einzelrun-Lernkurven und führt
+    die deterministische Auswertung auf den acht zugehörigen Testfällen aus.
+  - Expert-Checkpoints, Auswahlmanifest, SVGs und Test-Baselines werden lokal
+    unter `Higher_Ra_Study` abgelegt.
+  - Als nächste Stufen folgen je Rayleigh-Zahl ein eigener lokaler
+    Distillation-Corpus sowie restart-sichere GO-/GR-Studien nach dem Aufbau von
+    Paket 8.
+
+  Abschluss:
+
+  - Für beide höheren Rayleigh-Zahlen liegen reproduzierbar selektierte MAT-
+    Experts, isolierte Distillation-Corpora und validierungsselektierte GO-/GR-
+    Pareto-Kandidaten samt Closed-loop-Testauswertung vor.
 
 - [ ] **Paket 11 — Additional Experiment: Direct RL Training on a Selected Sensor Set**
 
