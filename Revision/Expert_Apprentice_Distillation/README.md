@@ -149,6 +149,5 @@ Revision/Expert_Apprentice_Distillation/launch_tmux.sh \
 ```
 
 Completed matching files are skipped. Use `--overwrite` only when a shard is
-intentionally regenerated. Jobs run in detached tmux sessions, use a systemd
-sleep inhibitor by default, and write a persistent manifest and logs below
-`worker_results/launches/`.
+intentionally regenerated. Jobs run in detached tmux sessions and write a
+persistent manifest and logs below `worker_results/launches/`.

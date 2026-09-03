@@ -60,11 +60,18 @@ While only one result root is locally available, `--study ra5e4` or
 `--study ra1e5` restricts the complete extraction, plotting, and baseline
 workflow to that Rayleigh number. The default `--study all` analyzes both.
 
-## Planned local layout
+## Local layout
 
 ```text
 Higher_Ra_Study/
   analyze_runs.jl
+  HigherRaDistillationCorpus.jl
+  prepare_corpus_workers.jl
+  run_corpus_worker.jl
+  execute_corpus_worker.jl
+  launch_tmux_common.sh
+  launch_tmux_ra5e4.sh
+  launch_tmux_ra1e5.sh
   Higher_Ra_Study.md
   experts/
     selection_manifest.jld2
@@ -75,37 +82,81 @@ Higher_Ra_Study/
     ra1e5/expert.jld2
   plots/
   Distillation_Corpuses/
-    ra5e4/
-    ra1e5/
+    ra5e4/worker_results/
+    ra1e5/worker_results/
   GO_GR_Study/
     manifests/
     results/
     analysis/
 ```
 
-## Planned second stage: separate distillation corpora
+## Implemented second stage: separate distillation corpora
 
 Each Rayleigh number requires its own expert-rollout distillation corpus. The
-corpora must never mix states, actions, or expert identities across Rayleigh
-numbers. The planned implementation will therefore add shared higher-Ra corpus
-utilities plus one manifest and worker grid per `ra5e4` and `ra1e5`.
+corpora never mix states, actions, or expert identities across Rayleigh
+numbers. `HigherRaDistillationCorpus.jl` reuses the established compact
+Package-8 corpus format while binding each worker result to its matching local
+Higher-Ra expert, Higher-Ra MAT run file, and Higher-Ra initial-condition
+corpus by absolute path and SHA-256.
 
-The design should follow the established Varying-IC distillation protocol:
+The implementation follows the established Varying-IC distillation protocol:
 
 - use only the selected expert for the matching Rayleigh number;
-- freeze the expert SHA-256, run-file SHA-256, state-corpus SHA-256, split, and
-  case plan before generation;
+- use `varying_ic_corpus_Ra5e4.jld2` for `ra5e4` and
+  `varying_ic_corpus_Ra1e5.jld2` for `ra1e5`;
+- verify the Rayleigh number recorded in the state corpus and freeze the expert
+  SHA-256, run-file SHA-256, state-corpus SHA-256, split, and case plan in every
+  shard;
 - retain the compact global `3 x 48 x 8` observations and deterministic expert
   action means;
 - preserve train/validation/test isolation;
-- cover the established basis-snapshot, mirror, and horizontal-offset plan;
+- use all 20 training bases with both mirrors and all 96 horizontal offsets:
+  40 workers, 96 episodes and 19,200 samples per worker;
+- use the one validation base with both mirrors and offsets 0 and 20:
+  2 workers, 4 episodes and 800 samples in total;
+- use both test bases with both mirrors and offsets 0 and 20:
+  4 workers, 8 episodes and 1,600 samples in total;
+- run every episode for 200 deterministic expert-control steps;
 - store one atomic file per worker-owned shard and support restart without
   rewriting valid shards;
 - keep all generated higher-Ra corpus files below
   `Higher_Ra_Study/Distillation_Corpuses/<ra>/`.
 
-The exact number of training shards and whether the existing offset set should
-be reduced for computational cost must be frozen before corpus generation.
+`prepare_corpus_workers.jl` validates the sources and writes only missing or
+provenance-mismatching jobs. `run_corpus_worker.jl` owns one shard. The two
+public launchers are deliberately separate, while
+`launch_tmux_common.sh` contains their shared restart-safe tmux mechanics.
+If more jobs exist than `--max-workers`, a persistent tmux slot processes its
+assigned shards sequentially.
+
+### Launch commands
+
+For `Ra = 1e5`:
+
+```bash
+bash Revision/Higher_Ra_Study/launch_tmux_ra1e5.sh --split train
+bash Revision/Higher_Ra_Study/launch_tmux_ra1e5.sh --split validation --max-workers 2
+bash Revision/Higher_Ra_Study/launch_tmux_ra1e5.sh --split test --max-workers 4
+```
+
+For `Ra = 5e4`:
+
+```bash
+bash Revision/Higher_Ra_Study/launch_tmux_ra5e4.sh --split train
+bash Revision/Higher_Ra_Study/launch_tmux_ra5e4.sh --split validation --max-workers 2
+bash Revision/Higher_Ra_Study/launch_tmux_ra5e4.sh --split test --max-workers 4
+```
+
+`--split all` prepares all 46 shards for one Rayleigh number. The default
+concurrency is 40, so the smaller validation/test tail is queued behind the
+first slots. `--preview` performs source and corpus-plan validation and prints
+the commands without starting tmux. Valid completed shards are skipped;
+`--overwrite` explicitly requests regeneration.
+
+The launchers default to `experts/<ra>/expert.jld2`. Consequently the `ra1e5`
+launcher is ready for the expert already published by `analyze_runs.jl`. The
+`ra5e4` launcher intentionally fails before launch until the corresponding
+local expert exists.
 
 ## Planned third stage: GO and GR apprentice studies
 
@@ -133,10 +184,8 @@ evaluation cases wherever the algorithms permit it. Noise robustness is not
 part of this initial higher-Ra plan and should only be added as a separately
 specified post-hoc study.
 
-## Decisions still to freeze before stages two and three
+## Decisions still to freeze before stage three
 
-- Whether the distillation corpora reproduce the full Package-8 training
-  offset coverage or use a smaller cost-controlled grid.
 - The GO and GR regularization-strength grids at each Rayleigh number.
 - Training budgets and checkpoint cadence, which may need to grow with the
   higher-Rayleigh dynamics.

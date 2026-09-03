@@ -384,8 +384,17 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     zugehörigen Testfällen aus.
   - Expert-Checkpoints, Auswahlmanifest, SVGs und Test-Baselines werden lokal
     unter `Higher_Ra_Study` abgelegt.
-  - Als nächste Stufen folgen je Rayleigh-Zahl ein eigener lokaler
-    Distillation-Corpus sowie restart-sichere GO-/GR-Studien nach dem Aufbau von
+  - Die getrennten lokalen Distillation-Corpus-Pipelines für `ra5e4` und
+    `ra1e5` sind implementiert. Sie verwenden jeweils den passenden lokalen
+    Expert, Higher-Ra-MAT-Run-File und
+    `varying_ic_corpus_Ra5e4.jld2` beziehungsweise
+    `varying_ic_corpus_Ra1e5.jld2` mit strikter SHA-256-Provenienz.
+  - Pro Rayleigh-Zahl umfasst der gefrorene Plan 40 Train-, 2 Validation- und
+    4 Test-Worker im Package-8-kompatiblen kompakten Format. Zwei separate
+    tmux-Launcher legen alle Shards unter
+    `Higher_Ra_Study/Distillation_Corpuses/<ra>/` ab und überspringen gültige
+    vorhandene Ergebnisse.
+  - Als nächste Stufe folgen restart-sichere GO-/GR-Studien nach dem Aufbau von
     Paket 8.
 
   Abschluss:

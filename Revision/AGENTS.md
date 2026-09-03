@@ -157,8 +157,17 @@ Sparse Sensing paper.
   agent-only experts by validating and copying existing matching publications
   when available, renders MAT-IPPO-style learning curves, and evaluates both
   experts on their protocol-specific test sets.
-- `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert-extraction stage and
-  planned local higher-Ra distillation-corpus plus GO/GR study workflow.
+- `Higher_Ra_Study/HigherRaDistillationCorpus.jl`,
+  `prepare_corpus_workers.jl`, `run_corpus_worker.jl`, and
+  `execute_corpus_worker.jl`: Separate Ra=5e4/Ra=1e5 Varying-IC expert-rollout
+  corpus plans, strict expert/run-file/state-corpus provenance, compact
+  Package-8-compatible shards, and restart-safe single-shard execution.
+- `Higher_Ra_Study/launch_tmux_ra5e4.sh` and
+  `launch_tmux_ra1e5.sh`: Separate public launchers backed by shared tmux slot
+  mechanics. Per Rayleigh number they launch 40 train, 2 validation, or 4 test
+  shards and keep every result below `Higher_Ra_Study/Distillation_Corpuses`.
+- `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert-extraction and local
+  higher-Ra distillation-corpus stages plus the planned GO/GR workflow.
 
 ## Revision Run Files
 
