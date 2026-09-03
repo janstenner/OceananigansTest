@@ -384,6 +384,11 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     zugehörigen Testfällen aus.
   - Expert-Checkpoints, Auswahlmanifest, SVGs und Test-Baselines werden lokal
     unter `Higher_Ra_Study` abgelegt.
+  - `compute_unactuated_baselines.jl` ergänzt für beide Rayleigh-Zahlen die
+    nicht-aktuierten Referenzen auf exakt denselben acht Testfällen und über
+    dieselben 200 Kontrollschritte. Die beiden Run-Files werden prozessisoliert
+    geladen; atomare Ergebnisse landen als
+    `Higher_Ra_Study/Baselines/<ra>/unactuated.jld2`.
   - Die getrennten lokalen Distillation-Corpus-Pipelines für `ra5e4` und
     `ra1e5` sind implementiert. Sie verwenden jeweils den passenden lokalen
     Expert, Higher-Ra-MAT-Run-File und

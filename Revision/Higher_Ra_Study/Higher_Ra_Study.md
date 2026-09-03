@@ -44,6 +44,31 @@ numbers:
 7. Record selection, expert, plot, source-checkpoint, and baseline provenance
    in `experts/selection_manifest.jld2`.
 
+`compute_unactuated_baselines.jl` complements these expert baselines with the
+matching zero-action reference. For each selected Rayleigh number it evaluates
+the same eight test cases in the same order for 200 control steps and writes
+`Baselines/<ra>/unactuated.jld2`. The two Higher-Ra run files are loaded in
+separate Julia subprocesses so their constants and state corpora cannot collide.
+Existing complete results are reused only when the study, run seed, step/case
+counts, run-file hash, and test-corpus hash still match.
+
+Both Rayleigh numbers are computed sequentially by default:
+
+```bash
+julia --startup-file=no --project=. \
+  Revision/Higher_Ra_Study/compute_unactuated_baselines.jl
+```
+
+The run can be restricted or intentionally repeated with, for example:
+
+```bash
+julia --startup-file=no --project=. \
+  Revision/Higher_Ra_Study/compute_unactuated_baselines.jl --study ra1e5
+
+julia --startup-file=no --project=. \
+  Revision/Higher_Ra_Study/compute_unactuated_baselines.jl --study ra5e4 --overwrite
+```
+
 Default invocation:
 
 ```bash
@@ -65,6 +90,7 @@ workflow to that Rayleigh number. The default `--study all` analyzes both.
 ```text
 Higher_Ra_Study/
   analyze_runs.jl
+  compute_unactuated_baselines.jl
   HigherRaDistillationCorpus.jl
   prepare_corpus_workers.jl
   run_corpus_worker.jl
@@ -79,7 +105,9 @@ Higher_Ra_Study/
     ra1e5/expert.jld2
   Baselines/
     ra5e4/expert.jld2
+    ra5e4/unactuated.jld2
     ra1e5/expert.jld2
+    ra1e5/unactuated.jld2
   plots/
   Distillation_Corpuses/
     ra5e4/worker_results/

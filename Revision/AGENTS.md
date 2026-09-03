@@ -157,6 +157,10 @@ Sparse Sensing paper.
   agent-only experts by validating and copying existing matching publications
   when available, renders MAT-IPPO-style learning curves, and evaluates both
   experts on their protocol-specific test sets.
+- `Higher_Ra_Study/compute_unactuated_baselines.jl`: Process-isolated Ra=5e4
+  and Ra=1e5 zero-action evaluation on the same eight 200-step test cases as
+  the expert baselines, with atomic local results, aggregate reward/`state_Nu`
+  metrics, strict run-file/test-corpus provenance, and restart-safe reuse.
 - `Higher_Ra_Study/HigherRaDistillationCorpus.jl`,
   `prepare_corpus_workers.jl`, `run_corpus_worker.jl`, and
   `execute_corpus_worker.jl`: Separate Ra=5e4/Ra=1e5 Varying-IC expert-rollout
