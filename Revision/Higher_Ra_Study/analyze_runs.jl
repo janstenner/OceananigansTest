@@ -42,9 +42,10 @@ const STUDIES = (
 function usage(io::IO = stdout)
     println(io, """
     Usage:
-      julia --startup-file=no --project=. Revision/Higher_Ra_Study/extract_experts.jl [options]
+      julia --startup-file=no --project=. Revision/Higher_Ra_Study/analyze_runs.jl [options]
 
     Options:
+      --study all|ra5e4|ra1e5  Select studies to analyze (default: all).
       --ra5e4-results PATH      Ra=5e4 training-result root.
       --ra1e5-results PATH      Ra=1e5 training-result root.
       --output-dir PATH         Output root (default: Revision/Higher_Ra_Study).
@@ -60,6 +61,7 @@ end
 
 function parse_options(arguments)
     options = Dict{String, Any}(
+        "study" => "all",
         "ra5e4_results" => STUDIES.ra5e4.default_results,
         "ra1e5_results" => STUDIES.ra1e5.default_results,
         "output_dir" => @__DIR__,
@@ -89,7 +91,12 @@ function parse_options(arguments)
             error("Unknown argument '$argument'.")
         end
     end
+    selected_study = Symbol(lowercase(string(options["study"])))
+    selected_study in (:all, :ra5e4, :ra1e5) || error(
+        "--study must be all, ra5e4, or ra1e5.",
+    )
     return (;
+        selected_study,
         ra5e4_results = abspath(string(options["ra5e4_results"])),
         ra1e5_results = abspath(string(options["ra1e5_results"])),
         output_dir = abspath(string(options["output_dir"])),
@@ -379,9 +386,56 @@ function save_learning_curves(study, records, output_directory)
     return (aggregate = abspath(aggregate_path), individual = abspath(individual_path))
 end
 
+function atomic_copy(source::AbstractString, target::AbstractString)
+    mkpath(dirname(target))
+    temporary = joinpath(
+        dirname(target),
+        ".$(basename(target)).$(getpid()).$(uuid4()).tmp",
+    )
+    try
+        cp(source, temporary; force = true)
+        mv(temporary, target; force = true)
+    finally
+        isfile(temporary) && rm(temporary; force = true)
+    end
+    return abspath(target)
+end
+
+function existing_compact_expert(winner)
+    winner.kind === :best_so_far || return nothing
+    candidate = joinpath(dirname(winner.path), "expert.jld2")
+    isfile(candidate) || return nothing
+    return try
+        MATExpertTraining.validate_agent_only_checkpoint(candidate)
+        compact_agent = JLD2.load(candidate, "agent")
+        checkpoint_agent = JLD2.load(winner.path, "agent")
+        compact_state = MATExpertTraining.Flux.state(compact_agent.policy)
+        checkpoint_state = MATExpertTraining.Flux.state(checkpoint_agent.policy)
+        isequal(compact_state, checkpoint_state) || error(
+            "Compact expert policy state differs from the selected best-so-far checkpoint.",
+        )
+        abspath(candidate)
+    catch error_value
+        @warn "Existing compact expert is not a valid copy of the selected checkpoint; rebuilding it." candidate exception=(error_value, catch_backtrace())
+        nothing
+    end
+end
+
 function publish_expert(study, winner, output_directory)
     target = joinpath(output_directory, "experts", string(study.tag), "expert.jld2")
-    MATExpertTraining.save_compact_expert_from_checkpoint!(winner.path, target)
+    compact_source = existing_compact_expert(winner)
+    if isnothing(compact_source)
+        MATExpertTraining.save_compact_expert_from_checkpoint!(winner.path, target)
+        publication_mode = :compacted_from_checkpoint
+        source_expert_path = ""
+        source_expert_sha256 = ""
+    else
+        atomic_copy(compact_source, target)
+        MATExpertTraining.validate_agent_only_checkpoint(target)
+        publication_mode = :copied_existing_compact_expert
+        source_expert_path = compact_source
+        source_expert_sha256 = file_sha256(compact_source)
+    end
     return (;
         rayleigh = study.rayleigh,
         protocol = study.protocol,
@@ -395,6 +449,9 @@ function publish_expert(study, winner, output_directory)
         checkpoint_kind = winner.kind,
         source_checkpoint_path = winner.path,
         source_checkpoint_sha256 = file_sha256(winner.path),
+        publication_mode,
+        source_expert_path,
+        source_expert_sha256,
         expert_path = abspath(target),
         expert_sha256 = file_sha256(target),
     )
@@ -524,8 +581,11 @@ function validate_one(options)
         ENV["DISTILLATION_SKIP_AUTOLOAD"] = "true"
         include(study.run_file)
         global agent = JLD2.load(options.expert_path, "agent")
-        hasproperty(hook, :is_display_on_exit) && (hook.is_display_on_exit = false)
-        hasproperty(hook, :display_after_episode) && (hook.display_after_episode = false)
+        runtime_hook = latest_binding(:hook)
+        hasproperty(runtime_hook, :is_display_on_exit) &&
+            (runtime_hook.is_display_on_exit = false)
+        hasproperty(runtime_hook, :display_after_episode) &&
+            (runtime_hook.display_after_episode = false)
         cases = validation_cases()
         episodes = map(cases) do case
             println("Running $(study.label) expert test: $(case.case_id)")
@@ -579,7 +639,9 @@ function main(arguments = ARGS)
     plot_directory = joinpath(options.output_dir, "plots")
     publications = NamedTuple[]
     plot_records = NamedTuple[]
-    for study in values(STUDIES)
+    selected_studies = options.selected_study === :all ? values(STUDIES) :
+        (getproperty(STUDIES, options.selected_study),)
+    for study in selected_studies
         results_root = study.tag === :ra5e4 ? options.ra5e4_results : options.ra1e5_results
         checkpoints = available_checkpoints(results_root, study)
         winner = first(checkpoints)

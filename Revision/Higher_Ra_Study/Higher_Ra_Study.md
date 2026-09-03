@@ -17,7 +17,7 @@ artifacts, analyses, and final evaluation results live below
 
 ## Implemented first stage: MAT expert extraction
 
-`extract_experts.jl` performs the complete first stage for both Rayleigh
+`analyze_runs.jl` performs the complete first stage for both Rayleigh
 numbers:
 
 1. Recursively scan the corresponding `MAT_expert_training` result root for
@@ -27,7 +27,10 @@ numbers:
    latest 100 rewards for every candidate checkpoint.
 3. Select the checkpoint with the largest rolling-100 mean independently for
    `ra5e4` and `ra1e5`.
-4. Publish an agent-only `experts/<ra>/expert.jld2`. Its trajectory is empty
+4. Validate and byte-copy the matching compact `varying/expert.jld2` already
+   published beside a selected best-so-far checkpoint. If no matching compact
+   source exists, publish one from the selected checkpoint. The resulting
+   `experts/<ra>/expert.jld2` contains only the agent; its trajectory is empty
    and every trajectory backing buffer has capacity one, matching the existing
    Revision distillation experts.
 5. Save MAT-IPPO-style SVG learning curves for each Rayleigh number: a
@@ -44,7 +47,7 @@ numbers:
 Default invocation:
 
 ```bash
-julia --startup-file=no --project=. Revision/Higher_Ra_Study/extract_experts.jl
+julia --startup-file=no --project=. Revision/Higher_Ra_Study/analyze_runs.jl
 ```
 
 Alternative result roots can be supplied with `--ra5e4-results` and
@@ -53,11 +56,15 @@ atomic resume and best-so-far checkpoints are treated as available snapshots.
 A later rerun may legitimately replace the selected expert if a better
 rolling-100 candidate has appeared.
 
+While only one result root is locally available, `--study ra5e4` or
+`--study ra1e5` restricts the complete extraction, plotting, and baseline
+workflow to that Rayleigh number. The default `--study all` analyzes both.
+
 ## Planned local layout
 
 ```text
 Higher_Ra_Study/
-  extract_experts.jl
+  analyze_runs.jl
   Higher_Ra_Study.md
   experts/
     selection_manifest.jld2
@@ -138,4 +145,3 @@ specified post-hoc study.
   input count.
 - Whether an intermediate low-validation-MSE candidate, analogous to
   `C_match`, should be frozen in addition to the sparsest selected apprentice.
-

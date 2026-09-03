@@ -152,10 +152,11 @@ Sparse Sensing paper.
   robustness--sparsity/Pareto interpretation.
 - `Noise_Study/README.md`: Package-10 protocol, server commands, restart
   behavior, output layout, and validation commands.
-- `Higher_Ra_Study/extract_experts.jl`: Selects the best available Ra=5e4 and
+- `Higher_Ra_Study/analyze_runs.jl`: Selects the best available Ra=5e4 and
   Ra=1e5 MAT checkpoints by rolling-100 episode reward, publishes compact
-  agent-only experts, renders MAT-IPPO-style learning curves, and evaluates
-  both experts on their protocol-specific test sets.
+  agent-only experts by validating and copying existing matching publications
+  when available, renders MAT-IPPO-style learning curves, and evaluates both
+  experts on their protocol-specific test sets.
 - `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert-extraction stage and
   planned local higher-Ra distillation-corpus plus GO/GR study workflow.
 

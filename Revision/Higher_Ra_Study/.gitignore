@@ -1,4 +1,3 @@
-experts/**/*.jld2
 Baselines/**/*.jld2
 plots/*.svg
 runtime/

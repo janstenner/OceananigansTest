@@ -376,11 +376,12 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   Implementierungsstand:
 
-  - `Higher_Ra_Study/extract_experts.jl` selektiert je Rayleigh-Zahl den besten
+  - `Higher_Ra_Study/analyze_runs.jl` selektiert je Rayleigh-Zahl den besten
     verfügbaren MAT-Checkpoint nach dem mittleren Reward der letzten 100
-    Episoden, publiziert einen agent-only Expert mit leerer Trajectory und
-    Pufferlänge eins, erzeugt Median-/IQR- und Einzelrun-Lernkurven und führt
-    die deterministische Auswertung auf den acht zugehörigen Testfällen aus.
+    Episoden, validiert und kopiert einen bereits passenden kompakten Expert
+    (oder erzeugt ihn andernfalls neu), erzeugt Median-/IQR- und Einzelrun-
+    Lernkurven und führt die deterministische Auswertung auf den acht
+    zugehörigen Testfällen aus.
   - Expert-Checkpoints, Auswahlmanifest, SVGs und Test-Baselines werden lokal
     unter `Higher_Ra_Study` abgelegt.
   - Als nächste Stufen folgen je Rayleigh-Zahl ein eigener lokaler
