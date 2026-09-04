@@ -33,6 +33,13 @@ Experiment scripts own the scientific policy. They construct
 pruning keeps at least `minimum_active_groups` groups (default `1`) by randomly
 restoring groups pruned in the current step with the resumable training RNG.
 
+`Expert_Apprentice.jl` normally loads the standard Fixed- or Varying-IC MAT
+run file selected by `DISTILLATION_PROTOCOL`. A study with a compatible MAT
+architecture but different physical parameters may set the explicit absolute
+`DISTILLATION_RUN_FILE` path before inclusion. The Higher-Ra GO/GR workers use
+this hook to load their matching Ra=5e4 or Ra=1e5 environment; the default
+Package-6/7/8 behavior is unchanged when the variable is absent.
+
 Validation always uses the loaded corpus `:validation` split. Autoregressive
 action matching is the default Pareto objective; teacher-forced matching can
 be stored as a diagnostic. Native zeros and post-hoc hard-threshold masks are

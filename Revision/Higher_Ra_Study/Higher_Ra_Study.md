@@ -113,9 +113,14 @@ Higher_Ra_Study/
     ra5e4/worker_results/
     ra1e5/worker_results/
   GO_GR_Study/
-    manifests/
+    HigherRaGOStudy.jl
+    prepare_manifest.jl
+    run_training_worker.jl
+    analyze_configuration_worker.jl
+    launch_tmux_ra5e4.sh
+    launch_tmux_ra1e5.sh
+    README.md
     results/
-    analysis/
 ```
 
 ## Implemented second stage: separate distillation corpora
@@ -186,10 +191,10 @@ launcher is ready for the expert already published by `analyze_runs.jl`. The
 `ra5e4` launcher intentionally fails before launch until the corresponding
 local expert exists.
 
-## Planned third stage: GO and GR apprentice studies
+## Implemented third stage: GO and GR apprentice studies
 
-After both corpora are complete, this directory will receive a paired GO/GR
-study modeled on Package 8. The implementation should contain:
+`GO_GR_Study/` contains the paired GO/GR study modeled on Package 8. It
+contains:
 
 - a shared study module defining both Rayleigh numbers, GO/GR configurations,
   seeds, regularization strengths, checkpoint schedules, and atomic paths;
@@ -197,28 +202,40 @@ study modeled on Package 8. The implementation should contain:
   distillation-corpus identities;
 - one restart-safe training worker per Rayleigh number, method, strength, and
   replicate;
-- a tmux launcher with Rayleigh-number, method, strength, and replicate
-  filters;
+- two independent tmux launchers with configuration and strength filters;
 - validation-only Pareto construction over active sensor groups/inputs and
   autoregressive validation MSE;
 - frozen candidate selection before any terminal test-set rollout;
 - deterministic closed-loop test evaluation on the matching eight higher-Ra
   test cases;
-- Package-8-style aggregate metrics, learning/Pareto plots, paper artifacts,
-  and provenance manifests.
+- Package-8-style aggregate metrics, Pareto plots, test plots, and provenance
+  manifests.
 
-GO and GR should be compared under paired initialization, corpus batches, and
-evaluation cases wherever the algorithms permit it. Noise robustness is not
-part of this initial higher-Ra plan and should only be added as a separately
-specified post-hoc study.
+GO and GR are compared under paired initialization, corpus batches, and
+evaluation cases. Noise robustness is not part of this initial higher-Ra study
+and should only be added as a separately specified post-hoc study.
 
-## Decisions still to freeze before stage three
+The implemented grid contains only `go-gc`, `go-sc`, `gr-gc`, and `gr-sc`.
+Each configuration uses its five frozen strengths and three paired replicates.
+Mask thresholds are `(0.0, 0.003, 0.006, 0.012)`. Each configuration analyzer
+selects the sparsest pooled Pareto point independently under validation-MSE
+quality thresholds `0.03`, `0.015`, and `0.0075`, deduplicates identical
+selections, freezes all selected candidates, and then evaluates up to three of
+them on the matching eight-case Higher-Ra test set.
 
-- The GO and GR regularization-strength grids at each Rayleigh number.
-- Training budgets and checkpoint cadence, which may need to grow with the
-  higher-Rayleigh dynamics.
-- The number of paired training seeds.
-- The candidate-selection rule when several points share the minimum active
-  input count.
-- Whether an intermediate low-validation-MSE candidate, analogous to
-  `C_match`, should be frozen in addition to the sparsest selected apprentice.
+The two independent launchers are:
+
+```bash
+bash Revision/Higher_Ra_Study/GO_GR_Study/launch_tmux_ra5e4.sh
+bash Revision/Higher_Ra_Study/GO_GR_Study/launch_tmux_ra1e5.sh
+```
+
+Each full launcher starts 60 training workers and four analysis/wait workers.
+Detailed restart, filter, selection, and output documentation is in
+`GO_GR_Study/README.md`.
+
+## Remaining work
+
+- Implement `make_paper_figures.jl` after production results are available.
+- Interpret the pooled fronts and terminal-test trade-offs for both Rayleigh
+  numbers.

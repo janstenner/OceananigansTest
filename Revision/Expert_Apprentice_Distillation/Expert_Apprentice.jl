@@ -20,13 +20,15 @@ randomIC = EXPERT_APPRENTICE_PROTOCOL === :varying
 group_channels = lowercase(get(ENV, "DISTILLATION_GROUP_CHANNELS", "true")) in
                  ("1", "true", "yes")
 
-revision_run_file = randomIC ? "VaryingIC_MAT.jl" : "FixedIC_MAT.jl"
-include(joinpath(
+default_revision_run_file = joinpath(
     EXPERT_APPRENTICE_PROJECT_ROOT,
     "Revision",
     "Run_Files",
-    revision_run_file,
-))
+    randomIC ? "VaryingIC_MAT.jl" : "FixedIC_MAT.jl",
+)
+revision_run_file = abspath(get(ENV, "DISTILLATION_RUN_FILE", default_revision_run_file))
+isfile(revision_run_file) || error("DISTILLATION_RUN_FILE does not exist: $revision_run_file")
+include(revision_run_file)
 if !isdefined(@__MODULE__, :DISTILLATION_CORPUS)
     include(joinpath(@__DIR__, "DistillationCorpus.jl"))
 end

@@ -399,8 +399,18 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     tmux-Launcher legen alle Shards unter
     `Higher_Ra_Study/Distillation_Corpuses/<ra>/` ab und überspringen gültige
     vorhandene Ergebnisse.
-  - Als nächste Stufe folgen restart-sichere GO-/GR-Studien nach dem Aufbau von
-    Paket 8.
+  - Die restart-sichere GO-/GR-Produktion nach dem Aufbau von Paket 8 ist für
+    beide Rayleigh-Zahlen implementiert. Je Rayleigh-Zahl werden nur GO und GR
+    mit GC/SC, fünf festgelegten Strengths pro Konfiguration und drei gepaarten
+    Replikaten untersucht: 60 Trainings- und vier Analyseworker.
+  - Die Maskenschwellen bleiben `0.0/0.003/0.006/0.012`. Jeder Analyseworker
+    wählt aus dem gepoolten Validation-Pareto-Front den jeweils sparsamsten
+    qualifizierten Punkt unter MSE `0.03/0.015/0.0075`, dedupliziert gleiche
+    Selektionen, friert alle Kandidaten vor dem Test ein und wertet bis zu drei
+    Kandidaten auf den acht passenden Higher-Ra-Testfällen aus.
+  - Separate tmux-Launcher liegen für `ra5e4` und `ra1e5` vor; ein gemeinsames
+    Launcher-Skript wird bewusst nicht verwendet. Die Paper-Figure-Erzeugung
+    folgt erst nach Vorliegen der Produktionsresultate.
 
   Abschluss:
 

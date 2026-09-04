@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+study=ra5e4
+session_prefix=hr5e4
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd "${script_directory}/../../.." && pwd)"
+training_worker="${script_directory}/run_training_worker.jl"
+analysis_worker="${script_directory}/analyze_configuration_worker.jl"
+manifest_worker="${script_directory}/prepare_manifest.jl"
+results_directory="${HIGHER_RA_GO_GR_RESULTS_DIR:-${script_directory}/results}"
+julia_binary="${JULIA_BIN:-julia}"
+
+configuration_selection=all
+experiment_id=""
+declare -a explicit_strengths=()
+declare -a explicit_thresholds=()
+preview=false
+analysis_only=false
+retry_failed=false
+planned=0
+submitted=0
+skipped=0
+first_session=""
+openblas_threads=3
+omp_threads=1
+
+usage() {
+    cat <<'EOF'
+Usage: launch_tmux_ra5e4.sh [options]
+
+Starts the Ra=5e4 Higher-Ra GO/GR study. Without filters this creates 60
+training sessions (GO/GR x GC/SC x five strengths x three replicates) and four
+analysis/wait sessions.
+
+Options:
+  --config NAME         One of go-gc, go-sc, gr-gc, gr-sc.
+  --strength VALUE      Explicit strength for one selected configuration;
+                        repeat to replace its configured five-strength grid.
+  --threshold VALUE     Explicit positive mask threshold for one selected
+                        configuration; repeat to replace 0.003/0.006/0.012.
+                        Native threshold 0.0 remains automatic.
+  --experiment-id ID    Reuse an experiment directory. Generated for a new run;
+                        required with --analysis-only.
+  --preview             Print planned sessions without writing or launching.
+  --analysis-only       Start only selected analysis/wait workers.
+  --retry-failed        Permit workers to resume runs marked failed.
+  --results-dir PATH    Override the Higher-Ra GO/GR result root.
+  --openblas-threads N  OpenBLAS threads per worker (default: 3).
+  --omp-threads N       OpenMP threads per worker (default: 1).
+  --help
+EOF
+}
+
+while (($#)); do
+    case "$1" in
+        --config) (($# >= 2)) || { echo "Missing value after --config." >&2; exit 2; }; configuration_selection="$2"; shift ;;
+        --experiment-id) (($# >= 2)) || { echo "Missing value after --experiment-id." >&2; exit 2; }; experiment_id="$2"; shift ;;
+        --strength) (($# >= 2)) || { echo "Missing value after --strength." >&2; exit 2; }; explicit_strengths+=("$2"); shift ;;
+        --threshold) (($# >= 2)) || { echo "Missing value after --threshold." >&2; exit 2; }; explicit_thresholds+=("$2"); shift ;;
+        --results-dir) (($# >= 2)) || { echo "Missing value after --results-dir." >&2; exit 2; }; results_directory="$2"; shift ;;
+        --openblas-threads) (($# >= 2)) || { echo "Missing value after --openblas-threads." >&2; exit 2; }; openblas_threads="$2"; shift ;;
+        --omp-threads) (($# >= 2)) || { echo "Missing value after --omp-threads." >&2; exit 2; }; omp_threads="$2"; shift ;;
+        --preview) preview=true ;;
+        --analysis-only) analysis_only=true ;;
+        --retry-failed) retry_failed=true ;;
+        --help) usage; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+    shift
+done
+
+[[ "${openblas_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--openblas-threads must be positive." >&2; exit 2; }
+[[ "${omp_threads}" =~ ^[1-9][0-9]*$ ]] || { echo "--omp-threads must be positive." >&2; exit 2; }
+export OPENBLAS_NUM_THREADS="${openblas_threads}"
+export OMP_NUM_THREADS="${omp_threads}"
+
+[[ "${analysis_only}" == false || -n "${experiment_id}" ]] || {
+    echo "--analysis-only requires --experiment-id." >&2; exit 2;
+}
+[[ "${configuration_selection}" != all || ${#explicit_thresholds[@]} -eq 0 ]] || {
+    echo "Explicit --threshold values require exactly one --config." >&2; exit 2;
+}
+[[ -n "${experiment_id}" ]] || experiment_id="$(date -u +%y%m%d_%H%M%S)"
+[[ "${experiment_id}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || {
+    echo "Invalid --experiment-id '${experiment_id}'." >&2; exit 2;
+}
+
+command -v "${julia_binary}" >/dev/null 2>&1 || { echo "Julia '${julia_binary}' was not found." >&2; exit 1; }
+if [[ "${preview}" == false ]]; then
+    command -v tmux >/dev/null 2>&1 || { echo "tmux was not found in PATH." >&2; exit 1; }
+fi
+
+variant_arguments=(--study "${study}" --print-variants --config "${configuration_selection}")
+for strength in "${explicit_strengths[@]}"; do variant_arguments+=(--strength "${strength}"); done
+for threshold in "${explicit_thresholds[@]}"; do variant_arguments+=(--threshold "${threshold}"); done
+variant_output="$("${julia_binary}" --startup-file=no "--project=${project_root}" "${manifest_worker}" "${variant_arguments[@]}")"
+mapfile -t variant_rows <<< "${variant_output}"
+((${#variant_rows[@]} > 0)) || { echo "No Ra=5e4 variants selected." >&2; exit 2; }
+
+declare -A strengths_by_configuration=()
+selected_configurations=()
+for row in "${variant_rows[@]}"; do
+    IFS=$'\t' read -r configuration strength <<< "${row}"
+    if [[ -z "${strengths_by_configuration[${configuration}]+x}" ]]; then
+        selected_configurations+=("${configuration}")
+        strengths_by_configuration[${configuration}]="${strength}"
+    else
+        strengths_by_configuration[${configuration}]+=" ${strength}"
+    fi
+done
+
+launch_id="$(date -u +%Y%m%dT%H%M%SZ)_$$"
+launch_directory="${results_directory}/${study}/${experiment_id}/launches/${launch_id}"
+log_directory="${launch_directory}/logs"
+job_manifest="${launch_directory}/jobs.tsv"
+manifest_arguments=(--study "${study}" --output "${launch_directory}/study_manifest.jld2" --experiment-id "${experiment_id}" --config "${configuration_selection}" --results-dir "${results_directory}")
+for strength in "${explicit_strengths[@]}"; do manifest_arguments+=(--strength "${strength}"); done
+for threshold in "${explicit_thresholds[@]}"; do manifest_arguments+=(--threshold "${threshold}"); done
+
+if [[ "${preview}" == false ]]; then
+    mkdir -p "${log_directory}"
+    printf 'session\tkind\tstudy\tconfiguration\tstrength\treplicate\tdisposition\tlog\n' > "${job_manifest}.tmp"
+    "${julia_binary}" --startup-file=no "--project=${project_root}" "${manifest_worker}" \
+        "${manifest_arguments[@]}" > "${launch_directory}/manifest.log" 2>&1
+fi
+
+safe_tag() {
+    local value="${1,,}"
+    value="${value//./p}"; value="${value//-/m}"; value="${value//+/}"
+    echo "${value}"
+}
+
+start_session() {
+    local session="$1" kind="$2" configuration="$3" strength="$4" replicate="$5"
+    shift 5
+    local logfile="${log_directory}/${session}.log"
+    local worker_command quoted_logfile shell_command quoted_shell_command tmux_command
+    local -a command_parts=("$@")
+    planned=$((planned + 1))
+    [[ -n "${first_session}" ]] || first_session="${session}"
+    printf -v worker_command '%q ' "${command_parts[@]}"
+    if [[ "${preview}" == true ]]; then
+        echo "Would start ${session}: ${worker_command}"
+        return
+    fi
+    if tmux has-session -t "=${session}" 2>/dev/null; then
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${session}" "${kind}" "${study}" "${configuration}" "${strength}" "${replicate}" skipped_active "${logfile}" >> "${job_manifest}.tmp"
+        echo "Skipping active tmux session ${session}"
+        skipped=$((skipped + 1))
+        return
+    fi
+    printf -v quoted_logfile '%q' "${logfile}"
+    shell_command="set -o pipefail; export OPENBLAS_NUM_THREADS=${openblas_threads}; export OMP_NUM_THREADS=${omp_threads}; ${worker_command}2>&1 | tee -a ${quoted_logfile}"
+    printf -v quoted_shell_command '%q' "${shell_command}"
+    tmux_command="bash -lc ${quoted_shell_command}"
+    tmux new-session -d -s "${session}" "${tmux_command}"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${session}" "${kind}" "${study}" "${configuration}" "${strength}" "${replicate}" submitted "${logfile}" >> "${job_manifest}.tmp"
+    echo "Started ${session}; log: ${logfile}"
+    submitted=$((submitted + 1))
+}
+
+for configuration in "${selected_configurations[@]}"; do
+    read -r -a strengths <<< "${strengths_by_configuration[${configuration}]}"
+    configuration_tag="${configuration//-/_}"
+    for strength in "${strengths[@]}"; do
+        strength_tag="$(safe_tag "${strength}")"
+        if [[ "${analysis_only}" == false ]]; then
+            for replicate in 1 2 3; do
+                replicate_tag="$(printf 'r%02d' "${replicate}")"
+                session="${session_prefix}_${experiment_id}_${configuration_tag}_${strength_tag}_${replicate_tag}"
+                command=("${julia_binary}" --startup-file=no "--project=${project_root}" "${training_worker}" --study "${study}" --experiment-id "${experiment_id}" --config "${configuration}" --strength "${strength}" --replicate "${replicate}" --results-dir "${results_directory}")
+                for threshold in "${explicit_thresholds[@]}"; do command+=(--threshold "${threshold}"); done
+                [[ "${retry_failed}" == false ]] || command+=(--retry-failed)
+                start_session "${session}" training "${configuration}" "${strength}" "${replicate}" "${command[@]}"
+            done
+        fi
+    done
+    session="${session_prefix}_${experiment_id}_${configuration_tag}_analyze"
+    analysis_command=("${julia_binary}" --startup-file=no "--project=${project_root}" "${analysis_worker}" --study "${study}" --experiment-id "${experiment_id}" --config "${configuration}" --results-dir "${results_directory}")
+    for strength in "${strengths[@]}"; do analysis_command+=(--strength "${strength}"); done
+    [[ "${retry_failed}" == false ]] || analysis_command+=(--retry-failed)
+    start_session "${session}" analysis "${configuration}" "${strengths[*]}" 0 "${analysis_command[@]}"
+done
+
+if [[ "${preview}" == true ]]; then
+    echo; echo "Previewed ${planned} Ra=5e4 sessions. No files or processes were created."
+    echo "Experiment ID: ${experiment_id}"
+    exit 0
+fi
+
+mv "${job_manifest}.tmp" "${job_manifest}"
+{
+    echo "launch_id=${launch_id}"; echo "experiment_id=${experiment_id}"; echo "study=${study}"
+    echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "configuration=${configuration_selection}"
+    echo "explicit_strengths=${explicit_strengths[*]}"; echo "explicit_thresholds=${explicit_thresholds[*]}"
+    echo "analysis_only=${analysis_only}"; echo "retry_failed=${retry_failed}"
+    echo "openblas_threads=${openblas_threads}"; echo "omp_threads=${omp_threads}"
+    echo "planned_sessions=${planned}"; echo "submitted_sessions=${submitted}"
+    echo "skipped_active_sessions=${skipped}"; echo "results_directory=${results_directory}"
+} > "${launch_directory}/launch.env"
+
+echo; echo "Planned ${planned} sessions; submitted ${submitted}; skipped ${skipped} active sessions."
+echo "Experiment ID: ${experiment_id}"
+echo "Result directory: ${results_directory}/${study}/${experiment_id}"
+echo "All sessions close automatically when their worker exits."
+echo "Launch manifest: ${job_manifest}"
+echo "Inspect sessions: tmux ls"
+[[ -z "${first_session}" ]] || echo "Attach: tmux attach -t ${first_session}"

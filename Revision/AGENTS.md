@@ -170,8 +170,14 @@ Sparse Sensing paper.
   `launch_tmux_ra1e5.sh`: Separate public launchers backed by shared tmux slot
   mechanics. Per Rayleigh number they launch 40 train, 2 validation, or 4 test
   shards and keep every result below `Higher_Ra_Study/Distillation_Corpuses`.
-- `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert-extraction and local
-  higher-Ra distillation-corpus stages plus the planned GO/GR workflow.
+- `Higher_Ra_Study/GO_GR_Study/`: Package-8-style Higher-Ra GO/GR production
+  study limited to GC/SC. Each Rayleigh number has four configurations, five
+  frozen strengths, three paired replicates, 100,000 updates, and independent
+  tmux launchers for 60 training plus four analysis workers. Each analyzer
+  freezes and tests up to three unique sparsest Pareto candidates under
+  validation-MSE thresholds `0.03/0.015/0.0075`.
+- `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert extraction, local
+  distillation corpora, unactuated baselines, and GO/GR production workflow.
 
 ## Revision Run Files
 
