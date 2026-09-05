@@ -409,8 +409,14 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Selektionen, friert alle Kandidaten vor dem Test ein und wertet bis zu drei
     Kandidaten auf den acht passenden Higher-Ra-Testfällen aus.
   - Separate tmux-Launcher liegen für `ra5e4` und `ra1e5` vor; ein gemeinsames
-    Launcher-Skript wird bewusst nicht verwendet. Die Paper-Figure-Erzeugung
-    folgt erst nach Vorliegen der Produktionsresultate.
+    Launcher-Skript wird bewusst nicht verwendet.
+  - `GO_GR_Study/make_paper_figures.jl` erzeugt je Rayleigh-Zahl eine eigene
+    vierteilige GO/GR-×-GC/SC-Pareto-Figur mit allen drei Quality Thresholds
+    und den bis zu drei deduplizierten Kandidaten, eine vierteilige
+    Sensor-Maskenfigur sowie eine Markdown/CSV-Kandidatentabelle mit Expert
+    oben und Unactuated unten. Für die Maskenfigur gilt ein vorab festgelegtes
+    Test-Nähekriterium von höchstens 5 % höherem mittleren `state_Nu` als beim
+    Expert; darunter wird der sparsamste Kandidat gewählt.
 
   Abschluss:
 

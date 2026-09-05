@@ -316,7 +316,7 @@ function make_pareto_plot_loaded(options, records, pooled_front, output_director
         xaxis = PlotlyJS.attr(title = "Active groups"),
         yaxis = PlotlyJS.attr(title = "Validation expert-action matching (MSE)", type = "log"),
         legend = PlotlyJS.attr(title = PlotlyJS.attr(text = "Mask threshold")),
-        shapes,
+        shapes = shapes,
     ))
     paths = String[]
     for extension in ("svg", "pdf")

@@ -234,8 +234,26 @@ Each full launcher starts 60 training workers and four analysis/wait workers.
 Detailed restart, filter, selection, and output documentation is in
 `GO_GR_Study/README.md`.
 
+## Implemented fourth stage: paper figures and tables
+
+`GO_GR_Study/make_paper_figures.jl` produces separate publication artifacts
+for `ra5e4` and `ra1e5`. Per Rayleigh number it creates one four-panel Pareto
+figure and one four-panel sensor-mask figure covering `go-gc`, `go-sc`,
+`gr-gc`, and `gr-sc`, plus a Markdown/CSV table of every distinct tested
+quality-threshold candidate. The Pareto panels show the three validation-MSE
+thresholds `0.03/0.015/0.0075` and their selected candidates. Table rows list
+all thresholds represented by the candidate and omit thresholds without a
+qualifying point; Expert and Unactuated remain the first and final rows.
+
+For the sensor-mask figure, test-near-expert is defined before inspecting the
+candidate values as at most 5% higher mean test-set `state_Nu` than the expert.
+Since lower `state_Nu` is better, candidates better than the expert also
+qualify. The fewest-input candidate in this band is used, followed by active
+groups, test mean, validation MSE, and candidate ID as deterministic
+tie-breakers. The tolerance is an explicit command-line option, and the script
+refuses to substitute a candidate outside it.
+
 ## Remaining work
 
-- Implement `make_paper_figures.jl` after production results are available.
 - Interpret the pooled fronts and terminal-test trade-offs for both Rayleigh
-  numbers.
+  numbers after all analysis/test workers have completed.

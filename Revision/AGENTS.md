@@ -175,7 +175,10 @@ Sparse Sensing paper.
   frozen strengths, three paired replicates, 100,000 updates, and independent
   tmux launchers for 60 training plus four analysis workers. Each analyzer
   freezes and tests up to three unique sparsest Pareto candidates under
-  validation-MSE thresholds `0.03/0.015/0.0075`.
+  validation-MSE thresholds `0.03/0.015/0.0075`. Its paper generator writes
+  separate four-panel Pareto/mask figures and candidate tables per Rayleigh
+  number; mask display selection uses the sparsest tested candidate no more
+  than 5% above the expert mean test-set `state_Nu`.
 - `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert extraction, local
   distillation corpora, unactuated baselines, and GO/GR production workflow.
 

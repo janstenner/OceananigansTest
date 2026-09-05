@@ -109,5 +109,48 @@ candidate checkpoints. Each configuration analysis writes:
     candidate_03/
 ```
 
-Only directories for unique selected candidates are created. Paper-figure and
-paper-table generation is intentionally deferred to a later implementation.
+Only directories for unique selected candidates are created.
+
+## Paper artifacts
+
+`make_paper_figures.jl` reads the completed analysis artifacts and the local
+Higher-Ra baselines. It writes one independent paper directory per Rayleigh
+number. Each directory contains a four-panel GO/GR × GC/SC Pareto figure, a
+four-panel selected-mask figure, and a Markdown/CSV candidate table. The
+Pareto panels show all three validation-MSE quality thresholds and every
+distinct frozen candidate selected by them. A candidate selected by several
+quality thresholds is shown and tabulated once with all corresponding
+thresholds in its label.
+
+By default, the script resolves the newest experiment independently below
+each Rayleigh-number result root:
+
+```bash
+julia --startup-file=no --project=. \
+  Revision/Higher_Ra_Study/GO_GR_Study/make_paper_figures.jl
+```
+
+For the named production experiment and one Rayleigh number:
+
+```bash
+julia --startup-file=no --project=. \
+  Revision/Higher_Ra_Study/GO_GR_Study/make_paper_figures.jl \
+  --study ra5e4 --experiment-id higher_ra_prod_01
+```
+
+The mask figure chooses, within every configuration, the fewest-input tested
+candidate whose mean test-set `state_Nu` is no more than 5% above the expert
+mean. Lower `state_Nu` is better. This fixed, predeclared tolerance can be
+changed explicitly with `--near-expert-relative-tolerance`; the script errors
+instead of silently choosing a candidate outside the requested band.
+
+If an analysis worker failed, rerun only the four analyzers without restarting
+training:
+
+```bash
+bash Revision/Higher_Ra_Study/GO_GR_Study/launch_tmux_ra5e4.sh \
+  --analysis-only --retry-failed --experiment-id higher_ra_prod_01
+
+bash Revision/Higher_Ra_Study/GO_GR_Study/launch_tmux_ra1e5.sh \
+  --analysis-only --retry-failed --experiment-id higher_ra_prod_01
+```
