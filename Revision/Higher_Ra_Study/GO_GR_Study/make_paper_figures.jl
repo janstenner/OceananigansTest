@@ -814,8 +814,7 @@ function make_pareto_figure(configurations, output, study_tag)
     end
     isempty(all_losses) && error("No finite Higher-Ra evaluation losses were found.")
     y_min = min(minimum(all_losses), minimum(HR_QUALITY_THRESHOLDS))
-    y_max = max(maximum(all_losses), maximum(HR_QUALITY_THRESHOLDS))
-    y_range = [log10(y_min) - 0.15, log10(y_max) + 0.15]
+    y_range = [log10(y_min) - 0.15, log10(10.0)]
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => 1450, :height => 900,
         :title => attr(
