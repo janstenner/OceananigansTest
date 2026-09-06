@@ -393,6 +393,25 @@ replicates and every protocol test case sequentially. Per-episode files and
 worker status/results are atomic and restart-validated. The initial launcher
 starts no analysis worker.
 
+## Direct Masked RL Training (Package 11)
+
+`MaskedTraining/launch_tmux.sh` launches 40 detached training sessions: ten existing
+MAT-IPPO Comparison seed pairs for each Fixed/Varying x GC/SC combination.
+`prepare_runs.jl` freezes the four masks from the Package-7/8 selected candidates,
+minimizing active inputs and breaking ties by validation MSE. Current choices
+are Fixed GO-GC/GO-SC and Varying GO-GC/GR-SC. No test metric enters selection.
+The workers reuse the Comparison MAT initialization, 2000/4000 episode budgets,
+and exact Varying training IC sequences. All runs require Ra=1e4 and use the
+standard Revision run files, never Higher-Ra run files or corpora.
+
+`MaskedTraining.jl` masks only agent observations, including PPO current/next
+states and terminal callbacks. Full state is restored before every environment
+step and hook callback, so rewards retain all sensors. Masks never change during
+training. Atomic results preserve dense-reference provenance and training metrics;
+completed runs are skipped, failed runs restart from seed. Analysis and terminal
+test evaluation remain follow-up work; the production experiment is not complete
+until the runs and their evaluation have finished. See `MaskedTraining/README.md`.
+
 ## Maintenance Rules
 
 - Keep `Implementation_Plan.md` synchronized with revision-scope decisions and

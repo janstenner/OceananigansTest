@@ -426,6 +426,24 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
 - [ ] **Paket 11 — Additional Experiment: Direct RL Training on a Selected Sensor Set**
 
+  Implementierungsstand (2026-09-06):
+
+  - `MaskedTraining` implementiert den Trainingsrunner und einen analogen tmux-
+    Launcher für genau 40 Trainingsworker: zehn pro Fixed/Varying × GC/SC.
+  - Auswahl aus den eingefrorenen Paket-7/8-Kandidaten nach minimalen aktiven
+    Inputs, bei Gleichstand minimaler Validation-MSE: Fixed GO-GC/GO-SC,
+    Varying GO-GC/GR-SC. Die Masken bleiben während des RL-Trainings konstant.
+  - Exakte Übernahme der zehn vorhandenen MAT-IPPO-Seedpaare und vollständigen
+    Varying-Trainings-IC-Folgen; 2.000/4.000 Episoden mit derselben MAT-
+    Initialisierung. Vorhandene Dense-MAT-Runs werden als Referenz wiederverwendet.
+  - Ausschließlich Ra=1e4. Nur Agentenbeobachtungen inklusive PPO-`state` und
+    `next_state` werden maskiert; Simulation und Rewards sehen alle Sensoren.
+  - Atomare Ergebnisse, eingefrorene Provenienz, einzelne Logs, vollständige
+    Restart-Erkennung und Fehlerdiagnostik sind vorhanden. Unterbrochene Runs
+    starten mit demselben Seed neu; keine Fortsetzung mitten im Training.
+  - Produktionsruns und die anschließende aggregierte sowie deterministische
+    Validation-/Testauswertung stehen noch aus; das Paket bleibt offen.
+
   Umfang:
 
   - Reproduzierbarer Runner für direktes RL auf einer bereits ausgewählten und danach festen Sensormaske.
