@@ -416,7 +416,9 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Sensor-Maskenfigur sowie eine Markdown/CSV-Kandidatentabelle mit Expert
     oben und Unactuated unten. Für die Maskenfigur gilt ein vorab festgelegtes
     Test-Nähekriterium von höchstens 5 % höherem mittleren `state_Nu` als beim
-    Expert; darunter wird der sparsamste Kandidat gewählt.
+    Expert; darunter wird der sparsamste Kandidat gewählt. Die Tabelle bleibt
+    von diesem Filter unberührt und weist für alle getesteten Kandidaten die
+    vorzeichenbehaftete prozentuale Abweichung zum jeweiligen Expert aus.
 
   Abschluss:
 

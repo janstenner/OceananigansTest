@@ -425,6 +425,8 @@ configuration_label(configuration_name, thresholds) =
     "$configuration_name (q <= $(quality_label(thresholds)))"
 
 function table_rows(configurations, expert, unactuated)
+    deviation_from_expert(value) =
+        100 * (Float64(value) - expert.mean_state_nusselt) / abs(expert.mean_state_nusselt)
     rows = NamedTuple[(;
         configuration = "Full sensor set expert",
         base_configuration = "",
@@ -436,6 +438,7 @@ function table_rows(configurations, expert, unactuated)
         strength = missing,
         mask_threshold = missing,
         mean_state_nusselt = expert.mean_state_nusselt,
+        deviation_from_expert_percent = 0.0,
     )]
     for configuration_name in HR_CONFIGURATION_NAMES
         data = configurations[configuration_name]
@@ -454,6 +457,9 @@ function table_rows(configurations, expert, unactuated)
                 strength = Float64(candidate[:regularization_strength]),
                 mask_threshold = Float64(candidate[:threshold_value]),
                 mean_state_nusselt = Float64(frozen[:mean_state_nusselt]),
+                deviation_from_expert_percent = deviation_from_expert(
+                    frozen[:mean_state_nusselt],
+                ),
             ))
         end
     end
@@ -468,6 +474,9 @@ function table_rows(configurations, expert, unactuated)
         strength = missing,
         mask_threshold = missing,
         mean_state_nusselt = unactuated.mean_state_nusselt,
+        deviation_from_expert_percent = deviation_from_expert(
+            unactuated.mean_state_nusselt,
+        ),
     ))
     return rows
 end
@@ -492,7 +501,7 @@ function write_table(output, rows, study_tag)
     headers = (
         :configuration, :active_groups, :global_sc_sparsity_percent,
         :global_gc_sparsity_percent, :validation_mse, :strength,
-        :mask_threshold, :mean_state_nusselt,
+        :mask_threshold, :mean_state_nusselt, :deviation_from_expert_percent,
     )
     open(csv_path, "w") do io
         println(io, join(string.(headers), ','))
@@ -501,14 +510,16 @@ function write_table(output, rows, study_tag)
         end
     end
     fmt(value, format) = value === missing ? "" : Printf.format(Printf.Format(format), value)
+    fmt_deviation(value) = value === missing ? "" : iszero(value) ? "0.00%" :
+        Printf.format(Printf.Format("%+.2f%%"), value)
     open(markdown_path, "w") do io
         println(io, "# $(study(study_tag).label) selected candidates\n")
-        println(io, "| Configuration | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test mean(state_Nu) |")
-        println(io, "|---|---:|---:|---:|---:|---:|---:|---:|")
+        println(io, "| Configuration | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test mean(state_Nu) | Deviation from expert |")
+        println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")
         for row in rows
-            println(io, "| $(replace(row.configuration, "<=" => "≤")) | $(active_groups_value(row)) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) |")
+            println(io, "| $(replace(row.configuration, "<=" => "≤")) | $(active_groups_value(row)) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) | $(fmt_deviation(row.deviation_from_expert_percent)) |")
         end
-        println(io, "\nEach distinct frozen test candidate appears once. If several quality thresholds select the same candidate, all of those thresholds are listed in its Configuration cell. Thresholds without a qualifying pooled-front point contribute no row. Test mean(state_Nu) is the mean over all stored per-step values from the eight 200-step test episodes; lower is better. SC sparsity uses 8×48×3 channel inputs. GC sparsity treats a sensor location as occupied when any of its three channels is active.")
+        println(io, "\nEach distinct frozen test candidate appears once, independently of the 5% near-expert filter used only for the sensor-mask figure. If several quality thresholds select the same candidate, all of those thresholds are listed in its Configuration cell. Thresholds without a qualifying pooled-front point contribute no row. Test mean(state_Nu) is the mean over all stored per-step values from the eight 200-step test episodes; lower is better. Deviation from expert is 100×(candidate mean − expert mean)/|expert mean|, so positive values are worse and negative values are better than the matching Rayleigh-specific expert. SC sparsity uses 8×48×3 channel inputs. GC sparsity treats a sensor location as occupied when any of its three channels is active.")
     end
     return (; csv_path, markdown_path)
 end

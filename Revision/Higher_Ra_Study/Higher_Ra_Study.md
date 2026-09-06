@@ -244,6 +244,10 @@ quality-threshold candidate. The Pareto panels show the three validation-MSE
 thresholds `0.03/0.015/0.0075` and their selected candidates. Table rows list
 all thresholds represented by the candidate and omit thresholds without a
 qualifying point; Expert and Unactuated remain the first and final rows.
+The table is not filtered by the mask figure's near-expert criterion. Its
+signed percentage-deviation column compares each test mean `state_Nu` with
+the matching Rayleigh-specific expert; positive values are worse and negative
+values are better.
 
 For the sensor-mask figure, test-near-expert is defined before inspecting the
 candidate values as at most 5% higher mean test-set `state_Nu` than the expert.

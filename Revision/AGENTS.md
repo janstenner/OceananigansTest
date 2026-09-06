@@ -178,7 +178,9 @@ Sparse Sensing paper.
   validation-MSE thresholds `0.03/0.015/0.0075`. Its paper generator writes
   separate four-panel Pareto/mask figures and candidate tables per Rayleigh
   number; mask display selection uses the sparsest tested candidate no more
-  than 5% above the expert mean test-set `state_Nu`.
+  than 5% above the expert mean test-set `state_Nu`. Tables remain unfiltered
+  and report signed percent deviation from the matching Rayleigh-specific
+  expert for every tested candidate and the unactuated baseline.
 - `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert extraction, local
   distillation corpora, unactuated baselines, and GO/GR production workflow.
 

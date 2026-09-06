@@ -120,7 +120,11 @@ four-panel selected-mask figure, and a Markdown/CSV candidate table. The
 Pareto panels show all three validation-MSE quality thresholds and every
 distinct frozen candidate selected by them. A candidate selected by several
 quality thresholds is shown and tabulated once with all corresponding
-thresholds in its label.
+thresholds in its label. The table includes every frozen, tested candidate;
+the 5% near-expert rule is used only for choosing the four displayed masks.
+Its final column reports the signed percentage deviation of test mean
+`state_Nu` from the matching Rayleigh-specific expert, with positive values
+meaning worse and negative values meaning better performance.
 
 By default, the script resolves the newest experiment independently below
 each Rayleigh-number result root:
