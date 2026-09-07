@@ -142,4 +142,5 @@ and the currently possible plots below `results/collected`. Learning curves use
 the MAT--IPPO comparison design: rolling-50 curves for individual runs, a solid
 median curve with an interquartile-range ribbon, and a dashed arithmetic-mean
 curve. The five individual replicates are drawn above the ribbon with solid
-lines so that they remain distinguishable from the dashed mean curves.
+lines so that they remain distinguishable from the dashed mean curves. The
+learning-curve and final-performance plots are exported as both SVG and PDF.

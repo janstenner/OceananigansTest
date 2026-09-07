@@ -436,9 +436,11 @@ function plot_learning_curves(records, output_directory)
                 hovermode = "x unified",
             ),
         )
-        output = joinpath(output_directory, "learning_curves_$(protocol).svg")
-        PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
-        push!(outputs, output)
+        for extension in ("svg", "pdf")
+            output = joinpath(output_directory, "learning_curves_$(protocol).$(extension)")
+            PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
+            push!(outputs, output)
+        end
     end
     return outputs
 end
@@ -546,9 +548,11 @@ function plot_final_performance(rows, output_directory)
                 ),
             ),
         )
-        output = joinpath(output_directory, "final_performance_$(protocol).svg")
-        PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
-        push!(outputs, output)
+        for extension in ("svg", "pdf")
+            output = joinpath(output_directory, "final_performance_$(protocol).$(extension)")
+            PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
+            push!(outputs, output)
+        end
     end
     return outputs
 end
@@ -675,7 +679,7 @@ function main(arguments = ARGS)
 
     for protocol in PROTOCOLS
         for prefix in ("learning_curves", "final_performance", "runtimes")
-            for extension in ("png", "svg")
+            for extension in ("png", "svg", "pdf")
                 rm(joinpath(output_directory, "$(prefix)_$(protocol).$(extension)"); force = true)
             end
         end

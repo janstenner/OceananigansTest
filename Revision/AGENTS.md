@@ -245,7 +245,8 @@ ignored, while pairing mismatches among collected files remain errors.
 Its learning-curve plots follow the MAT--IPPO comparison design with
 individual rolling-50 runs, the median and IQR, and a dashed arithmetic mean.
 Individual replicate curves are drawn above the IQR ribbon. All individual
-runs are solid, and only arithmetic-mean curves are dashed.
+runs are solid, and only arithmetic-mean curves are dashed. Learning-curve and
+final-performance figures are exported as both SVG and PDF for paper use.
 Generated result trees are ignored by Git.
 
 ## Varying-IC Corpus Design
