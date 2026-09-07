@@ -116,3 +116,10 @@ runtime plots. CSV files contain run diagnostics, pairing, failures, MAT expert
 ranking, and curve statistics including mean, standard deviation, median,
 quartiles, and the actual mean deviation below and above the mean. A compact
 `collected_results.jld2` stores the same analysis without duplicating agents.
+
+For paper use, the collector also writes three combined two-panel SVGs with
+Fixed IC on the left, Varying IC on the right, and one horizontal legend below
+both panels: `learning_curves_combined.svg`,
+`validation_performance_combined.svg`, and
+`final_last100_paired_combined.svg`. These use the same paper-readable
+typography and median/IQR/mean conventions as the MAT stability figures.

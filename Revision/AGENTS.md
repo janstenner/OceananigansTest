@@ -36,7 +36,9 @@ Sparse Sensing paper.
   instructions for package 3.
 - `MAT_IPPO_Comparison/`: Dynamic seed/IC planning, Package-3 import, paired
   MAT/IPPO workers, persistent tmux launch, deterministic validation, and
-  incremental collection for package 4.
+  incremental collection for package 4. Its collector additionally produces
+  paper-ready combined Fixed/Varying learning, validation, and paired final-100
+  figures with shared horizontal legends below the panels.
 - `MAT_IPPO_Comparison/README.md`: Server workflow, restart, import,
   validation, storage, and collection instructions for package 4.
 - `MAT_expert_training/`: Validation-ranked all-ten MAT continuation for

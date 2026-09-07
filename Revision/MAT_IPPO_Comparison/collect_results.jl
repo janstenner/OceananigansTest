@@ -304,6 +304,448 @@ function save_svg(plot, stem)
     return output
 end
 
+function preserved_subplot_axis(plot_handle, key::Symbol, styling)
+    existing = get(plot_handle.plot.layout.fields, key, Dict{Any, Any}())
+    fields = Dict{Symbol, Any}(Symbol(name) => value for (name, value) in existing)
+    merge!(fields, styling.fields)
+    return attr(; fields...)
+end
+
+function position_subplot_titles!(plot_handle)
+    annotations = plot_handle.plot.layout.fields[:annotations]
+    annotations[1].fields[:x] = 0.23
+    annotations[1].fields[:font] = attr(size = 30, color = "#252525")
+    annotations[2].fields[:x] = 0.77
+    annotations[2].fields[:font] = attr(size = 30, color = "#252525")
+    return plot_handle
+end
+
+function combined_axis_styles(xlabel, ylabel; categorical = false)
+    xaxis_fields = Dict{Symbol, Any}(
+        :title => attr(text = xlabel, standoff = 12),
+        :showline => true,
+        :mirror => true,
+        :linecolor => "#3A3A3A",
+        :linewidth => 1,
+        :ticks => "outside",
+        :gridcolor => "#E6E6E6",
+        :zeroline => false,
+    )
+    if categorical
+        xaxis_fields[:tickmode] = "array"
+        xaxis_fields[:tickvals] = [1, 2]
+        xaxis_fields[:ticktext] = ["MAT", "IPPO"]
+        xaxis_fields[:range] = [0.55, 2.45]
+        xaxis_fields[:showgrid] = false
+    end
+    yaxis = attr(
+        showline = true,
+        mirror = true,
+        linecolor = "#3A3A3A",
+        linewidth = 1,
+        ticks = "outside",
+        gridcolor = "#E6E6E6",
+        zeroline = false,
+    )
+    yaxis_fields = Dict{Symbol, Any}(yaxis.fields)
+    yaxis_fields[:title] = attr(text = ylabel, standoff = 12)
+    return attr(; xaxis_fields...), yaxis, attr(; yaxis_fields...)
+end
+
+function plot_learning_curves_combined(records, stats, plot_directory)
+    plot_handle = make_subplots(
+        rows = 1,
+        cols = 2,
+        horizontal_spacing = 0.08,
+        subplot_titles = reshape(["(a) Fixed IC", "(b) Varying IC"], :, 1),
+    )
+    trace_count = 0
+    for (column, protocol) in enumerate((:fixed, :varying))
+        available = [record for record in records if
+                     record.protocol == protocol && length(record.rewards) >= WINDOW]
+        for (algorithm_index, algorithm) in enumerate((:mat, :ippo))
+            subset = [record for record in available if record.algorithm == algorithm]
+            aggregate = [row for row in stats if
+                         row.protocol == protocol && row.algorithm == algorithm]
+            isempty(subset) && continue
+            isempty(aggregate) && continue
+            episodes = getproperty.(aggregate, :episode)
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = episodes,
+                    y = getproperty.(aggregate, :q25),
+                    mode = "lines",
+                    line = attr(width = 0),
+                    hoverinfo = "skip",
+                    showlegend = false,
+                ),
+                row = 1,
+                col = column,
+            )
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = episodes,
+                    y = getproperty.(aggregate, :q75),
+                    mode = "lines",
+                    line = attr(width = 0),
+                    fill = "tonexty",
+                    fillcolor = RIBBON_COLORS[algorithm],
+                    hoverinfo = "skip",
+                    showlegend = false,
+                ),
+                row = 1,
+                col = column,
+            )
+            for record in subset
+                curve = rolling_mean(record.rewards)
+                add_trace!(
+                    plot_handle,
+                    scatter(
+                        x = collect(WINDOW:(WINDOW + length(curve) - 1)),
+                        y = curve,
+                        mode = "lines",
+                        line = attr(color = RUN_COLORS[algorithm], width = 1.25),
+                        hoverinfo = "skip",
+                        showlegend = false,
+                    ),
+                    row = 1,
+                    col = column,
+                )
+            end
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = episodes,
+                    y = getproperty.(aggregate, :median),
+                    mode = "lines",
+                    name = LABELS[algorithm],
+                    legendrank = algorithm_index,
+                    showlegend = column == 1,
+                    line = attr(color = COLORS[algorithm], width = 3),
+                    hovertemplate = "Episode %{x}<br>Median %{y:.2f}<extra>%{fullData.name}</extra>",
+                ),
+                row = 1,
+                col = column,
+            )
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = episodes,
+                    y = getproperty.(aggregate, :mean),
+                    mode = "lines",
+                    name = "$(LABELS[algorithm]) mean",
+                    showlegend = false,
+                    line = attr(color = COLORS[algorithm], width = 2, dash = "dash"),
+                    hovertemplate = "Episode %{x}<br>Mean %{y:.2f}<extra>%{fullData.name}</extra>",
+                ),
+                row = 1,
+                col = column,
+            )
+            trace_count += 1
+        end
+    end
+    trace_count == 0 && return nothing
+
+    for (name, rank, line_style) in (
+        ("Individual runs", 10, attr(color = "rgba(70, 70, 70, 0.30)", width = 1.25)),
+        ("Median + IQR", 11, attr(color = "#555555", width = 3)),
+        ("Arithmetic mean", 12, attr(color = "#555555", width = 2, dash = "dash")),
+    )
+        add_trace!(
+            plot_handle,
+            scatter(
+                x = [NaN],
+                y = [NaN],
+                mode = "lines",
+                name = name,
+                legendrank = rank,
+                showlegend = true,
+                line = line_style,
+                hoverinfo = "skip",
+            ),
+            row = 1,
+            col = 1,
+        )
+    end
+
+    xaxis, yaxis, yaxis_with_title = combined_axis_styles(
+        "Episode",
+        "Score (rolling mean, window=$WINDOW)",
+    )
+    left_xaxis_fields = Dict{Symbol, Any}(xaxis.fields)
+    left_xaxis_fields[:domain] = [0.0, 0.46]
+    right_xaxis_fields = Dict{Symbol, Any}(xaxis.fields)
+    right_xaxis_fields[:domain] = [0.54, 1.0]
+    position_subplot_titles!(plot_handle)
+    relayout!(
+        plot_handle,
+        template = "plotly_white",
+        paper_bgcolor = "white",
+        plot_bgcolor = "white",
+        width = 1500,
+        height = 700,
+        margin = attr(l = 125, r = 35, t = 85, b = 175),
+        font = attr(family = "Arial, sans-serif", size = 26, color = "#303030"),
+        xaxis = preserved_subplot_axis(plot_handle, :xaxis, attr(; left_xaxis_fields...)),
+        xaxis2 = preserved_subplot_axis(plot_handle, :xaxis2, attr(; right_xaxis_fields...)),
+        yaxis = preserved_subplot_axis(plot_handle, :yaxis, yaxis_with_title),
+        yaxis2 = preserved_subplot_axis(plot_handle, :yaxis2, yaxis),
+        legend = attr(
+            orientation = "h",
+            x = 0.5,
+            y = -0.24,
+            xanchor = "center",
+            yanchor = "top",
+            traceorder = "normal",
+            bgcolor = "rgba(255, 255, 255, 0.92)",
+            bordercolor = "#CFCFCF",
+            borderwidth = 1,
+            font = attr(size = 24),
+        ),
+        hovermode = "x unified",
+    )
+    output = joinpath(plot_directory, "learning_curves_combined.svg")
+    PlotlyJS.savefig(plot_handle, output; width = 1500, height = 700)
+    return output
+end
+
+function plot_validation_performance_combined(final, plot_directory)
+    plot_handle = make_subplots(
+        rows = 1,
+        cols = 2,
+        horizontal_spacing = 0.08,
+        subplot_titles = reshape(["(a) Fixed IC", "(b) Varying IC"], :, 1),
+    )
+    trace_count = 0
+    for (column, protocol) in enumerate((:fixed, :varying))
+        for (position, algorithm) in enumerate((:mat, :ippo))
+            values = Float64[row.validation_mean for row in final if
+                             row.protocol == protocol && row.algorithm == algorithm &&
+                             !ismissing(row.validation_mean)]
+            isempty(values) && continue
+            jitter = collect(range(-0.08, 0.08; length = length(values)))
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = position .+ jitter,
+                    y = values,
+                    mode = "markers",
+                    marker = attr(
+                        color = COLORS[algorithm],
+                        size = 10,
+                        opacity = 0.85,
+                        line = attr(color = "white", width = 1),
+                    ),
+                    showlegend = false,
+                    hovertemplate = "Validation score %{y:.2f}<extra>$(LABELS[algorithm])</extra>",
+                ),
+                row = 1,
+                col = column,
+            )
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = [position - 0.16, position + 0.16],
+                    y = fill(median(values), 2),
+                    mode = "lines",
+                    line = attr(color = "#202020", width = 4),
+                    showlegend = false,
+                    hovertemplate = "Median %{y:.2f}<extra></extra>",
+                ),
+                row = 1,
+                col = column,
+            )
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = [position, position],
+                    y = [quantile(values, 0.25), quantile(values, 0.75)],
+                    mode = "lines",
+                    line = attr(color = "#202020", width = 2),
+                    showlegend = false,
+                    hoverinfo = "skip",
+                ),
+                row = 1,
+                col = column,
+            )
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = [position],
+                    y = [mean(values)],
+                    mode = "markers",
+                    marker = attr(
+                        color = COLORS[algorithm],
+                        symbol = "diamond",
+                        size = 15,
+                        line = attr(color = "#202020", width = 1.5),
+                    ),
+                    showlegend = false,
+                    hovertemplate = "Arithmetic mean %{y:.2f}<extra>$(LABELS[algorithm])</extra>",
+                ),
+                row = 1,
+                col = column,
+            )
+            trace_count += 1
+        end
+    end
+    trace_count == 0 && return nothing
+
+    legend_traces = (
+        scatter(x = [NaN], y = [NaN], mode = "markers", name = "Individual runs",
+                marker = attr(color = "#777777", size = 10), showlegend = true),
+        scatter(x = [NaN], y = [NaN], mode = "lines", name = "Median + IQR",
+                line = attr(color = "#202020", width = 3), showlegend = true),
+        scatter(x = [NaN], y = [NaN], mode = "markers", name = "Arithmetic mean",
+                marker = attr(color = "#777777", symbol = "diamond", size = 15,
+                              line = attr(color = "#202020", width = 1.5)), showlegend = true),
+    )
+    for trace in legend_traces
+        add_trace!(plot_handle, trace, row = 1, col = 1)
+    end
+
+    xaxis, yaxis, yaxis_with_title = combined_axis_styles(
+        "Algorithm",
+        "Deterministic validation score";
+        categorical = true,
+    )
+    left_xaxis_fields = Dict{Symbol, Any}(xaxis.fields)
+    left_xaxis_fields[:domain] = [0.0, 0.46]
+    right_xaxis_fields = Dict{Symbol, Any}(xaxis.fields)
+    right_xaxis_fields[:domain] = [0.54, 1.0]
+    position_subplot_titles!(plot_handle)
+    relayout!(
+        plot_handle,
+        template = "plotly_white",
+        paper_bgcolor = "white",
+        plot_bgcolor = "white",
+        width = 1400,
+        height = 650,
+        margin = attr(l = 125, r = 35, t = 85, b = 160),
+        font = attr(family = "Arial, sans-serif", size = 26, color = "#303030"),
+        xaxis = preserved_subplot_axis(plot_handle, :xaxis, attr(; left_xaxis_fields...)),
+        xaxis2 = preserved_subplot_axis(plot_handle, :xaxis2, attr(; right_xaxis_fields...)),
+        yaxis = preserved_subplot_axis(plot_handle, :yaxis, yaxis_with_title),
+        yaxis2 = preserved_subplot_axis(plot_handle, :yaxis2, yaxis),
+        legend = attr(
+            orientation = "h",
+            x = 0.5,
+            y = -0.28,
+            xanchor = "center",
+            yanchor = "top",
+            bgcolor = "rgba(255, 255, 255, 0.92)",
+            bordercolor = "#CFCFCF",
+            borderwidth = 1,
+            font = attr(size = 24),
+        ),
+    )
+    output = joinpath(plot_directory, "validation_performance_combined.svg")
+    PlotlyJS.savefig(plot_handle, output; width = 1400, height = 650)
+    return output
+end
+
+function plot_final_last100_paired_combined(paired, plot_directory)
+    plot_handle = make_subplots(
+        rows = 1,
+        cols = 2,
+        horizontal_spacing = 0.08,
+        subplot_titles = reshape(["(a) Fixed IC", "(b) Varying IC"], :, 1),
+    )
+    trace_count = 0
+    for (column, protocol) in enumerate((:fixed, :varying))
+        rows = [row for row in paired if row.protocol == protocol &&
+                !ismissing(row.mat_final_last100) && !ismissing(row.ippo_final_last100)]
+        isempty(rows) && continue
+        for (index, row) in enumerate(rows)
+            add_trace!(
+                plot_handle,
+                scatter(
+                    x = [1, 2],
+                    y = [row.mat_final_last100, row.ippo_final_last100],
+                    mode = "lines+markers",
+                    name = "Paired runs",
+                    legendrank = 1,
+                    showlegend = column == 1 && index == 1,
+                    line = attr(color = "rgba(90, 90, 90, 0.45)", width = 1.5),
+                    marker = attr(
+                        color = [COLORS[:mat], COLORS[:ippo]],
+                        size = 10,
+                        line = attr(color = "white", width = 1),
+                    ),
+                    text = [row.run_id, row.run_id],
+                    hovertemplate = "%{text}<br>Final-100 mean %{y:.2f}<extra></extra>",
+                ),
+                row = 1,
+                col = column,
+            )
+        end
+        add_trace!(
+            plot_handle,
+            scatter(
+                x = [1, 2],
+                y = [mean(Float64[row.mat_final_last100 for row in rows]),
+                     mean(Float64[row.ippo_final_last100 for row in rows])],
+                mode = "markers",
+                name = "Arithmetic mean",
+                legendrank = 2,
+                showlegend = column == 1,
+                marker = attr(
+                    color = [COLORS[:mat], COLORS[:ippo]],
+                    symbol = "diamond",
+                    size = 16,
+                    line = attr(color = "#202020", width = 1.5),
+                ),
+                hovertemplate = "Arithmetic mean %{y:.2f}<extra></extra>",
+            ),
+            row = 1,
+            col = column,
+        )
+        trace_count += 1
+    end
+    trace_count == 0 && return nothing
+
+    xaxis, yaxis, yaxis_with_title = combined_axis_styles(
+        "Algorithm",
+        "Mean score over final 100 episodes";
+        categorical = true,
+    )
+    left_xaxis_fields = Dict{Symbol, Any}(xaxis.fields)
+    left_xaxis_fields[:domain] = [0.0, 0.46]
+    right_xaxis_fields = Dict{Symbol, Any}(xaxis.fields)
+    right_xaxis_fields[:domain] = [0.54, 1.0]
+    position_subplot_titles!(plot_handle)
+    relayout!(
+        plot_handle,
+        template = "plotly_white",
+        paper_bgcolor = "white",
+        plot_bgcolor = "white",
+        width = 1400,
+        height = 650,
+        margin = attr(l = 125, r = 35, t = 85, b = 160),
+        font = attr(family = "Arial, sans-serif", size = 26, color = "#303030"),
+        xaxis = preserved_subplot_axis(plot_handle, :xaxis, attr(; left_xaxis_fields...)),
+        xaxis2 = preserved_subplot_axis(plot_handle, :xaxis2, attr(; right_xaxis_fields...)),
+        yaxis = preserved_subplot_axis(plot_handle, :yaxis, yaxis_with_title),
+        yaxis2 = preserved_subplot_axis(plot_handle, :yaxis2, yaxis),
+        legend = attr(
+            orientation = "h",
+            x = 0.5,
+            y = -0.28,
+            xanchor = "center",
+            yanchor = "top",
+            bgcolor = "rgba(255, 255, 255, 0.92)",
+            bordercolor = "#CFCFCF",
+            borderwidth = 1,
+            font = attr(size = 24),
+        ),
+    )
+    output = joinpath(plot_directory, "final_last100_paired_combined.svg")
+    PlotlyJS.savefig(plot_handle, output; width = 1400, height = 650)
+    return output
+end
+
 function plot_learning_curves(records, stats, plot_directory)
     for protocol in (:fixed, :varying)
         available = [record for record in records if record.protocol == protocol && length(record.rewards) >= WINDOW]
@@ -854,6 +1296,9 @@ function main(arguments = ARGS)
     paired = paired_rows(final)
     experts = expert_rows(final)
     diagnostics = diagnostic_rows(final)
+    plot_learning_curves_combined(records, stats, plot_directory)
+    plot_validation_performance_combined(final, plot_directory)
+    plot_final_last100_paired_combined(paired, plot_directory)
     plot_learning_curves(records, stats, plot_directory)
     plot_paired_curves(paired_curves, paired_curve_stats, plot_directory)
     plot_summaries(final, paired, plot_directory)
