@@ -143,4 +143,7 @@ the MAT--IPPO comparison design: rolling-50 curves for individual runs, a solid
 median curve with an interquartile-range ribbon, and a dashed arithmetic-mean
 curve. The five individual replicates are drawn above the ribbon with solid
 lines so that they remain distinguishable from the dashed mean curves. The
-learning-curve and final-performance plots are exported as both SVG and PDF.
+Fixed-IC and Varying-IC panels are combined into one learning-curve figure and
+one final-performance figure. Each figure uses a single horizontal legend
+centered below both panels. Their typography is sized for full-width use in the
+paper.

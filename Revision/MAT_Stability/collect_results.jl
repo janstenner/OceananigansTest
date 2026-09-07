@@ -296,11 +296,22 @@ rolling_mean(values, width = WINDOW) = length(values) < width ? Float64[] : [
     mean(@view values[(index - width + 1):index]) for index in width:length(values)
 ]
 
-function plot_learning_curves(records, output_directory)
-    outputs = String[]
+function preserved_subplot_axis(plot_handle, key::Symbol, styling)
+    existing = get(plot_handle.plot.layout.fields, key, Dict{Any, Any}())
+    fields = Dict{Symbol, Any}(Symbol(name) => value for (name, value) in existing)
+    merge!(fields, styling.fields)
+    return attr(; fields...)
+end
 
-    for protocol in PROTOCOLS
-        traces = PlotlyJS.GenericTrace[]
+function plot_learning_curves(records, output_directory)
+    plot_handle = make_subplots(
+        rows = 1,
+        cols = 2,
+        horizontal_spacing = 0.08,
+        subplot_titles = reshape(["(a) Fixed IC", "(b) Varying IC"], :, 1),
+    )
+    trace_count = 0
+    for (column, protocol) in enumerate(PROTOCOLS)
         for (config_index, config_name) in enumerate(CONFIG_NAMES)
             series = [
                 rolling_mean(records[(protocol, replicate, config_name)].rewards)
@@ -317,8 +328,8 @@ function plot_learning_curves(records, output_directory)
             q25 = [quantile(@view(values[index, :]), 0.25) for index in 1:episode_count]
             q75 = [quantile(@view(values[index, :]), 0.75) for index in 1:episode_count]
             episodes = collect(WINDOW:(WINDOW + episode_count - 1))
-            push!(
-                traces,
+            add_trace!(
+                plot_handle,
                 scatter(
                     x = episodes,
                     y = q25,
@@ -327,28 +338,11 @@ function plot_learning_curves(records, output_directory)
                     hoverinfo = "skip",
                     showlegend = false,
                 ),
+                row = 1,
+                col = column,
             )
-            for (index, run) in enumerate(series)
-                push!(
-                    traces,
-                    scatter(
-                        x = episodes,
-                        y = run[1:episode_count],
-                        mode = "lines",
-                        name = "$(CONFIG_DISPLAY_NAMES[config_name]) runs (n=$(length(series)))",
-                        legendgroup = "$(config_name)_runs",
-                        legendrank = 10 * config_index,
-                        showlegend = index == 1,
-                        line = attr(
-                            color = CONFIG_RUN_COLORS[config_name],
-                            width = 1.25,
-                        ),
-                        hoverinfo = "skip",
-                    ),
-                )
-            end
-            push!(
-                traces,
+            add_trace!(
+                plot_handle,
                 scatter(
                     x = episodes,
                     y = q75,
@@ -359,98 +353,165 @@ function plot_learning_curves(records, output_directory)
                     hoverinfo = "skip",
                     showlegend = false,
                 ),
+                row = 1,
+                col = column,
             )
-            push!(
-                traces,
+            for (index, run) in enumerate(series)
+                add_trace!(
+                    plot_handle,
+                    scatter(
+                        x = episodes,
+                        y = run[1:episode_count],
+                        mode = "lines",
+                        name = "$(CONFIG_DISPLAY_NAMES[config_name]) runs (n=$(length(series)))",
+                        legendgroup = "$(config_name)_runs",
+                        legendrank = 10 * config_index,
+                        showlegend = false,
+                        line = attr(
+                            color = CONFIG_RUN_COLORS[config_name],
+                            width = 1.25,
+                        ),
+                        hoverinfo = "skip",
+                    ),
+                    row = 1,
+                    col = column,
+                )
+            end
+            add_trace!(
+                plot_handle,
                 scatter(
                     x = episodes,
                     y = medians,
                     mode = "lines",
-                    name = "$(CONFIG_DISPLAY_NAMES[config_name]) median + IQR",
-                    legendrank = 10 * config_index + 1,
+                    name = CONFIG_DISPLAY_NAMES[config_name],
+                    legendgroup = "$(config_name)_median",
+                    legendrank = config_index,
+                    showlegend = column == 1,
                     line = attr(color = CONFIG_COLORS[config_name], width = 3),
                     hovertemplate = "Episode %{x}<br>Median %{y:.2f}<extra>%{fullData.name}</extra>",
                 ),
+                row = 1,
+                col = column,
             )
-            push!(
-                traces,
+            add_trace!(
+                plot_handle,
                 scatter(
                     x = episodes,
                     y = means,
                     mode = "lines",
                     name = "$(CONFIG_DISPLAY_NAMES[config_name]) mean",
-                    legendrank = 10 * config_index + 2,
+                    legendgroup = "$(config_name)_mean",
+                    legendrank = 100 + config_index,
+                    showlegend = false,
                     line = attr(color = CONFIG_COLORS[config_name], width = 2, dash = "dash"),
                     hovertemplate = "Episode %{x}<br>Mean %{y:.2f}<extra>%{fullData.name}</extra>",
                 ),
+                row = 1,
+                col = column,
             )
-        end
-        isempty(traces) && continue
-        plot_handle = Plot(
-            traces,
-            Layout(
-                template = "plotly_white",
-                title = attr(
-                    text = "MAT stability - $(PROTOCOL_DISPLAY_NAMES[protocol])",
-                    x = 0.5,
-                    xanchor = "center",
-                    font = attr(size = 22, color = "#252525"),
-                ),
-                paper_bgcolor = "white",
-                plot_bgcolor = "white",
-                width = 900,
-                height = 560,
-                margin = attr(l = 100, r = 30, t = 80, b = 85),
-                font = attr(family = "Arial, sans-serif", size = 15, color = "#303030"),
-                xaxis = attr(
-                    title = attr(text = "Episode", standoff = 12),
-                    showline = true,
-                    mirror = true,
-                    linecolor = "#3A3A3A",
-                    linewidth = 1,
-                    ticks = "outside",
-                    gridcolor = "#E6E6E6",
-                    zeroline = false,
-                ),
-                yaxis = attr(
-                    title = attr(text = "Score (rolling mean, window=$WINDOW)", standoff = 12),
-                    showline = true,
-                    mirror = true,
-                    linecolor = "#3A3A3A",
-                    linewidth = 1,
-                    ticks = "outside",
-                    gridcolor = "#E6E6E6",
-                    zeroline = false,
-                ),
-                legend = attr(
-                    x = 0.985,
-                    y = 0.02,
-                    xanchor = "right",
-                    yanchor = "bottom",
-                    traceorder = "normal",
-                    bgcolor = "rgba(255, 255, 255, 0.92)",
-                    bordercolor = "#CFCFCF",
-                    borderwidth = 1,
-                    font = attr(size = 13),
-                ),
-                hovermode = "x unified",
-            ),
-        )
-        for extension in ("svg", "pdf")
-            output = joinpath(output_directory, "learning_curves_$(protocol).$(extension)")
-            PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
-            push!(outputs, output)
+            trace_count += 1
         end
     end
-    return outputs
+    trace_count == 0 && return String[]
+
+    for (name, rank, line_style) in (
+        ("Individual runs", 10, attr(color = "rgba(70, 70, 70, 0.30)", width = 1.25)),
+        ("Median + IQR", 11, attr(color = "#555555", width = 3)),
+        ("Arithmetic mean", 12, attr(color = "#555555", width = 2, dash = "dash")),
+    )
+        add_trace!(
+            plot_handle,
+            scatter(
+                x = [NaN],
+                y = [NaN],
+                mode = "lines",
+                name = name,
+                legendrank = rank,
+                showlegend = true,
+                line = line_style,
+                hoverinfo = "skip",
+            ),
+            row = 1,
+            col = 1,
+        )
+    end
+
+    xaxis_style = attr(
+        title = attr(text = "Episode", standoff = 12),
+        showline = true,
+        mirror = true,
+        linecolor = "#3A3A3A",
+        linewidth = 1,
+        ticks = "outside",
+        gridcolor = "#E6E6E6",
+        zeroline = false,
+    )
+    yaxis_style = attr(
+        showline = true,
+        mirror = true,
+        linecolor = "#3A3A3A",
+        linewidth = 1,
+        ticks = "outside",
+        gridcolor = "#E6E6E6",
+        zeroline = false,
+    )
+    yaxis_fields = Dict{Symbol, Any}(yaxis_style.fields)
+    yaxis_fields[:title] = attr(text = "Score (rolling mean, window=$WINDOW)", standoff = 12)
+    yaxis_with_title = attr(; yaxis_fields...)
+    left_xaxis_fields = Dict{Symbol, Any}(xaxis_style.fields)
+    left_xaxis_fields[:domain] = [0.0, 0.46]
+    left_xaxis = attr(; left_xaxis_fields...)
+    right_xaxis_fields = Dict{Symbol, Any}(xaxis_style.fields)
+    right_xaxis_fields[:domain] = [0.54, 1.0]
+    right_xaxis = attr(; right_xaxis_fields...)
+    subplot_annotations = plot_handle.plot.layout.fields[:annotations]
+    subplot_annotations[1].fields[:x] = 0.23
+    subplot_annotations[1].fields[:font] = attr(size = 30, color = "#252525")
+    subplot_annotations[2].fields[:x] = 0.77
+    subplot_annotations[2].fields[:font] = attr(size = 30, color = "#252525")
+    relayout!(
+        plot_handle,
+        template = "plotly_white",
+        paper_bgcolor = "white",
+        plot_bgcolor = "white",
+        width = 1500,
+        height = 700,
+        margin = attr(l = 125, r = 35, t = 85, b = 175),
+        font = attr(family = "Arial, sans-serif", size = 26, color = "#303030"),
+        xaxis = preserved_subplot_axis(plot_handle, :xaxis, left_xaxis),
+        xaxis2 = preserved_subplot_axis(plot_handle, :xaxis2, right_xaxis),
+        yaxis = preserved_subplot_axis(plot_handle, :yaxis, yaxis_with_title),
+        yaxis2 = preserved_subplot_axis(plot_handle, :yaxis2, yaxis_style),
+        legend = attr(
+            orientation = "h",
+            x = 0.5,
+            y = -0.24,
+            xanchor = "center",
+            yanchor = "top",
+            traceorder = "normal",
+            bgcolor = "rgba(255, 255, 255, 0.92)",
+            bordercolor = "#CFCFCF",
+            borderwidth = 1,
+            font = attr(size = 24),
+        ),
+        hovermode = "x unified",
+    )
+    output = joinpath(output_directory, "learning_curves_combined.svg")
+    PlotlyJS.savefig(plot_handle, output; width = 1500, height = 700)
+    return [output]
 end
 
 function plot_final_performance(rows, output_directory)
-    outputs = String[]
-    for protocol in PROTOCOLS
+    plot_handle = make_subplots(
+        rows = 1,
+        cols = 2,
+        horizontal_spacing = 0.10,
+        subplot_titles = reshape(["(a) Fixed IC", "(b) Varying IC"], :, 1),
+    )
+    trace_count = 0
+    for (column, protocol) in enumerate(PROTOCOLS)
         protocol_rows = filter(row -> row.protocol === protocol, rows)
         isempty(protocol_rows) && continue
-        traces = PlotlyJS.GenericTrace[]
         for (index, config_name) in enumerate(CONFIG_NAMES)
             values = [
                 row.final_reward_mean
@@ -459,15 +520,15 @@ function plot_final_performance(rows, output_directory)
             ]
             isempty(values) && continue
             positions = index .+ collect(range(-0.07, 0.07; length = length(values)))
-            push!(
-                traces,
+            add_trace!(
+                plot_handle,
                 scatter(
                     x = positions,
                     y = values,
                     mode = "markers",
                     name = "Individual runs",
                     legendgroup = "individual",
-                    showlegend = index == 1,
+                    showlegend = column == 1 && index == 1,
                     marker = attr(
                         color = CONFIG_COLORS[config_name],
                         size = 10,
@@ -477,16 +538,18 @@ function plot_final_performance(rows, output_directory)
                     text = ["run $replicate" for replicate in 1:length(values)],
                     hovertemplate = "%{text}<br>Final-100 mean %{y:.2f}<extra></extra>",
                 ),
+                row = 1,
+                col = column,
             )
-            push!(
-                traces,
+            add_trace!(
+                plot_handle,
                 scatter(
                     x = [index],
                     y = [mean(values)],
                     mode = "markers",
                     name = "Arithmetic mean",
                     legendgroup = "mean",
-                    showlegend = index == 1,
+                    showlegend = column == 1 && index == 1,
                     marker = attr(
                         color = CONFIG_COLORS[config_name],
                         symbol = "diamond",
@@ -495,66 +558,77 @@ function plot_final_performance(rows, output_directory)
                     ),
                     hovertemplate = "Arithmetic mean %{y:.2f}<extra></extra>",
                 ),
+                row = 1,
+                col = column,
             )
-        end
-        plot_handle = Plot(
-            traces,
-            Layout(
-                template = "plotly_white",
-                title = attr(
-                    text = "Final reward (last $FINAL_WINDOW episodes) - " *
-                           PROTOCOL_DISPLAY_NAMES[protocol],
-                    x = 0.5,
-                    xanchor = "center",
-                    font = attr(size = 22, color = "#252525"),
-                ),
-                paper_bgcolor = "white",
-                plot_bgcolor = "white",
-                width = 900,
-                height = 560,
-                margin = attr(l = 100, r = 30, t = 80, b = 85),
-                font = attr(family = "Arial, sans-serif", size = 15, color = "#303030"),
-                xaxis = attr(
-                    title = attr(text = "Configuration", standoff = 14),
-                    tickmode = "array",
-                    tickvals = collect(1:length(CONFIG_NAMES)),
-                    ticktext = [CONFIG_DISPLAY_NAMES[name] for name in CONFIG_NAMES],
-                    range = [0.55, length(CONFIG_NAMES) + 0.45],
-                    showline = true,
-                    mirror = true,
-                    linecolor = "#3A3A3A",
-                    ticks = "outside",
-                    showgrid = false,
-                    zeroline = false,
-                ),
-                yaxis = attr(
-                    title = attr(text = "Mean episode reward", standoff = 12),
-                    showline = true,
-                    mirror = true,
-                    linecolor = "#3A3A3A",
-                    ticks = "outside",
-                    gridcolor = "#E6E6E6",
-                    zeroline = false,
-                ),
-                legend = attr(
-                    x = 0.80,
-                    y = 0.02,
-                    xanchor = "right",
-                    yanchor = "bottom",
-                    bgcolor = "rgba(255, 255, 255, 0.92)",
-                    bordercolor = "#CFCFCF",
-                    borderwidth = 1,
-                    font = attr(size = 13),
-                ),
-            ),
-        )
-        for extension in ("svg", "pdf")
-            output = joinpath(output_directory, "final_performance_$(protocol).$(extension)")
-            PlotlyJS.savefig(plot_handle, output; width = 900, height = 560)
-            push!(outputs, output)
+            trace_count += 1
         end
     end
-    return outputs
+    trace_count == 0 && return String[]
+
+    xaxis_style = attr(
+        title = attr(text = "Configuration", standoff = 14),
+        tickmode = "array",
+        tickvals = collect(1:length(CONFIG_NAMES)),
+        ticktext = [CONFIG_DISPLAY_NAMES[name] for name in CONFIG_NAMES],
+        range = [0.55, length(CONFIG_NAMES) + 0.45],
+        showline = true,
+        mirror = true,
+        linecolor = "#3A3A3A",
+        ticks = "outside",
+        showgrid = false,
+        zeroline = false,
+    )
+    yaxis_style = attr(
+        showline = true,
+        mirror = true,
+        linecolor = "#3A3A3A",
+        ticks = "outside",
+        gridcolor = "#E6E6E6",
+        zeroline = false,
+    )
+    yaxis_fields = Dict{Symbol, Any}(yaxis_style.fields)
+    yaxis_fields[:title] = attr(text = "Mean episode reward", standoff = 12)
+    yaxis_with_title = attr(; yaxis_fields...)
+    left_xaxis_fields = Dict{Symbol, Any}(xaxis_style.fields)
+    left_xaxis_fields[:domain] = [0.0, 0.46]
+    left_xaxis = attr(; left_xaxis_fields...)
+    right_xaxis_fields = Dict{Symbol, Any}(xaxis_style.fields)
+    right_xaxis_fields[:domain] = [0.54, 1.0]
+    right_xaxis = attr(; right_xaxis_fields...)
+    subplot_annotations = plot_handle.plot.layout.fields[:annotations]
+    subplot_annotations[1].fields[:x] = 0.23
+    subplot_annotations[1].fields[:font] = attr(size = 30, color = "#252525")
+    subplot_annotations[2].fields[:x] = 0.77
+    subplot_annotations[2].fields[:font] = attr(size = 30, color = "#252525")
+    relayout!(
+        plot_handle,
+        template = "plotly_white",
+        paper_bgcolor = "white",
+        plot_bgcolor = "white",
+        width = 1400,
+        height = 650,
+        margin = attr(l = 125, r = 35, t = 85, b = 160),
+        font = attr(family = "Arial, sans-serif", size = 26, color = "#303030"),
+        xaxis = preserved_subplot_axis(plot_handle, :xaxis, left_xaxis),
+        xaxis2 = preserved_subplot_axis(plot_handle, :xaxis2, right_xaxis),
+        yaxis = preserved_subplot_axis(plot_handle, :yaxis, yaxis_with_title),
+        yaxis2 = preserved_subplot_axis(plot_handle, :yaxis2, yaxis_style),
+        legend = attr(
+            orientation = "h",
+            x = 0.5,
+            y = -0.28,
+            xanchor = "center",
+            yanchor = "top",
+            bgcolor = "rgba(255, 255, 255, 0.92)",
+            bordercolor = "#CFCFCF",
+            borderwidth = 1,
+            font = attr(size = 24),
+        ),
+    )
+    output = joinpath(output_directory, "final_performance_combined.svg")
+    PlotlyJS.savefig(plot_handle, output; width = 1400, height = 650)
+    return [output]
 end
 
 function plot_runtimes(rows, output_directory)
@@ -679,9 +753,14 @@ function main(arguments = ARGS)
 
     for protocol in PROTOCOLS
         for prefix in ("learning_curves", "final_performance", "runtimes")
-            for extension in ("png", "svg", "pdf")
+            for extension in ("png", "svg")
                 rm(joinpath(output_directory, "$(prefix)_$(protocol).$(extension)"); force = true)
             end
+        end
+    end
+    for prefix in ("learning_curves_combined", "final_performance_combined")
+        for extension in ("png", "svg")
+            rm(joinpath(output_directory, "$(prefix).$(extension)"); force = true)
         end
     end
 
