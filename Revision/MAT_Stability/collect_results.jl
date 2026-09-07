@@ -22,12 +22,18 @@ const CONFIG_COLORS = Dict(
     :modified_half => "#F2A13A",
     :modified_full => "#B41A5C",
 )
+const CONFIG_RUN_COLORS = Dict(
+    :python_like => "rgba(39, 125, 161, 0.22)",
+    :modified_half => "rgba(242, 161, 58, 0.22)",
+    :modified_full => "rgba(180, 35, 97, 0.22)",
+)
 const CONFIG_RIBBON_COLORS = Dict(
     :python_like => "rgba(39, 125, 161, 0.18)",
     :modified_half => "rgba(242, 161, 58, 0.18)",
     :modified_full => "rgba(180, 35, 97, 0.18)",
 )
 const PROTOCOL_DISPLAY_NAMES = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
+const WINDOW = 50
 
 function usage(io::IO = stdout)
     println(
@@ -286,6 +292,10 @@ function write_csv(path, rows)
     return path
 end
 
+rolling_mean(values, width = WINDOW) = length(values) < width ? Float64[] : [
+    mean(@view values[(index - width + 1):index]) for index in width:length(values)
+]
+
 function plot_learning_curves(records, output_directory)
     outputs = String[]
 
@@ -293,33 +303,55 @@ function plot_learning_curves(records, output_directory)
         traces = PlotlyJS.GenericTrace[]
         for (config_index, config_name) in enumerate(CONFIG_NAMES)
             series = [
-                records[(protocol, replicate, config_name)].rewards
+                rolling_mean(records[(protocol, replicate, config_name)].rewards)
                 for replicate in 1:5
                 if haskey(records, (protocol, replicate, config_name))
             ]
+            filter!(!isempty, series)
             isempty(series) && continue
             episode_count = minimum(length, series)
             episode_count == 0 && continue
             values = reduce(hcat, [run[1:episode_count] for run in series])
             means = vec(mean(values; dims = 2))
-            deviations = vec(std(values; dims = 2, corrected = false))
-            episodes = collect(1:episode_count)
+            medians = [median(@view values[index, :]) for index in 1:episode_count]
+            q25 = [quantile(@view(values[index, :]), 0.25) for index in 1:episode_count]
+            q75 = [quantile(@view(values[index, :]), 0.75) for index in 1:episode_count]
+            episodes = collect(WINDOW:(WINDOW + episode_count - 1))
             push!(
                 traces,
                 scatter(
                     x = episodes,
-                    y = means .- deviations,
+                    y = q25,
                     mode = "lines",
                     line = attr(width = 0),
                     hoverinfo = "skip",
                     showlegend = false,
                 ),
             )
+            for (index, run) in enumerate(series)
+                push!(
+                    traces,
+                    scatter(
+                        x = episodes,
+                        y = run[1:episode_count],
+                        mode = "lines",
+                        name = "$(CONFIG_DISPLAY_NAMES[config_name]) runs (n=$(length(series)))",
+                        legendgroup = "$(config_name)_runs",
+                        legendrank = 10 * config_index,
+                        showlegend = index == 1,
+                        line = attr(
+                            color = CONFIG_RUN_COLORS[config_name],
+                            width = 1.25,
+                        ),
+                        hoverinfo = "skip",
+                    ),
+                )
+            end
             push!(
                 traces,
                 scatter(
                     x = episodes,
-                    y = means .+ deviations,
+                    y = q75,
                     mode = "lines",
                     line = attr(width = 0),
                     fill = "tonexty",
@@ -332,12 +364,24 @@ function plot_learning_curves(records, output_directory)
                 traces,
                 scatter(
                     x = episodes,
+                    y = medians,
+                    mode = "lines",
+                    name = "$(CONFIG_DISPLAY_NAMES[config_name]) median + IQR",
+                    legendrank = 10 * config_index + 1,
+                    line = attr(color = CONFIG_COLORS[config_name], width = 3),
+                    hovertemplate = "Episode %{x}<br>Median %{y:.2f}<extra>%{fullData.name}</extra>",
+                ),
+            )
+            push!(
+                traces,
+                scatter(
+                    x = episodes,
                     y = means,
                     mode = "lines",
-                    name = "$(CONFIG_DISPLAY_NAMES[config_name]) (n=$(length(series)))",
-                    legendrank = config_index,
-                    line = attr(color = CONFIG_COLORS[config_name], width = 3),
-                    hovertemplate = "Episode %{x}<br>Mean reward %{y:.2f}<extra>%{fullData.name}</extra>",
+                    name = "$(CONFIG_DISPLAY_NAMES[config_name]) mean",
+                    legendrank = 10 * config_index + 2,
+                    line = attr(color = CONFIG_COLORS[config_name], width = 2, dash = "dash"),
+                    hovertemplate = "Episode %{x}<br>Mean %{y:.2f}<extra>%{fullData.name}</extra>",
                 ),
             )
         end
@@ -356,7 +400,7 @@ function plot_learning_curves(records, output_directory)
                 plot_bgcolor = "white",
                 width = 900,
                 height = 560,
-                margin = attr(l = 90, r = 30, t = 80, b = 75),
+                margin = attr(l = 100, r = 30, t = 80, b = 85),
                 font = attr(family = "Arial, sans-serif", size = 15, color = "#303030"),
                 xaxis = attr(
                     title = attr(text = "Episode", standoff = 12),
@@ -369,7 +413,7 @@ function plot_learning_curves(records, output_directory)
                     zeroline = false,
                 ),
                 yaxis = attr(
-                    title = attr(text = "Episode reward", standoff = 12),
+                    title = attr(text = "Score (rolling mean, window=$WINDOW)", standoff = 12),
                     showline = true,
                     mirror = true,
                     linecolor = "#3A3A3A",

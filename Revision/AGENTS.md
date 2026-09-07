@@ -242,6 +242,10 @@ IC, or only Varying IC. `MAT_Stability/collect_results.jl` collects whichever
 complete, valid files are present; missing protocols, replicates, and
 configurations are normal. Present failed or invalid files are reported and
 ignored, while pairing mismatches among collected files remain errors.
+Its learning-curve plots follow the MAT--IPPO comparison design with
+individual rolling-50 runs, the median and IQR, and a dashed arithmetic mean.
+Individual replicate curves are drawn above the IQR ribbon. All individual
+runs are solid, and only arithmetic-mean curves are dashed.
 Generated result trees are ignored by Git.
 
 ## Varying-IC Corpus Design
