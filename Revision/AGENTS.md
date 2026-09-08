@@ -137,6 +137,9 @@ Sparse Sensing paper.
   remains available through `closed_loop=false`.
 - `GO_Sensitivity/README.md`: Windows-local pilot invocation, fixed pilot
   configuration, restart behavior, result inspection, and result layout.
+- `GO_Sensitivity/make_paper_figures.jl`: Paper-output typography uses enlarged
+  axis, tick, panel-title, figure-title, and legend fonts with matching margins
+  for full-width manuscript inclusion.
 - `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
   paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
   resolution, exact protocol-specific physical-channel scales, frozen

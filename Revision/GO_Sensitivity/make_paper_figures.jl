@@ -38,6 +38,12 @@ const ALTERNATIVE_EVALUATION_COLORS = ("#E4E0F3", "#E1EFF5", "#FDEAE6", "#F8E9ED
 const REPLICATE_COLORS = (GO_COLOR, GR_COLOR, THIRD_COLOR)
 const RESET_COLORS = Dict(:group => GO_COLOR, :mse => GR_COLOR, :joint => THIRD_COLOR)
 const RESET_LABELS = Dict(:group => "Group reset", :mse => "MSE reset", :joint => "Joint reset")
+const PAPER_FONT_SIZE = 22
+const PAPER_AXIS_TITLE_SIZE = 22
+const PAPER_TICK_SIZE = 18
+const PAPER_TITLE_SIZE = 30
+const PAPER_SUBPLOT_TITLE_SIZE = 22
+const PAPER_LEGEND_SIZE = 18
 const CONTROLLER_COLORS = Dict(
     "expert" => NEUTRAL_COLOR,
     "C_match" => GO_COLOR,
@@ -514,7 +520,8 @@ end
 
 function paper_axis(title; log = false, reversed = false, range = nothing, kwargs...)
     fields = Dict{Symbol, Any}(
-        :title => attr(text = title, standoff = 10),
+        :title => attr(text = title, standoff = 12, font = attr(size = PAPER_AXIS_TITLE_SIZE)),
+        :tickfont => attr(size = PAPER_TICK_SIZE),
         :showline => true,
         :mirror => true,
         :linecolor => "#3A3A3A",
@@ -537,22 +544,30 @@ function common_layout(; width, height, title, showlegend = true)
         template = "plotly_white",
         width = width,
         height = height,
-        title = attr(text = title, x = 0.5, xanchor = "center", font = attr(size = 22, color = "#252525")),
+        title = attr(text = title, x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         paper_bgcolor = "white",
         plot_bgcolor = "white",
-        font = attr(family = "Arial, sans-serif", size = 14, color = "#303030"),
-        margin = attr(l = 85, r = 35, t = 105, b = 75),
+        font = attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        margin = attr(l = 115, r = 45, t = 125, b = 110),
         showlegend = showlegend,
         legend = row_legend(-0.10),
     )
 end
 
-function row_legend(y)
+function row_legend(y; font_size = PAPER_LEGEND_SIZE)
     return attr(
         orientation = "h", x = 0.5, xanchor = "center", y = y, yanchor = "top",
         bgcolor = "rgba(255,255,255,0.92)", bordercolor = "#CFCFCF", borderwidth = 1,
-        font = attr(size = 12),
+        font = attr(size = font_size),
     )
+end
+
+function style_subplot_titles!(plot_handle)
+    annotations = get(plot_handle.plot.layout.fields, :annotations, Any[])
+    for annotation in annotations
+        annotation.fields[:font] = attr(size = PAPER_SUBPLOT_TITLE_SIZE, color = "#252525")
+    end
+    return plot_handle
 end
 
 function preserved_subplot_axis(plot_handle, key::Symbol, styling)
@@ -781,6 +796,7 @@ function make_all_evaluations_pareto_figure(data_by_protocol, output)
             "B  Varying IC: all GO evaluations",
         ], :, 1),
     )
+    style_subplot_titles!(plot_handle)
     add_all_evaluations_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true)
     add_all_evaluations_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false)
 
@@ -791,7 +807,7 @@ function make_all_evaluations_pareto_figure(data_by_protocol, output)
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups"; range = [0, 96])),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = all_evaluations_y_range(data_by_protocol[:varying]))),
         :legend => row_legend(-0.16),
-        :margin => attr(l = 85, r = 35, t = 105, b = 125),
+        :margin => attr(l = 115, r = 45, t = 125, b = 165),
     )))
     PlotlyJS.savefig(plot_handle, output; width = 1400, height = 650)
     return output
@@ -800,12 +816,13 @@ end
 function make_main_figure(data_by_protocol, metrics, output; include_evaluations = false)
     plot_handle = make_subplots(
         rows = 2, cols = 2,
-        horizontal_spacing = 0.10, vertical_spacing = 0.23,
+        horizontal_spacing = 0.10, vertical_spacing = 0.32,
         subplot_titles = reshape([
             "A  Fixed IC: Pareto attainment", "B  Varying IC: Pareto attainment",
             "C  Fixed IC: strength-sparsity response", "D  Varying IC: strength-sparsity response",
         ], :, 1),
     )
+    style_subplot_titles!(plot_handle)
     if include_evaluations
         add_alternative_evaluations_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true)
         add_alternative_evaluations_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false)
@@ -838,7 +855,7 @@ function make_main_figure(data_by_protocol, metrics, output; include_evaluations
     end
     fixed_top = fixed_response.has_missing ? fixed_response.missing_level + 0.6 : fixed_response.maximum_group + 1
     varying_top = varying_response.has_missing ? varying_response.missing_level + 0.5 : varying_response.maximum_group + 1
-    layout = common_layout(width = 1400, height = 1120, title = "Package 6: sensitivity, reproducibility, and Pareto performance")
+    layout = common_layout(width = 1400, height = 1120, title = "GO sensitivity, reproducibility, and Pareto performance")
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Active SC groups")),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = include_evaluations ? [pareto_y_range(data_by_protocol[:fixed])[1], 0.0] : pareto_y_range(data_by_protocol[:fixed]))),
@@ -848,8 +865,9 @@ function make_main_figure(data_by_protocol, metrics, output; include_evaluations
         :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE <= $(QUALITY_THRESHOLDS[:fixed]))"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
         :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:varying]), ticktext = string.(P6_STRENGTHS[:varying]))),
         :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Active groups (MSE <= $(QUALITY_THRESHOLDS[:varying]))"; range = [0, varying_top])),
-        :legend => row_legend(0.505),
+        :legend => row_legend(0.555; font_size = 16),
         :legend2 => row_legend(-0.085),
+        :margin => attr(l = 115, r = 45, t = 125, b = 155),
     )))
     PlotlyJS.savefig(plot_handle, output; width = 1400, height = 1120)
     include_evaluations && move_glimages_behind_cartesian!(output)
@@ -865,6 +883,7 @@ function make_terminal_figure(data_by_protocol, output)
         rows = 1, cols = 2, horizontal_spacing = 0.11,
         subplot_titles = reshape(["A  Fixed IC: test trajectory", "B  Varying IC: paired test episodes"], :, 1),
     )
+    style_subplot_titles!(plot_handle)
     fixed = data_by_protocol[:fixed]
     for role in CONTROLLER_ORDER
         selected = sort(role_rows(fixed, role); by = row -> int_value(row, :step))
@@ -918,8 +937,9 @@ function make_terminal_figure(data_by_protocol, output)
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Control step")),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Nu")),
-        :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, attr(title = attr(text = "Controller", standoff = 10), showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside", type = "category")),
+        :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, attr(title = attr(text = "Controller", standoff = 12, font = attr(size = PAPER_AXIS_TITLE_SIZE)), tickfont = attr(size = PAPER_TICK_SIZE), showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside", type = "category")),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Mean episode Nu")),
+        :margin => attr(l = 115, r = 45, t = 125, b = 120),
     )))
     PlotlyJS.savefig(plot_handle, output; width = 1350, height = 600)
     return output
@@ -1061,6 +1081,7 @@ function make_supplement_figure(data_by_protocol, output)
             "E  Fixed IC: archive convergence", "F  Varying IC: archive convergence",
         ], :, 1),
     )
+    style_subplot_titles!(plot_handle)
     add_hitting_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true, legend_id = "legend")
     add_hitting_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false, legend_id = "legend")
     add_reset_panel!(plot_handle, data_by_protocol[:fixed], 2, 1; showlegend = true, legend_id = "legend2")
@@ -1072,7 +1093,7 @@ function make_supplement_figure(data_by_protocol, output)
     varying_strength_ticktext = [string(value) for value in P6_STRENGTHS[:varying]]
     push!(fixed_strength_ticktext, "GR ref")
     push!(varying_strength_ticktext, "GR ref")
-    layout = common_layout(width = 1450, height = 1750, title = "Package 6 supplementary stability diagnostics")
+    layout = common_layout(width = 1450, height = 1750, title = "GO sensitivity: supplementary stability diagnostics")
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Target active SC groups"; reversed = true, tickmode = "array", tickvals = collect(HITTING_TARGETS), ticktext = string.(HITTING_TARGETS))),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Median first update")),
@@ -1086,9 +1107,10 @@ function make_supplement_figure(data_by_protocol, output)
         :yaxis5 => preserved_subplot_axis(plot_handle, :yaxis5, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
         :xaxis6 => preserved_subplot_axis(plot_handle, :xaxis6, paper_axis("Normalized training progress"; range = [0, 1])),
         :yaxis6 => preserved_subplot_axis(plot_handle, :yaxis6, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
-        :legend => row_legend(0.70),
+        :legend => row_legend(0.70; font_size = 16),
         :legend2 => row_legend(0.315),
-        :legend3 => row_legend(-0.10),
+        :legend3 => row_legend(-0.10; font_size = 16),
+        :margin => attr(l = 120, r = 45, t = 125, b = 175),
     )))
     PlotlyJS.savefig(plot_handle, output; width = 1450, height = 1750)
     return output
