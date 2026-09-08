@@ -160,10 +160,14 @@ Sparse Sensing paper.
   controller, and noise level; clean baseline import; sequential complete-grid
   noisy rollouts; atomic per-episode persistence; and a filtered persistent
   60-session tmux launcher without an analysis worker.
-- `Noise_Study/make_paper_tables.jl`: Standalone Package-10 paper-table builder
+- `Noise_Study/make_paper_tables.jl`: Standalone Package-10 paper-output builder
   that independently resolves the newest Fixed/Varying experiment IDs, warns
   but continues across mixed IDs, preserves incomplete cells as `NA`, and
-  writes mean test-set `state_Nu` tables plus JLD2/provenance artifacts.
+  writes mean test-set `state_Nu` tables plus separate Fixed/Varying SVG/PDF
+  noise-response plots and JLD2/provenance artifacts. Plot curves use the three
+  MAT-stability main colors for expert, sparse apprentice, and `C_match`; the
+  evaluated relative-noise levels use evenly spaced discrete positions with
+  exact `alpha` tick labels.
 - `Noise_Study/results/results_notes.md`: Completed Package-10 protocol,
   channel-scale calculation, quantitative sensor-noise results, and bounded
   robustness--sparsity/Pareto interpretation.

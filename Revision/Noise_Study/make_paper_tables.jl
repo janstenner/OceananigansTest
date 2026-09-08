@@ -1,8 +1,14 @@
+ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
+
 using Dates
 using JLD2
+using PlotlyJS
 using Printf
 using SHA
 using Statistics
+
+PlotlyJS.PlotlyKaleido.kill_kaleido()
+PlotlyJS.PlotlyKaleido.start(plotlyjs = PlotlyJS._js_path, mathjax = false)
 
 include(joinpath(@__DIR__, "NoiseStudy.jl"))
 using .NoiseStudy
@@ -10,10 +16,33 @@ using .NoiseStudy
 const DEFAULT_NOISE_RESULTS = joinpath(@__DIR__, "results")
 const PAPER_PROTOCOLS = (:fixed, :varying)
 const PAPER_CONTROLLERS = (:expert, :c_match, :sparse)
+const PAPER_PLOT_CONTROLLERS = (:expert, :sparse, :c_match)
 const PAPER_CONTROLLER_LABELS = Dict(
     :expert => "Dense expert",
     :sparse => "Sparse apprentice",
     :c_match => "C_match apprentice",
+)
+const PAPER_PLOT_LABELS = Dict(
+    :expert => "Dense expert",
+    :sparse => "Sparse apprentice",
+    :c_match => "C_match",
+)
+# Reuse the three principal colors from the MAT-stability figures in the
+# requested expert, sparse-apprentice, C_match order.
+const PAPER_CONTROLLER_COLORS = Dict(
+    :expert => "#277DA1",
+    :sparse => "#F2A13A",
+    :c_match => "#B41A5C",
+)
+const PAPER_CONTROLLER_SYMBOLS = Dict(
+    :expert => "circle",
+    :sparse => "diamond",
+    :c_match => "square",
+)
+const PAPER_PROTOCOL_LABELS = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
+const PAPER_FIGURE_STEMS = Dict(
+    :fixed => "figure_1a_noise_robustness_fixed",
+    :varying => "figure_1b_noise_robustness_varying",
 )
 
 function usage(io::IO = stdout)
@@ -25,8 +54,9 @@ function usage(io::IO = stdout)
     Without --experiment-id, the script independently selects the newest
     Noise-Study experiment directory available for Fixed and Varying IC.
     Different or relocated experiment IDs produce warnings but do not abort.
-    Missing worker results are written as NA so a partial table can be created
-    while the other protocol is still running.
+    Missing worker results are written as NA so partial tables and figures can
+    be created while the other protocol is still running. Each available
+    protocol produces a separate paper-ready SVG and PDF noise-response plot.
     """)
 end
 
@@ -349,6 +379,115 @@ function write_markdown(output, rows, experiments)
     return abspath(path)
 end
 
+function keep_first_pdf_page!(path)
+    pdfseparate = Sys.which("pdfseparate")
+    if isnothing(pdfseparate)
+        @warn "pdfseparate is unavailable; leaving the raw Kaleido PDF unchanged." path
+        return path
+    end
+    mktempdir() do temporary
+        pattern = joinpath(temporary, "page-%d.pdf")
+        run(`$pdfseparate -f 1 -l 1 $path $pattern`)
+        first_page = joinpath(temporary, "page-1.pdf")
+        isfile(first_page) || error("pdfseparate did not create the expected first page for $path")
+        mv(first_page, path; force = true)
+    end
+    return path
+end
+
+function write_protocol_plot(output, rows, protocol::Symbol)
+    protocol_rows = filter(row -> row.protocol === protocol, rows)
+    isempty(protocol_rows) && return nothing
+    traces = PlotlyJS.GenericTrace[]
+    for controller in PAPER_PLOT_CONTROLLERS
+        selected = filter(row -> row.controller === controller, protocol_rows)
+        isempty(selected) && continue
+        length(selected) == 1 || error("Expected one $protocol/$controller paper row, found $(length(selected)).")
+        row = only(selected)
+        values = [row.values_by_level[Float64(level)] for level in NOISE_LEVELS]
+        y_values = [ismissing(value) ? NaN : Float64(value) for value in values]
+        all(isnan, y_values) && continue
+        push!(traces, PlotlyJS.scatter(
+            x = collect(eachindex(NOISE_LEVELS)),
+            y = y_values,
+            customdata = Float64.(collect(NOISE_LEVELS)),
+            mode = "lines+markers",
+            name = PAPER_PLOT_LABELS[controller],
+            connectgaps = false,
+            line = PlotlyJS.attr(color = PAPER_CONTROLLER_COLORS[controller], width = 3),
+            marker = PlotlyJS.attr(
+                color = PAPER_CONTROLLER_COLORS[controller],
+                symbol = PAPER_CONTROLLER_SYMBOLS[controller],
+                size = 10,
+                line = PlotlyJS.attr(color = "white", width = 1),
+            ),
+            hovertemplate = "Noise level α=%{customdata:.2f}<br>Mean test-set Nu=%{y:.5f}<extra>$(PAPER_PLOT_LABELS[controller])</extra>",
+        ))
+    end
+    if isempty(traces)
+        @warn "No complete Noise-Study points are available for a paper plot." protocol
+        return nothing
+    end
+    figure = PlotlyJS.Plot(traces, PlotlyJS.Layout(
+        template = "plotly_white",
+        width = 950,
+        height = 620,
+        title = PlotlyJS.attr(
+            text = "$(PAPER_PROTOCOL_LABELS[protocol]) sensor-noise robustness",
+            x = 0.5,
+            xanchor = "center",
+            font = PlotlyJS.attr(size = 28, color = "#252525"),
+        ),
+        font = PlotlyJS.attr(family = "Arial, sans-serif", size = 22, color = "#303030"),
+        xaxis = PlotlyJS.attr(
+            title = PlotlyJS.attr(text = "Evaluated relative noise level α", standoff = 12, font = PlotlyJS.attr(size = 22)),
+            tickmode = "array",
+            tickvals = collect(eachindex(NOISE_LEVELS)),
+            ticktext = [@sprintf("%.2f", Float64(level)) for level in NOISE_LEVELS],
+            tickfont = PlotlyJS.attr(size = 18),
+            range = [0.7, length(NOISE_LEVELS) + 0.3],
+            showline = true,
+            mirror = true,
+            linecolor = "#3A3A3A",
+            ticks = "outside",
+            gridcolor = "#E6E6E6",
+            zeroline = false,
+        ),
+        yaxis = PlotlyJS.attr(
+            title = PlotlyJS.attr(text = "Mean test-set Nusselt number", standoff = 12, font = PlotlyJS.attr(size = 22)),
+            tickfont = PlotlyJS.attr(size = 18),
+            tickformat = ".2f",
+            showline = true,
+            mirror = true,
+            linecolor = "#3A3A3A",
+            ticks = "outside",
+            gridcolor = "#E6E6E6",
+            zeroline = false,
+        ),
+        legend = PlotlyJS.attr(
+            orientation = "h",
+            x = 0.5,
+            y = -0.24,
+            xanchor = "center",
+            yanchor = "top",
+            traceorder = "normal",
+            bgcolor = "rgba(255, 255, 255, 0.92)",
+            bordercolor = "#CFCFCF",
+            borderwidth = 1,
+            font = PlotlyJS.attr(size = 18),
+        ),
+        hovermode = "x unified",
+        margin = PlotlyJS.attr(l = 110, r = 35, t = 90, b = 145),
+    ))
+    stem = PAPER_FIGURE_STEMS[protocol]
+    svg_path = abspath(joinpath(output, "$stem.svg"))
+    pdf_path = abspath(joinpath(output, "$stem.pdf"))
+    PlotlyJS.savefig(figure, svg_path; width = 950, height = 620)
+    PlotlyJS.savefig(figure, pdf_path; width = 950, height = 620)
+    keep_first_pdf_page!(pdf_path)
+    return (; svg_path, pdf_path)
+end
+
 file_sha256(path) = open(path, "r") do io
     bytes2hex(SHA.sha256(io))
 end
@@ -357,7 +496,7 @@ function write_provenance(output, source_files, experiments)
     path = joinpath(output, "provenance.sha256")
     files = sort!(unique!(abspath.(source_files)))
     open(path, "w") do io
-        println(io, "# Package-10 paper table input manifest")
+        println(io, "# Package-10 paper table and figure input manifest")
         println(io, "# Script SHA-256: $(file_sha256(abspath(@__FILE__)))")
         println(io, "# Experiment IDs: $(join(("$(protocol)=$(identifier)" for (protocol, identifier) in sort!(collect(experiments); by = pair -> string(first(pair)))), ", "))")
         for file in files
@@ -390,6 +529,11 @@ function main(arguments = ARGS)
     mkpath(options.output)
     csv_path = write_csv(options.output, rows)
     markdown_path = write_markdown(options.output, rows, options.experiments)
+    figure_paths = Dict{Symbol, Any}()
+    for protocol in PAPER_PROTOCOLS
+        paths = write_protocol_plot(options.output, rows, protocol)
+        isnothing(paths) || (figure_paths[protocol] = paths)
+    end
     provenance_path = write_provenance(options.output, source_files, options.experiments)
     metrics_path = atomic_save(
         joinpath(options.output, "paper_metrics.jld2");
@@ -402,14 +546,20 @@ function main(arguments = ARGS)
         missing_results,
         csv_path,
         markdown_path,
+        figure_paths,
         provenance_path,
         created_at = string(Dates.now(Dates.UTC)),
     )
-    println("Package-10 paper table written to $(options.output)")
+    println("Package-10 paper tables and figures written to $(options.output)")
     println("  CSV: $csv_path")
     println("  Markdown: $markdown_path")
+    for protocol in PAPER_PROTOCOLS
+        haskey(figure_paths, protocol) || continue
+        println("  $(PAPER_PROTOCOL_LABELS[protocol]) SVG: $(figure_paths[protocol].svg_path)")
+        println("  $(PAPER_PROTOCOL_LABELS[protocol]) PDF: $(figure_paths[protocol].pdf_path)")
+    end
     isempty(missing_results) || println("  Missing worker results represented as NA: $(length(missing_results))")
-    return (; options, rows, long_rows, csv_path, markdown_path, provenance_path, metrics_path)
+    return (; options, rows, long_rows, csv_path, markdown_path, figure_paths, provenance_path, metrics_path)
 end
 
 abspath(PROGRAM_FILE) == abspath(@__FILE__) && main()

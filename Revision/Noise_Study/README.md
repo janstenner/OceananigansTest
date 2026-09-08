@@ -95,9 +95,8 @@ worker validates and skips matching complete episodes. It writes a compact
 `result.jld2` only after the complete owned grid is available. Failed workers
 record their traceback in `status.jld2` and require `--retry-failed`.
 
-There is intentionally no analysis worker in this package yet. The later
-standalone analysis consumes the atomic worker summaries. The first paper-table
-script is:
+There is intentionally no analysis worker in this package yet. The standalone
+paper-output builder consumes the atomic worker summaries:
 
 ```bash
 julia --startup-file=no --project=. Revision/Noise_Study/make_paper_tables.jl
@@ -107,8 +106,13 @@ Without arguments it independently chooses the newest Fixed and Varying
 experiment directories. Different experiment IDs only produce warnings and are
 combined. Incomplete worker cells are written as `NA`. The script creates a
 wide CSV and Markdown table with the mean test-set `state_Nu` for every
-controller and noise level, ordered as expert, `C_match`, then sparse, plus
-compact JLD2 metrics and SHA-256 provenance.
+controller and noise level, ordered as expert, `C_match`, then sparse. It also
+writes separate Fixed-IC and Varying-IC SVG/PDF noise-response plots. The plot
+curves use the MAT-stability main colors in expert, sparse-apprentice,
+`C_match` order. The ten evaluated relative-noise levels are shown as evenly
+spaced discrete measurement positions with their physical `alpha` values as
+tick labels, while compact JLD2 metrics and SHA-256 provenance cover all
+outputs.
 
 ## Validation
 
