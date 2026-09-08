@@ -624,10 +624,18 @@ function make_pareto_figure(configurations, output)
             displayed_point_count += length(selected)
             showlegend = !(threshold in shown_thresholds)
             showlegend && push!(shown_thresholds, threshold)
+            if showlegend
+                add_trace!(plot, scatter(
+                    x = [NaN], y = [NaN], mode = "markers", name = "τ=$(threshold)",
+                    showlegend = true, legendgroup = "threshold_$threshold",
+                    legendrank = legend_ranks[threshold],
+                    marker = attr(color = colors[threshold], size = 8, opacity = 1.0, symbol = "circle"),
+                ); row, col)
+            end
             add_trace!(plot, scattergl(
                 x = int_value.(selected, Ref(:active_groups)),
                 y = float_value.(selected, Ref(:validation_matching)),
-                mode = "markers", name = "τ=$(threshold)", showlegend = showlegend,
+                mode = "markers", name = "τ=$(threshold)", showlegend = false,
                 legendgroup = "threshold_$threshold", legendrank = legend_ranks[threshold],
                 marker = attr(
                     color = colors[threshold], size = 4, opacity = 0.32,

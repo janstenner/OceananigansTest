@@ -139,16 +139,19 @@ Sparse Sensing paper.
   configuration, restart behavior, result inspection, and result layout.
 - `GO_Sensitivity/make_paper_figures.jl`: Paper-output typography uses enlarged
   axis, tick, panel-title, figure-title, and legend fonts with matching margins
-  for full-width manuscript inclusion.
+  for full-width manuscript inclusion. Transparent or visually lightened
+  evaluation clouds use separate opaque markers in the figure legends.
 - `Package7/make_paper_figures.jl`: Fixed-IC sparsity-study paper figures use
   the same enlarged typography. Its supplementary Pareto cloud is
   deterministically thinned in replicate-, threshold-, active-group-, and
   log-MSE-aware display bins, while Pareto construction and candidate selection
-  continue to use the complete evaluation set.
+  continue to use the complete evaluation set. Threshold markers remain
+  transparent in the panels but are fully opaque in the legend.
 - `Package8/make_paper_figures.jl`: Varying-IC sparsity-study paper figures
   mirror the Package-7 typography, dimensions, margins, and legends. Its
   supplementary Pareto cloud uses the same deterministic display-only thinning,
-  while the full evaluation set remains authoritative for fronts and selection.
+  while the full evaluation set remains authoritative for fronts and selection;
+  its threshold markers likewise use opaque legend-only representatives.
 - `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
   paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
   resolution, exact protocol-specific physical-channel scales, frozen
@@ -194,7 +197,15 @@ Sparse Sensing paper.
   number; mask display selection uses the sparsest tested candidate no more
   than 5% above the expert mean test-set `state_Nu`. Tables remain unfiltered
   and report signed percent deviation from the matching Rayleigh-specific
-  expert for every tested candidate and the unactuated baseline.
+  expert for every tested candidate and the unactuated baseline. Paper plots
+  use enlarged typography and temperature/vertical-velocity/horizontal-
+  velocity legend names. Their evaluation clouds are thinned only for display
+  in replicate-, threshold-, active-group-, and log-MSE-aware bins; scientific
+  fronts and selections retain every evaluation. Pareto evaluation markers
+  match Package 7/8 with opacity `0.32` and the same blue/orange threshold
+  palette, but use separate opaque legend-only markers. Their legend entries
+  use the compact `τ=<value>` form without a `mask` prefix. All quality-threshold
+  candidates use star symbols with a light-to-dark red gradient.
 - `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert extraction, local
   distillation corpora, unactuated baselines, and GO/GR production workflow.
 

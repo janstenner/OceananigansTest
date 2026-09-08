@@ -707,6 +707,13 @@ function add_all_evaluations_panel!(plot_handle, data, row, col; showlegend)
             P6_STRENGTHS[:fixed][strength_index],
             P6_STRENGTHS[:varying][strength_index],
         )
+        if showlegend
+            add_trace!(plot_handle, scatter(
+                x = [NaN], y = [NaN], mode = "markers", name = label,
+                marker = attr(color = EVALUATION_STRENGTH_COLORS[strength_index], size = 8, opacity = 1.0),
+                legendgroup = "evaluation_strength_$strength_index", showlegend = true,
+            ); row, col)
+        end
         add_trace!(plot_handle, scattergl(
             x = [int_value(item, :active_groups) for item in selected],
             y = [float_value(item, :validation_matching) for item in selected],
@@ -717,7 +724,7 @@ function add_all_evaluations_panel!(plot_handle, data, row, col; showlegend)
                 [int_value(item, :update) for item in selected],
             ),
             hovertemplate = "active groups=%{x}<br>validation MSE=%{y:.5g}<br>replicate=%{customdata[0]}<br>update=%{customdata[1]}<extra></extra>",
-            legendgroup = "evaluation_strength_$strength_index", showlegend = showlegend,
+            legendgroup = "evaluation_strength_$strength_index", showlegend = false,
         ); row, col)
     end
 
@@ -748,6 +755,13 @@ function add_alternative_evaluations_panel!(plot_handle, data, row, col; showleg
             P6_STRENGTHS[:fixed][strength_index],
             P6_STRENGTHS[:varying][strength_index],
         )
+        if showlegend
+            add_trace!(plot_handle, scatter(
+                x = [NaN], y = [NaN], mode = "markers", name = label,
+                marker = attr(color = EVALUATION_STRENGTH_COLORS[strength_index], size = 8, opacity = 1.0),
+                legendgroup = "alternative_evaluation_strength_$strength_index", showlegend = true,
+            ); row, col)
+        end
         add_trace!(plot_handle, scattergl(
             x = [int_value(item, :active_groups) for item in selected],
             y = [float_value(item, :validation_matching) for item in selected],
@@ -758,7 +772,7 @@ function add_alternative_evaluations_panel!(plot_handle, data, row, col; showleg
                 [int_value(item, :update) for item in selected],
             ),
             hovertemplate = "active groups=%{x}<br>validation MSE=%{y:.5g}<br>replicate=%{customdata[0]}<br>update=%{customdata[1]}<extra></extra>",
-            legendgroup = "alternative_evaluation_strength_$strength_index", showlegend = showlegend,
+            legendgroup = "alternative_evaluation_strength_$strength_index", showlegend = false,
         ); row, col)
     end
 end

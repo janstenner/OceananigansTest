@@ -122,6 +122,15 @@ distinct frozen candidate selected by them. A candidate selected by several
 quality thresholds is shown and tabulated once with all corresponding
 thresholds in its label. The table includes every frozen, tested candidate;
 the 5% near-expert rule is used only for choosing the four displayed masks.
+The paper exports use enlarged typography for full-width manuscript inclusion.
+Their background evaluation clouds are deterministically reduced to one
+representative per replicate, mask threshold, active-group count, and
+logarithmic-MSE display bin; pooled Pareto fronts and candidate selections
+continue to use the complete evaluation set.
+Evaluation points use the same `0.32` opacity and blue-to-orange mask-threshold
+palette as the Package-7/8 sparsity figures, while separate opaque dummy traces
+keep only their legend markers fully saturated. The three quality thresholds
+share a star symbol and use a light-to-dark red gradient.
 Its final column reports the signed percentage deviation of test mean
 `state_Nu` from the matching Rayleigh-specific expert, with positive values
 meaning worse and negative values meaning better performance.

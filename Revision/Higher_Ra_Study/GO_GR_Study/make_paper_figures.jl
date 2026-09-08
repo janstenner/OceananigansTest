@@ -6,6 +6,11 @@ using Printf
 using SHA
 using Statistics
 
+# None of the paper-figure labels require MathJax. Disabling it also avoids a
+# spurious missing-extension message in Kaleido's Windows PDF output.
+PlotlyJS.PlotlyKaleido.kill_kaleido()
+PlotlyJS.PlotlyKaleido.start(plotlyjs = PlotlyJS._js_path, mathjax = false)
+
 include(joinpath(@__DIR__, "HigherRaGOStudy.jl"))
 using .HigherRaGOStudy
 
@@ -14,13 +19,22 @@ const PAPER_METHODS = ("go", "gr")
 const PAPER_GROUPINGS = ("gc", "sc")
 const PAPER_METHOD_NAMES = Dict("go" => "GO", "gr" => "GR")
 const PAPER_ZERO_THRESHOLD_COLOR = "#277DA1"
-const PAPER_THRESHOLD_COLORS = ("#F2A13A", "#E6782B", "#B2182B")
-const PAPER_QUALITY_COLORS = ("#6A4C93", "#2A9D8F", "#D1495B")
-const PAPER_QUALITY_SYMBOLS = ("star", "diamond", "x")
+const PAPER_THRESHOLD_COLORS = ("#F2A13A", "#EE8D32", "#E6782B")
+const PAPER_QUALITY_COLORS = ("#FCAE91", "#FB6A4A", "#CB181D")
+const PAPER_QUALITY_SYMBOL = "star"
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
-const PAPER_CHANNEL_NAMES = ("Buoyancy b", "Vertical velocity w", "Horizontal velocity u")
+const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
 const PAPER_INACTIVE_COLOR = "#F2F2F2"
 const PAPER_GRID_COLOR = "#E6E6E6"
+const PAPER_FONT_SIZE = 22
+const PAPER_AXIS_TITLE_SIZE = 22
+const PAPER_TICK_SIZE = 18
+const PAPER_TITLE_SIZE = 30
+const PAPER_SUBPLOT_TITLE_SIZE = 22
+const PAPER_LEGEND_SIZE = 18
+const PAPER_EVALUATION_LOG_BINS = 24
+const PAPER_FIGURE_WIDTH = 1450
+const PAPER_FIGURE_HEIGHT = 950
 const STRIPE_CHANNEL_WIDTH = 4
 const STRIPE_SENSOR_WIDTH = 3 * STRIPE_CHANNEL_WIDTH + 1
 const STRIPE_COLUMN_COUNT = 48 * STRIPE_SENSOR_WIDTH - 1
@@ -588,6 +602,49 @@ end
 
 axis_key(axis, index) = Symbol(index == 1 ? axis : "$(axis)$(index)")
 
+function style_subplot_titles!(plot)
+    annotations = get(plot.plot.layout.fields, :annotations, Any[])
+    for annotation in annotations
+        annotation.fields[:font] = attr(size = PAPER_SUBPLOT_TITLE_SIZE, color = "#252525")
+    end
+    return plot
+end
+
+function paper_axis(title; kwargs...)
+    fields = Dict{Symbol, Any}(
+        :title => attr(text = title, standoff = 12, font = attr(size = PAPER_AXIS_TITLE_SIZE)),
+        :tickfont => attr(size = PAPER_TICK_SIZE),
+    )
+    for (key, value) in kwargs
+        fields[key] = value
+    end
+    return attr(; fields...)
+end
+
+function thin_evaluation_cloud(points, log_mse_range; bin_count = PAPER_EVALUATION_LOG_BINS)
+    bin_count > 0 || throw(ArgumentError("bin_count must be positive."))
+    lower, upper = log_mse_range
+    upper > lower || throw(ArgumentError("The log-MSE display range must be increasing."))
+    buckets = Dict{Tuple{Int, Int, Int}, Tuple{Float64, PaperPoint}}()
+    for point in points
+        log_loss = log10(point.validation_mse)
+        lower <= log_loss <= upper || continue
+        bin = clamp(floor(Int, bin_count * (log_loss - lower) / (upper - lower)), 0, bin_count - 1)
+        key = (Int(point.replicate), Int(point.active_groups), bin)
+        center = lower + (bin + 0.5) * (upper - lower) / bin_count
+        distance = abs(log_loss - center)
+        previous = get(buckets, key, nothing)
+        if isnothing(previous) || distance < previous[1]
+            buckets[key] = (distance, point)
+        end
+    end
+    selected = [value[2] for value in values(buckets)]
+    sort!(selected; by = point -> (
+        Int(point.replicate), Int(point.active_groups), point.validation_mse, Int(point.update),
+    ))
+    return selected
+end
+
 function panel_position(configuration_name)
     method, grouping = split(configuration_name, '-'; limit = 2)
     return (findfirst(==(method), PAPER_METHODS), findfirst(==(grouping), PAPER_GROUPINGS))
@@ -615,6 +672,7 @@ function make_mask_figure(mask_choice, output, study_tag, expert_mean, tolerance
         rows = 2, cols = 2, vertical_spacing = 0.13, horizontal_spacing = 0.07,
         subplot_titles = mask_panel_titles(selected, expert_mean),
     )
+    style_subplot_titles!(plot)
     for configuration_name in HR_CONFIGURATION_NAMES
         row, col = panel_position(configuration_name)
         candidate = selected[configuration_name][:candidate]
@@ -640,26 +698,29 @@ function make_mask_figure(mask_choice, output, study_tag, expert_mean, tolerance
         ); row = 1, col = 1)
     end
     layout = Dict{Symbol, Any}(
-        :template => "plotly_white", :width => 1450, :height => 900,
+        :template => "plotly_white", :width => PAPER_FIGURE_WIDTH, :height => PAPER_FIGURE_HEIGHT,
         :title => attr(
             text = "$(study(study_tag).label): sparsest test-near-expert masks (≤ $(100 * tolerance)% degradation)",
-            x = 0.5, xanchor = "center",
+            x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525"),
         ),
         :paper_bgcolor => "white", :plot_bgcolor => "white",
-        :font => attr(family = "Arial, sans-serif", size = 13, color = "#303030"),
-        :margin => attr(l = 80, r = 30, t = 115, b = 100),
-        :legend => attr(orientation = "h", x = 0.5, xanchor = "center", y = -0.11, yanchor = "top"),
+        :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => attr(l = 105, r = 35, t = 135, b = 135),
+        :legend => attr(
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.10, yanchor = "top",
+            font = attr(size = PAPER_LEGEND_SIZE),
+        ),
     )
     for index in 1:4
-        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), attr(
-            title = index > 2 ? "Horizontal sensor index" : "",
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            index > 2 ? "Horizontal sensor index" : "";
             range = [0.5, STRIPE_COLUMN_COUNT + 0.5], tickmode = "array",
             tickvals = [stripe_sensor_center(value) for value in 1:4:48],
             ticktext = string.(1:4:48), showgrid = false, zeroline = false,
             showline = true, mirror = true, linecolor = "#3A3A3A",
         ))
-        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), attr(
-            title = isodd(index) ? "Vertical sensor index" : "",
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            isodd(index) ? "Vertical sensor index" : "";
             range = [0.5, 8.5], tickmode = "array", tickvals = collect(1:8),
             showgrid = false, zeroline = false, showline = true,
             mirror = true, linecolor = "#3A3A3A",
@@ -670,7 +731,7 @@ function make_mask_figure(mask_choice, output, study_tag, expert_mean, tolerance
     paths = String[]
     for extension in ("svg", "pdf")
         path = joinpath(output, "$stem.$extension")
-        PlotlyJS.savefig(plot, path; width = 1450, height = 900)
+        PlotlyJS.savefig(plot, path; width = PAPER_FIGURE_WIDTH, height = PAPER_FIGURE_HEIGHT)
         push!(paths, path)
     end
     return paths
@@ -730,10 +791,21 @@ function make_pareto_figure(configurations, output, study_tag)
         rows = 2, cols = 2, vertical_spacing = 0.13, horizontal_spacing = 0.07,
         subplot_titles = titles,
     )
+    style_subplot_titles!(plot)
     shapes = Any[]
-    all_losses = Float64[]
+    all_losses = [
+        point.validation_mse
+        for data in Base.values(configurations)
+        for point in data.evaluations
+        if isfinite(point.validation_mse) && point.validation_mse > 0
+    ]
+    isempty(all_losses) && error("No finite Higher-Ra evaluation losses were found.")
+    y_min = min(minimum(all_losses), minimum(HR_QUALITY_THRESHOLDS))
+    y_range = [log10(y_min) - 0.15, log10(10.0)]
     maxima = Dict(grouping => 1 for grouping in PAPER_GROUPINGS)
     shown_mask_thresholds = Set{Float64}()
+    original_point_count = 0
+    displayed_point_count = 0
     for configuration_name in HR_CONFIGURATION_NAMES
         row, col = panel_position(configuration_name)
         index = 2 * (row - 1) + col
@@ -741,30 +813,43 @@ function make_pareto_figure(configurations, output, study_tag)
         data = configurations[configuration_name]
         eligible = filter(point -> isfinite(point.validation_mse) && point.validation_mse > 0,
                           data.evaluations)
-        append!(all_losses, point.validation_mse for point in eligible)
         !isempty(eligible) && (maxima[grouping] = max(
             maxima[grouping], maximum(Int(point.active_groups) for point in eligible)
         ))
         for threshold in thresholds
             points = filter(point -> point.threshold_value == threshold, eligible)
             isempty(points) && continue
+            selected = thin_evaluation_cloud(points, y_range)
+            original_point_count += length(points)
+            displayed_point_count += length(selected)
             showlegend = !(threshold in shown_mask_thresholds)
-            showlegend && push!(shown_mask_thresholds, threshold)
+            if showlegend
+                push!(shown_mask_thresholds, threshold)
+                add_trace!(plot, scatter(
+                    x = [NaN], y = [NaN], mode = "markers", name = "τ=$(threshold)",
+                    showlegend = true, legendgroup = "threshold_$threshold",
+                    legendrank = legend_ranks[threshold],
+                    marker = attr(
+                        color = colors[threshold], size = 8, opacity = 1.0,
+                        symbol = "circle",
+                    ),
+                ); row, col)
+            end
             add_trace!(plot, scattergl(
-                x = Int.(getproperty.(points, :active_groups)),
-                y = getproperty.(points, :validation_mse),
-                mode = "markers", name = "mask τ=$(threshold)",
-                showlegend = showlegend, legendgroup = "threshold_$threshold",
+                x = Int.(getproperty.(selected, :active_groups)),
+                y = getproperty.(selected, :validation_mse),
+                mode = "markers", name = "τ=$(threshold)",
+                showlegend = false, legendgroup = "threshold_$threshold",
                 legendrank = legend_ranks[threshold],
                 marker = attr(
                     color = colors[threshold], size = 4, opacity = 0.32,
-                    symbol = [("circle", "diamond", "square")[Int(point.replicate)] for point in points],
+                    symbol = [("circle", "diamond", "square")[Int(point.replicate)] for point in selected],
                 ),
                 customdata = hcat(
-                    Int.(getproperty.(points, :active_inputs)),
-                    Int.(getproperty.(points, :replicate)),
-                    getproperty.(points, :strength),
-                    Int.(getproperty.(points, :update)),
+                    Int.(getproperty.(selected, :active_inputs)),
+                    Int.(getproperty.(selected, :replicate)),
+                    getproperty.(selected, :strength),
+                    Int.(getproperty.(selected, :update)),
                 ),
                 hovertemplate = "groups=%{x}<br>inputs=%{customdata[0]}<br>MSE=%{y:.4e}<br>replicate=%{customdata[1]}<br>strength=%{customdata[2]:.4g}<br>update=%{customdata[3]}<extra></extra>",
             ); row, col)
@@ -793,7 +878,7 @@ function make_pareto_figure(configurations, output, study_tag)
                 name = "Selected $label", showlegend = false,
                 marker = attr(
                     color = PAPER_QUALITY_COLORS[qindex], size = 14,
-                    symbol = PAPER_QUALITY_SYMBOLS[qindex],
+                    symbol = PAPER_QUALITY_SYMBOL,
                     line = attr(color = "#111111", width = 1.0),
                 ),
                 customdata = [[Int(candidate[:active_inputs]), Float64(frozen[:mean_state_nusselt])]],
@@ -818,34 +903,34 @@ function make_pareto_figure(configurations, output, study_tag)
                     line = attr(color = PAPER_QUALITY_COLORS[qindex], width = 1.4,
                                 dash = ("dash", "dot", "dashdot")[qindex]),
                     marker = attr(color = PAPER_QUALITY_COLORS[qindex], size = 10,
-                                  symbol = PAPER_QUALITY_SYMBOLS[qindex]),
+                                  symbol = PAPER_QUALITY_SYMBOL),
                 ); row, col)
             end
         end
     end
-    isempty(all_losses) && error("No finite Higher-Ra evaluation losses were found.")
-    y_min = min(minimum(all_losses), minimum(HR_QUALITY_THRESHOLDS))
-    y_range = [log10(y_min) - 0.15, log10(10.0)]
     layout = Dict{Symbol, Any}(
-        :template => "plotly_white", :width => 1450, :height => 900,
+        :template => "plotly_white", :width => PAPER_FIGURE_WIDTH, :height => PAPER_FIGURE_HEIGHT,
         :title => attr(
             text = "$(study(study_tag).label): evaluation landscapes and pooled Pareto fronts",
-            x = 0.5, xanchor = "center",
+            x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525"),
         ),
         :paper_bgcolor => "white", :plot_bgcolor => "white", :shapes => shapes,
-        :font => attr(family = "Arial, sans-serif", size = 13, color = "#303030"),
-        :margin => attr(l = 85, r = 30, t = 100, b = 120),
-        :legend => attr(orientation = "h", x = 0.5, xanchor = "center", y = -0.13, yanchor = "top"),
+        :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => attr(l = 110, r = 35, t = 125, b = 150),
+        :legend => attr(
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.10, yanchor = "top",
+            font = attr(size = PAPER_LEGEND_SIZE),
+        ),
     )
     for index in 1:4
         grouping = isodd(index) ? "gc" : "sc"
-        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), attr(
-            title = index > 2 ? "Active groups" : "", range = [-0.5, maxima[grouping] + 1],
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            index > 2 ? "Active groups" : ""; range = [-0.5, maxima[grouping] + 1],
             showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
             gridcolor = PAPER_GRID_COLOR, zeroline = false,
         ))
-        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), attr(
-            title = isodd(index) ? "Validation MSE" : "", type = "log", range = y_range,
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            isodd(index) ? "Validation MSE" : ""; type = "log", range = y_range,
             showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
             gridcolor = PAPER_GRID_COLOR, zeroline = false,
         ))
@@ -854,9 +939,10 @@ function make_pareto_figure(configurations, output, study_tag)
     stem = "figure_s1_pareto_comparison_$(study_tag)"
     svg_path = joinpath(output, "$stem.svg")
     pdf_path = joinpath(output, "$stem.pdf")
-    PlotlyJS.savefig(plot, svg_path; width = 1450, height = 900)
+    PlotlyJS.savefig(plot, svg_path; width = PAPER_FIGURE_WIDTH, height = PAPER_FIGURE_HEIGHT)
     move_glimages_behind_cartesian!(svg_path)
-    PlotlyJS.savefig(plot, pdf_path; width = 1450, height = 900)
+    PlotlyJS.savefig(plot, pdf_path; width = PAPER_FIGURE_WIDTH, height = PAPER_FIGURE_HEIGHT)
+    println("$(study(study_tag).label) Pareto display retained $displayed_point_count of $original_point_count evaluations after deterministic log-MSE binning; fronts and candidate selection still use all evaluations.")
     return [svg_path, pdf_path]
 end
 
