@@ -305,8 +305,9 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Codekopie der Paket-8-Pipeline unter `Revision/Simple_NNA_Study`.
   - Ausschließlich GO und GR, jeweils mit GC und SC; Seeds, Strength-Raster,
     100.000-Update-Budget, Batches, Validation-Takt, Thresholds, Pareto-Regeln,
-    Qualitätsgrenze und Train-/Validation-/Test-Splits bleiben identisch zu
-    Paket 8.
+    und Train-/Validation-/Test-Splits bleiben identisch zu Paket 8. Die
+    Qualitätsgrenze wird aufgrund der Varying-IC-Erfahrungen strenger auf
+    Validation-MSE `0.02` statt `0.03` gesetzt.
   - Parameter-sharing Dense-Apprentice entsprechend dem Varying-IC-IPPO-Actor:
     zwei gleich breite GELU-Hidden-Layer und ein linearer Action-Head.
   - Nächstmöglicher unveränderter IPPO-Scale `nna_scale=10.2` (`h=102`) mit
@@ -322,7 +323,8 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   - Dense-Apprentice, Package-8-abgeleitete Worker/Analyzer/Plots, atomare
     Persistenz, vierkonfigurativer Launcher und Architektur-/Manifesttests sind
-    implementiert. Produktionsruns stehen noch aus.
+    implementiert. Die Qualitätsgrenze wurde vor der erneuten Analyse auf
+    Validation-MSE `0.02` verschärft.
 
   Abschluss:
 

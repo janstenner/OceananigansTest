@@ -154,9 +154,10 @@ Sparse Sensing paper.
   its threshold markers likewise use opaque legend-only representatives.
 - `Simple_NNA_Study/`: Package-8-derived Varying-IC study for a shared dense
   IPPO-style apprentice. It retains only GO/GR under GC/SC, uses the unchanged
-  Package-8 seeds, strengths, budgets, split isolation, thresholds, Pareto
-  protocol, and terminal tests, and is launched in four configuration-specific
-  calls sharing one experiment ID.
+  Package-8 seeds, strengths, budgets, split isolation, mask thresholds, Pareto
+  protocol, and terminal tests, but uses the stricter validation-quality
+  threshold `0.02`; it is launched in four configuration-specific calls sharing
+  one experiment ID.
 - `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
   paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
   resolution, exact protocol-specific physical-channel scales, frozen
@@ -460,9 +461,10 @@ until the runs and their evaluation have finished. See `MaskedTraining/README.md
 ## Simple Dense-NNA Varying-IC Study
 
 `Simple_NNA_Study` is a code-level copy of the Package-8 workflow restricted to
-`go-gc`, `go-sc`, `gr-gc`, and `gr-sc`. Every scientific setting for those four
-configurations remains identical to Package 8. The only model change is a
-parameter-sharing dense apprentice with the Varying-IC IPPO actor layout:
+`go-gc`, `go-sc`, `gr-gc`, and `gr-sc`. Its validation-quality threshold is
+`0.02` instead of Package 8's `0.03`; the other inherited scientific settings
+remain identical. The model change is a parameter-sharing dense apprentice
+with the Varying-IC IPPO actor layout:
 `Dense(360, h, gelu)`, `Dense(h, h, gelu)`, `Dense(h, 1)`.
 
 The MAT apprentice actor has 47,698 trainable parameters after excluding the

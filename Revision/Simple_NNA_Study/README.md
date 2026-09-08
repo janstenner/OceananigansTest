@@ -2,9 +2,9 @@
 
 This study is the dense-layer counterpart to Package 8. It uses the same
 Varying-IC train, validation, and terminal test splits, seeds, update budget,
-batches, validation cadence, thresholds, quality rule, GO/GR strengths, and
-GC/SC group definitions. Only the apprentice architecture and the reduced
-four-configuration matrix differ.
+batches, validation cadence, mask thresholds, GO/GR strengths, and GC/SC group
+definitions. The apprentice architecture, reduced four-configuration matrix,
+and stricter validation-quality threshold differ.
 
 ## Apprentice architecture
 
@@ -28,7 +28,7 @@ is 102, hence `nna_scale = 10.2`, with 47,432 trainable actor parameters
 including `logσ` (266 fewer, or 0.56%). These values are asserted at worker
 startup and stored in every manifest and run configuration.
 
-## Frozen Package-8 settings
+## Package-8-derived settings
 
 - master seed `20_260_851` and the same three apprentice/batch seed pairs;
 - 100,000 updates, batch size 100, learning rate `2e-4`;
@@ -36,7 +36,7 @@ startup and stored in every manifest and run configuration.
 - absolute mask thresholds `(0.0, 0.003, 0.006, 0.012)` with max-input-L1
   group importance;
 - Pareto objectives `active_inputs` and Varying validation MSE;
-- quality threshold `validation MSE <= 0.03`;
+- stricter quality threshold `validation MSE <= 0.02` (Package 8 used `0.03`);
 - no test data enter strength, checkpoint, threshold, or mask selection.
 
 The four configurations and Package-8 strength grids are:
