@@ -14,6 +14,9 @@ include(joinpath(SNN_DISTILLATION_DIRECTORY, "ParetoArchive.jl"))
 const DEFAULT_RESULTS_ROOT = joinpath(@__DIR__, "results")
 const SNN_TEST_STEPS = 200
 const THRESHOLD_COLOR_PALETTE = ("#2166AC", "#92C5DE", "#D6604D", "#67001F")
+const QUALITY_THRESHOLD_COLORS = ("#B2182B",)
+const QUALITY_THRESHOLD_DASHES = ("dash",)
+const PARETO_SWEEP_CANDIDATE_COLOR = "#7B3294"
 const REPLICATE_SYMBOLS = Dict(1 => "circle", 2 => "diamond", 3 => "square")
 
 function parse_arguments(arguments)
@@ -178,10 +181,15 @@ function load_run_records(options, job)
     return retain_successful_threshold_records(records; context = job.id)
 end
 
+function quality_membership(configuration, value)
+    return join((@sprintf("%.12g", threshold)
+                 for threshold in quality_thresholds(configuration) if value <= threshold), ";")
+end
+
 function write_csv(path::AbstractString, records, front_ids)
     mkpath(dirname(path))
     open(path, "w") do io
-        println(io, "run_id,replicate,configuration,strength,update,candidate_id,threshold_id,threshold_value,active_groups,active_inputs,validation_matching,pooled_pareto,under_quality_threshold")
+        println(io, "run_id,replicate,configuration,strength,update,candidate_id,threshold_id,threshold_value,active_groups,active_inputs,validation_matching,pooled_pareto,qualified_quality_thresholds")
         for record in records
             @printf(
                 io,
@@ -192,7 +200,7 @@ function write_csv(path::AbstractString, records, front_ids)
                 Float64(record[:threshold_value]), Int(record[:active_groups]),
                 Int(record[:active_inputs]), Float64(record[:validation_matching]),
                 string(string(record[:candidate_id]) in front_ids),
-                string(Float64(record[:validation_matching]) <= SNN_QUALITY_THRESHOLD),
+                quality_membership(record[:configuration], Float64(record[:validation_matching])),
             )
         end
     end
@@ -227,12 +235,12 @@ function ensure_plotly_loaded!()
     return nothing
 end
 
-function make_plot(options, records, pooled_front, output_directory)
+function make_plot(options, records, pooled_front, selections, output_directory)
     ensure_plotly_loaded!()
-    return Base.invokelatest(make_plot_loaded, options, records, pooled_front, output_directory)
+    return Base.invokelatest(make_plot_loaded, options, records, pooled_front, selections, output_directory)
 end
 
-function make_plot_loaded(options, records, pooled_front, output_directory)
+function make_plot_loaded(options, records, pooled_front, selections, output_directory)
     strengths = observed_strengths(records)
     thresholds = observed_thresholds(records)
     colors = threshold_colors(thresholds)
@@ -280,6 +288,28 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
         customdata = hcat(front_active_groups, front_active_inputs),
         hovertemplate = "groups=%{customdata[0]}<br>global inputs=%{customdata[1]}<br>MSE=%{y:.4e}<extra>pooled Pareto front</extra>",
     ))
+    for selection in selections.unique_candidates
+        candidate = selection[:candidate]
+        selected_thresholds = sort(Float64.(selection[:quality_thresholds]); rev = true)
+        is_quality_selection = !isempty(selected_thresholds)
+        label = is_quality_selection ?
+            "q≤" * join((@sprintf("%.4g", value) for value in selected_thresholds), "/") :
+            "$(candidate[:active_groups])g"
+        push!(traces, PlotlyJS.scatter(
+            x = [Int(candidate[:active_groups])],
+            y = [Float64(candidate[:validation_matching])],
+            mode = "markers+text",
+            text = [label],
+            textposition = "top center",
+            name = "Selected $label",
+            showlegend = false,
+            marker = PlotlyJS.attr(
+                color = is_quality_selection ? QUALITY_THRESHOLD_COLORS[1] : PARETO_SWEEP_CANDIDATE_COLOR,
+                size = 14,
+                symbol = "star", line = PlotlyJS.attr(color = "#111111", width = 1.0),
+            ),
+        ))
+    end
     for replicate in SNN_REPLICATES
         push!(traces, PlotlyJS.scatter(
             x = [NaN],
@@ -307,10 +337,13 @@ function make_plot_loaded(options, records, pooled_front, output_directory)
             x0 = 0,
             x1 = 1,
             yref = "y",
-            y0 = SNN_QUALITY_THRESHOLD,
-            y1 = SNN_QUALITY_THRESHOLD,
-            line = PlotlyJS.attr(color = "#555555", width = 1.5, dash = "dash"),
-        )],
+            y0 = threshold,
+            y1 = threshold,
+            line = PlotlyJS.attr(
+                color = QUALITY_THRESHOLD_COLORS[index], width = 1.5,
+                dash = QUALITY_THRESHOLD_DASHES[index],
+            ),
+        ) for (index, threshold) in enumerate(quality_thresholds(options.configuration))],
     )
     plot = PlotlyJS.Plot(traces, layout)
     paths = String[]
@@ -326,39 +359,111 @@ file_sha256(path::AbstractString) = open(path, "r") do io
     bytes2hex(SHA.sha256(io))
 end
 
-function select_sparse_test_candidate(pooled_front)
-    qualified = filter(
-        record -> Float64(record[:validation_matching]) <= SNN_QUALITY_THRESHOLD,
-        pooled_front,
-    )
-    isempty(qualified) && return nothing
-    return first(sort(qualified; by = record -> (
+function candidate_sort_key(record)
+    return (
         Int(record[:active_inputs]),
         Int(record[:active_groups]),
         Float64(record[:validation_matching]),
         Int(record[:update]),
         string(record[:run_id]),
         string(record[:candidate_id]),
-    )))
+    )
 end
 
-function freeze_test_candidate!(output, candidate, checkpoint_path)
-    path = joinpath(output, "selected_test_candidate.jld2")
+function select_sparse_test_candidate(pooled_front; quality_threshold = SNN_QUALITY_THRESHOLD)
+    qualified = filter(
+        record -> Float64(record[:validation_matching]) <= quality_threshold,
+        pooled_front,
+    )
+    isempty(qualified) && return nothing
+    return first(sort(qualified; by = candidate_sort_key))
+end
+
+function select_quality_candidates(pooled_front, configuration)
+    threshold_selections = Dict{Symbol, Any}[]
+    unique_candidates = Dict{Symbol, Any}[]
+    candidate_indices = Dict{String, Int}()
+    quality_threshold = only(quality_thresholds(configuration))
+    primary = select_sparse_test_candidate(pooled_front; quality_threshold)
+    if isnothing(primary)
+        push!(threshold_selections, Dict{Symbol, Any}(
+            :quality_threshold => quality_threshold,
+            :candidate_id => nothing,
+            :candidate_index => nothing,
+        ))
+        return (; threshold_selections, unique_candidates,
+                pareto_sweep_candidate_indices = Int[])
+    end
+    candidates = if configuration == "gr-sc"
+        minimum_groups = Int(primary[:active_groups])
+        sort(filter(record ->
+            minimum_groups <= Int(record[:active_groups]) <= SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS,
+            pooled_front,
+        ); by = record -> (Int(record[:active_groups]), candidate_sort_key(record)))
+    else
+        [primary]
+    end
+    primary_id = string(primary[:candidate_id])
+    for candidate in candidates
+        candidate_id = string(candidate[:candidate_id])
+        candidate_index = length(unique_candidates) + 1
+        candidate_indices[candidate_id] = candidate_index
+        push!(unique_candidates, Dict{Symbol, Any}(
+            :candidate => candidate,
+            :quality_thresholds => candidate_id == primary_id ? Float64[quality_threshold] : Float64[],
+            :selection_role => candidate_id == primary_id ? :quality_threshold : :gr_sc_pareto_sweep,
+        ))
+    end
+    primary_index = candidate_indices[primary_id]
+    push!(threshold_selections, Dict{Symbol, Any}(
+        :quality_threshold => quality_threshold,
+        :candidate_id => primary_id,
+        :candidate_index => primary_index,
+    ))
+    sweep_indices = configuration == "gr-sc" ? collect(eachindex(unique_candidates)) : Int[]
+    return (; threshold_selections, unique_candidates,
+            pareto_sweep_candidate_indices = sweep_indices)
+end
+
+function freeze_test_candidates!(output, selections, configuration)
+    clear_selected_candidate_tests!(output)
+    frozen_candidates = Dict{Symbol, Any}[]
+    for (index, selection) in enumerate(selections.unique_candidates)
+        selected = selection[:candidate]
+        run_directory = string(selected[:source_run_directory])
+        checkpoint_path = candidate_checkpoint_for_record(run_directory, selected)
+        candidate = hydrate_candidate_record(selected, run_directory)
+        push!(frozen_candidates, Dict{Symbol, Any}(
+            :candidate_index => index,
+            :quality_thresholds => copy(selection[:quality_thresholds]),
+            :selection_role => selection[:selection_role],
+            :candidate => candidate,
+            :checkpoint_path => abspath(checkpoint_path),
+            :checkpoint_sha256 => file_sha256(checkpoint_path),
+        ))
+    end
+    path = joinpath(output, "selected_test_candidates.jld2")
     atomic_save(
         path;
         schema_version = SNN_SCHEMA_VERSION,
         experiment = :simple_nna_varying_regularizer_comparison,
         selection_source = :pooled_validation_pareto_front,
-        selection_rule = :minimum_active_inputs_under_quality_threshold,
-        quality_threshold = SNN_QUALITY_THRESHOLD,
+        selection_rule = configuration == "gr-sc" ?
+            :quality_threshold_candidate_plus_pareto_sweep_to_max_active_groups :
+            :minimum_active_inputs_under_quality_threshold,
+        quality_thresholds = collect(quality_thresholds(configuration)),
+        threshold_selections = selections.threshold_selections,
+        unique_candidate_count = length(frozen_candidates),
+        candidates = frozen_candidates,
+        pareto_sweep_candidate_indices = selections.pareto_sweep_candidate_indices,
+        pareto_sweep_max_active_groups = configuration == "gr-sc" ?
+            SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS : nothing,
         selection_uses_test_data = false,
-        candidate,
-        checkpoint_path,
-        checkpoint_sha256 = file_sha256(checkpoint_path),
         frozen_before_test = true,
         frozen_at = string(Dates.now()),
     )
-    return path
+    return (; path, candidates = frozen_candidates,
+            threshold_selections = selections.threshold_selections)
 end
 
 function configure_test_runtime!(candidate, output)
@@ -474,12 +579,14 @@ function write_test_csv(path, episodes)
     return path
 end
 
-function make_test_plot(output, episodes, candidate)
+function make_test_plot(output, episodes, candidate, selected_quality_thresholds)
     ensure_plotly_loaded!()
-    return Base.invokelatest(make_test_plot_loaded, output, episodes, candidate)
+    return Base.invokelatest(
+        make_test_plot_loaded, output, episodes, candidate, selected_quality_thresholds,
+    )
 end
 
-function make_test_plot_loaded(output, episodes, candidate)
+function make_test_plot_loaded(output, episodes, candidate, selected_quality_thresholds)
     plot = PlotlyJS.make_subplots(
         rows = 1,
         cols = 2,
@@ -498,9 +605,12 @@ function make_test_plot_loaded(output, episodes, candidate)
             line = PlotlyJS.attr(color = "#F2A13A", width = 1.5), opacity = 0.65,
         ); row = 1, col = 2)
     end
+    selection_label = isempty(selected_quality_thresholds) ?
+        "GR-SC Pareto sweep: $(candidate[:active_groups]) active groups" :
+        "q ∈ {$(join(selected_quality_thresholds, ", "))}"
     PlotlyJS.relayout!(plot, Dict{Symbol, Any}(
         :template => "plotly_white",
-        :title => "Masked Simple-NNA Varying test: $(candidate[:active_inputs]) active inputs",
+        :title => "Masked Simple-NNA Varying test: $(candidate[:active_inputs]) active inputs, $selection_label",
         :width => 1100,
         :height => 500,
         :xaxis => PlotlyJS.attr(title = "Control step"),
@@ -508,19 +618,21 @@ function make_test_plot_loaded(output, episodes, candidate)
         :yaxis => PlotlyJS.attr(title = "Mean reward"),
         :yaxis2 => PlotlyJS.attr(title = "Nu"),
     ))
-    path = joinpath(output, "test", "test_curves.svg")
+    path = joinpath(output, "test_curves.svg")
     PlotlyJS.savefig(plot, path; width = 1100, height = 500)
     return path
 end
 
-function run_selected_candidate_test!(output, selected)
-    run_directory = string(selected[:source_run_directory])
-    checkpoint_path = candidate_checkpoint_for_record(run_directory, selected)
-    candidate = hydrate_candidate_record(selected, run_directory)
-    selection_path = freeze_test_candidate!(output, candidate, checkpoint_path)
-    test_directory = joinpath(output, "test")
+function run_frozen_candidate_test!(output, selection_path, frozen, config, cases)
+    index = Int(frozen[:candidate_index])
+    candidate = frozen[:candidate]
+    checkpoint_path = string(frozen[:checkpoint_path])
+    selected_quality_thresholds = Float64.(frozen[:quality_thresholds])
+    file_sha256(checkpoint_path) == string(frozen[:checkpoint_sha256]) || error(
+        "Frozen candidate checkpoint changed before test: $checkpoint_path",
+    )
+    test_directory = joinpath(output, "test", @sprintf("candidate_%02d", index))
     mkpath(test_directory)
-    config = configure_test_runtime!(candidate, output)
     checkpoint = JLD2.load(checkpoint_path)
     haskey(checkpoint, "model_payload") || error("Candidate checkpoint has no model_payload: $checkpoint_path")
     candidate_model = checkpoint["model_payload"]
@@ -529,10 +641,9 @@ function run_selected_candidate_test!(output, selected)
     input_mask = Float32.(candidate[:mask])
     runtime_env = Base.invokelatest(() -> getfield(@__MODULE__, :env))
     length(input_mask) == size(runtime_env.state, 1) || error("Selected candidate mask has the wrong length.")
-    cases = varying_test_cases()
     episodes = [Base.invokelatest(run_masked_test_episode, candidate_model, input_mask, choice) for choice in cases]
     csv_path = write_test_csv(joinpath(test_directory, "test_episodes.csv"), episodes)
-    plot_path = make_test_plot(output, episodes, candidate)
+    plot_path = make_test_plot(test_directory, episodes, candidate, selected_quality_thresholds)
     result_path = joinpath(test_directory, "test_results.jld2")
     atomic_save(
         result_path;
@@ -541,6 +652,9 @@ function run_selected_candidate_test!(output, selected)
         protocol = :varying,
         selection_uses_test_data = false,
         selection_path,
+        candidate_index = index,
+        quality_thresholds = selected_quality_thresholds,
+        selection_role = Symbol(frozen[:selection_role]),
         candidate_id = string(candidate[:candidate_id]),
         run_id = string(candidate[:run_id]),
         configuration = string(candidate[:configuration]),
@@ -568,12 +682,14 @@ function run_selected_candidate_test!(output, selected)
         plot_path,
         completed_at = string(Dates.now()),
     )
-    return (; candidate, selection_path, result_path, csv_path, plot_path)
+    return (; index, candidate, quality_thresholds = selected_quality_thresholds,
+            selection_path, result_path, csv_path, plot_path)
 end
 
-function clear_selected_candidate_test!(output)
+function clear_selected_candidate_tests!(output)
     for path in (
         joinpath(output, "selected_test_candidate.jld2"),
+        joinpath(output, "selected_test_candidates.jld2"),
         joinpath(output, "test", "test_results.jld2"),
         joinpath(output, "test", "test_episode.csv"),
         joinpath(output, "test", "test_episodes.csv"),
@@ -581,7 +697,28 @@ function clear_selected_candidate_test!(output)
     )
         isfile(path) && rm(path; force = true)
     end
+    test_root = joinpath(output, "test")
+    if isdir(test_root)
+        for entry in readdir(test_root; join = true)
+            isdir(entry) && startswith(basename(entry), "candidate_") &&
+                rm(entry; recursive = true, force = true)
+        end
+    end
     return nothing
+end
+
+clear_selected_candidate_test!(output) = clear_selected_candidate_tests!(output)
+
+function run_selected_candidate_tests!(output, selections, configuration)
+    frozen = freeze_test_candidates!(output, selections, configuration)
+    isempty(frozen.candidates) && return (; frozen, tests = NamedTuple[])
+    config = configure_test_runtime!(frozen.candidates[1][:candidate], output)
+    cases = varying_test_cases()
+    tests = [
+        run_frozen_candidate_test!(output, frozen.path, candidate, config, cases)
+        for candidate in frozen.candidates
+    ]
+    return (; frozen, tests)
 end
 
 function analyze_completed_runs(options, jobs)
@@ -604,14 +741,10 @@ function analyze_completed_runs(options, jobs)
         pooled_front,
         front_ids,
     )
-    plot_paths = make_plot(options, records, pooled_front, output)
-    selected = select_sparse_test_candidate(pooled_front)
-    test = if isnothing(selected)
-        clear_selected_candidate_test!(output)
-        nothing
-    else
-        run_selected_candidate_test!(output, selected)
-    end
+    selections = select_quality_candidates(pooled_front, options.configuration)
+    plot_paths = make_plot(options, records, pooled_front, selections, output)
+    test = run_selected_candidate_tests!(output, selections, options.configuration)
+    selected_ids = [string(entry[:candidate][:candidate_id]) for entry in test.frozen.candidates]
     legacy_data_path = joinpath(output, "pareto_points.jld2")
     isfile(legacy_data_path) && rm(legacy_data_path; force = true)
     write_status!(
@@ -625,20 +758,23 @@ function analyze_completed_runs(options, jobs)
         csv_path,
         front_csv_path,
         plot_paths,
-        selected_test_candidate = isnothing(test) ? nothing : string(test.candidate[:candidate_id]),
-        selected_test_active_inputs = isnothing(test) ? nothing : Int(test.candidate[:active_inputs]),
-        selected_test_validation_matching = isnothing(test) ? nothing : Float64(test.candidate[:validation_matching]),
-        selection_path = isnothing(test) ? nothing : test.selection_path,
-        test_result_path = isnothing(test) ? nothing : test.result_path,
-        test_csv_path = isnothing(test) ? nothing : test.csv_path,
-        test_plot_path = isnothing(test) ? nothing : test.plot_path,
+        quality_thresholds = collect(quality_thresholds(options.configuration)),
+        threshold_selections = selections.threshold_selections,
+        pareto_sweep_candidate_indices = selections.pareto_sweep_candidate_indices,
+        pareto_sweep_max_active_groups = options.configuration == "gr-sc" ?
+            SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS : nothing,
+        selected_test_candidates = selected_ids,
+        selection_path = test.frozen.path,
+        test_result_paths = [entry.result_path for entry in test.tests],
+        test_csv_paths = [entry.csv_path for entry in test.tests],
+        test_plot_paths = [entry.plot_path for entry in test.tests],
         completed_at = string(Dates.now()),
     )
     println("Completed Simple-NNA Pareto analysis for $(options.configuration), λ ∈ {$(join(strengths, ", "))}.")
     println("  points/front: $(length(records)) / $(length(pooled_front))")
-    isnothing(test) && println("  selected test candidate: NR (no point under quality threshold)")
+    println("  unique selected test candidates: $(length(test.tests))")
     println("  output: $output")
-    return (; records, pooled_front, csv_path, front_csv_path, plot_paths, test)
+    return (; records, pooled_front, selections, csv_path, front_csv_path, plot_paths, test)
 end
 
 function analysis_main(arguments = ARGS)

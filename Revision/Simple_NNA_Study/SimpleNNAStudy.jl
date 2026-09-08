@@ -9,10 +9,11 @@ using StableRNGs
 export SNN_SCHEMA_VERSION, SNN_MASTER_SEED, SNN_UPDATES, SNN_BATCH_SIZE,
        SNN_VALIDATION_BATCH_SIZE, SNN_LEARNING_RATE, SNN_EVALUATION_INTERVAL,
        SNN_RESUME_INTERVAL, SNN_GARBAGE_COLLECTION_INTERVAL, SNN_REPLICATES,
-       SNN_THRESHOLDS, SNN_QUALITY_THRESHOLD, SNN_CONFIGURATION_NAMES, SNN_STRENGTH_GRIDS,
+       SNN_THRESHOLDS, SNN_QUALITY_THRESHOLD, SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS,
+       SNN_CONFIGURATION_NAMES, SNN_STRENGTH_GRIDS,
        SNN_APPRENTICE_ARCHITECTURE, SNN_NNA_SCALE, SNN_HIDDEN_SIZE,
        SNN_MAT_ACTOR_PARAMETER_COUNT, SNN_PARAMETER_COUNT,
-       configuration, normalize_configuration, normalize_experiment_id, seed_plan, seed_plan_hash,
+       configuration, quality_thresholds, normalize_configuration, normalize_experiment_id, seed_plan, seed_plan_hash,
        selected_variants, resolved_thresholds, study_jobs, job_for, run_directory, analysis_directory,
        status_path, analysis_status_path, atomic_save, load_status, write_status!,
        canonical_string, fingerprint, strength_tag, expected_evaluation_updates
@@ -29,6 +30,7 @@ const SNN_GARBAGE_COLLECTION_INTERVAL = 5
 const SNN_REPLICATES = 1:3
 const SNN_THRESHOLDS = (0.0, 0.003, 0.006, 0.012)
 const SNN_QUALITY_THRESHOLD = 2e-2
+const SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS = 17
 const SNN_APPRENTICE_ARCHITECTURE = :simple_nna
 const SNN_NNA_SCALE = 10.2
 const SNN_HIDDEN_SIZE = 102
@@ -71,6 +73,11 @@ function normalize_configuration(value)::String
 end
 
 configuration(value) = SNN_CONFIGURATIONS[normalize_configuration(value)]
+
+function quality_thresholds(value)
+    normalize_configuration(value)
+    return (SNN_QUALITY_THRESHOLD,)
+end
 
 function normalize_experiment_id(value)::String
     identifier = strip(string(value))

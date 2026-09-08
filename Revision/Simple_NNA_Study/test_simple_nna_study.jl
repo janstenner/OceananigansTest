@@ -29,6 +29,9 @@ using .SimpleNNAStudy
     @test SNN_BATCH_SIZE == 100
     @test SNN_VALIDATION_BATCH_SIZE == 512
     @test SNN_QUALITY_THRESHOLD == 2e-2
+    @test quality_thresholds("go-gc") == (0.02,)
+    @test quality_thresholds("gr-sc") == (0.02,)
+    @test SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS == 17
     @test resolved_thresholds() == collect(SNN_THRESHOLDS)
     @test resolved_thresholds([0.08, 0.02, 0.04, 0.04]) == [0.0, 0.02, 0.04, 0.08]
     @test_throws ArgumentError resolved_thresholds([0.0, 0.02])

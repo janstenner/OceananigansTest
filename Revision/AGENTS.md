@@ -156,8 +156,8 @@ Sparse Sensing paper.
   IPPO-style apprentice. It retains only GO/GR under GC/SC, uses the unchanged
   Package-8 seeds, strengths, budgets, split isolation, mask thresholds, Pareto
   protocol, and terminal tests, but uses the stricter validation-quality
-  threshold `0.02`; it is launched in four configuration-specific calls sharing
-  one experiment ID.
+  threshold `0.02` plus a diagnostic Pareto test sweep only for `gr-sc`;
+  it is launched in four configuration-specific calls sharing one experiment ID.
 - `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
   paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
   resolution, exact protocol-specific physical-channel scales, frozen
@@ -476,6 +476,12 @@ the target, actual count, and difference, and workers assert them before trainin
 The launcher requires one explicit configuration; four calls with one shared
 experiment ID start 36 training workers and four analyzers in total. Production
 runs have not started.
+
+Only the `gr-sc` analyzer extends terminal testing beyond the `0.02` quality
+selection. Starting at the sparsest qualifying pooled-front point, it tests
+every subsequent pooled-Pareto candidate in ascending active-group order
+through 17 groups inclusive. Analyzer and paper Pareto plots label the complete
+tested sweep; the other configurations retain one `0.02`-selected candidate.
 
 ## Maintenance Rules
 

@@ -22,6 +22,10 @@ const PAPER_METHOD_NAMES = Dict(
 const PAPER_ZERO_THRESHOLD_COLOR = "#277DA1"
 const PAPER_DEFAULT_THRESHOLD_COLORS = ("#F2A13A", "#EE8D32", "#E6782B", "#D96624")
 const PAPER_EXTRA_THRESHOLD_COLORS = ("#D73027", "#B2182B", "#8B0A1A", "#67000D")
+const PAPER_QUALITY_COLORS = ("#B2182B",)
+const PAPER_QUALITY_DASHES = ("dash",)
+const PAPER_QUALITY_SYMBOL = "star"
+const PAPER_SWEEP_COLOR = "#7B3294"
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
 const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
 const PAPER_INACTIVE_COLOR = "#F2F2F2"
@@ -171,8 +175,26 @@ function analysis_paths(options, configuration)
         status = joinpath(root, "status.jld2"),
         evaluations = joinpath(root, "evaluations.csv"),
         front = joinpath(root, "pooled_pareto_front.csv"),
-        selection = joinpath(root, "selected_test_candidate.jld2"),
-        test = joinpath(root, "test", "test_results.jld2"),
+        selection = joinpath(root, "selected_test_candidates.jld2"),
+        legacy_selection = joinpath(root, "selected_test_candidate.jld2"),
+        legacy_test = joinpath(root, "test", "test_results.jld2"),
+    )
+end
+
+paper_candidate_sort_key(row) = (
+    int_value(row, :active_inputs),
+    int_value(row, :active_groups),
+    float_value(row, :validation_matching),
+    int_value(row, :update),
+    string_value(row, :run_id),
+    string_value(row, :candidate_id),
+)
+
+function same_quality_thresholds(values, configuration)
+    expected = quality_thresholds(configuration)
+    observed = Float64.(values)
+    return length(observed) == length(expected) && all(
+        isapprox(a, b; atol = 1e-12, rtol = 1e-10) for (a, b) in zip(observed, expected)
     )
 end
 
@@ -181,6 +203,14 @@ function load_configuration(options, configuration)
     all(isfile, (paths.status, paths.evaluations, paths.front)) || error(
         "$configuration analysis is incomplete below $(paths.root).",
     )
+    uses_multi_threshold_format = isfile(paths.selection)
+    legacy_pair = isfile(paths.legacy_selection) || isfile(paths.legacy_test)
+    if !uses_multi_threshold_format && configuration == "gr-sc"
+        error("gr-sc analysis predates its Pareto test sweep through 17 groups; rerun the gr-sc analyzer.")
+    end
+    if !uses_multi_threshold_format && xor(isfile(paths.legacy_selection), isfile(paths.legacy_test))
+        error("$configuration has only one legacy selection/test artifact.")
+    end
     status = JLD2.load(paths.status)
     Symbol(status["state"]) === :complete || error("$configuration analysis status is not complete.")
     stored_experiment_id = string(status["experiment_id"])
@@ -188,39 +218,79 @@ function load_configuration(options, configuration)
         @warn "$configuration experiment mismatch; continuing with relocated analysis artifacts." selected_experiment_id=options.experiment_id stored_experiment_id analysis_directory=paths.root
     end
     string(status["configuration"]) == configuration || error("$configuration status mismatch.")
+    if haskey(status, "quality_thresholds")
+        same_quality_thresholds(status["quality_thresholds"], configuration) || error(
+            "$configuration analysis uses unexpected quality thresholds.",
+        )
+    elseif uses_multi_threshold_format
+        error("$configuration current-format status lacks quality-threshold metadata.")
+    end
     evaluations = read_csv(paths.evaluations)
     front = read_csv(paths.front)
-    qualified_front = filter(
-        row -> float_value(row, :validation_matching) <= SNN_QUALITY_THRESHOLD,
-        front,
+    selection = if uses_multi_threshold_format
+        JLD2.load(paths.selection)
+    elseif legacy_pair
+        legacy = JLD2.load(paths.legacy_selection)
+        candidate = normalize_record(legacy["candidate"])
+        Dict{String, Any}(
+            "frozen_before_test" => legacy["frozen_before_test"],
+            "selection_uses_test_data" => legacy["selection_uses_test_data"],
+            "quality_thresholds" => [SNN_QUALITY_THRESHOLD],
+            "threshold_selections" => [Dict(
+                :quality_threshold => SNN_QUALITY_THRESHOLD,
+                :candidate_id => string(candidate[:candidate_id]),
+                :candidate_index => 1,
+            )],
+            "candidates" => [Dict(
+                :candidate_index => 1,
+                :quality_thresholds => [SNN_QUALITY_THRESHOLD],
+                :candidate => candidate,
+                :legacy_test_path => paths.legacy_test,
+            )],
+        )
+    else
+        Dict{String, Any}(
+            "frozen_before_test" => true,
+            "selection_uses_test_data" => false,
+            "quality_thresholds" => [SNN_QUALITY_THRESHOLD],
+            "threshold_selections" => [Dict(
+                :quality_threshold => SNN_QUALITY_THRESHOLD,
+                :candidate_id => nothing,
+                :candidate_index => nothing,
+            )],
+            "candidates" => Any[],
+        )
+    end
+    Bool(selection["frozen_before_test"]) || error("$configuration selection was not frozen before test.")
+    selection["selection_uses_test_data"] == false || error("$configuration selection used test data.")
+    same_quality_thresholds(selection["quality_thresholds"], configuration) || error(
+        "$configuration selection uses unexpected quality thresholds.",
     )
-    selected = nothing
-    test = nothing
-    if isfile(paths.selection) || isfile(paths.test)
-        isfile(paths.selection) && isfile(paths.test) || error(
-            "$configuration has only one of selection and test result.",
-        )
-        selection = JLD2.load(paths.selection)
-        Bool(selection["frozen_before_test"]) || error("$configuration selection was not frozen before test.")
-        selection["selection_uses_test_data"] == false || error("$configuration selection used test data.")
-        Float64(selection["quality_threshold"]) == SNN_QUALITY_THRESHOLD || error("$configuration quality threshold mismatch.")
-        selected = normalize_record(selection["candidate"])
-        test = JLD2.load(paths.test)
-        isempty(qualified_front) && error("$configuration stores a test candidate although its pooled front has no qualified point.")
-        expected = first(sort(qualified_front; by = row -> (
-            int_value(row, :active_inputs),
-            int_value(row, :active_groups),
-            float_value(row, :validation_matching),
-            int_value(row, :update),
-            string_value(row, :run_id),
-            string_value(row, :candidate_id),
-        )))
-        string(selected[:candidate_id]) == string_value(expected, :candidate_id) || error(
-            "$configuration frozen test candidate does not match the sparsest qualified pooled-front point.",
-        )
-        string(test["candidate_id"]) == string(selected[:candidate_id]) || error("$configuration test candidate mismatch.")
-        Int(test["active_inputs"]) == Int(selected[:active_inputs]) || error("$configuration active-input mismatch.")
-        Float64(test["validation_matching"]) <= SNN_QUALITY_THRESHOLD || error("$configuration selected candidate exceeds quality threshold.")
+    mappings = [normalize_record(entry) for entry in selection["threshold_selections"]]
+    expected_thresholds = quality_thresholds(configuration)
+    length(mappings) == length(expected_thresholds) || error(
+        "$configuration has an unexpected threshold-selection count.",
+    )
+    candidates = Dict{Symbol, Any}[]
+    for raw in selection["candidates"]
+        frozen = normalize_record(raw)
+        candidate = normalize_record(frozen[:candidate])
+        mask = BitArray(candidate[:global_mask])
+        size(mask) == (3, 48, 8) || error("$configuration candidate mask has the wrong size.")
+        count(mask) == Int(candidate[:active_inputs]) || error("$configuration candidate mask/active-input mismatch.")
+        candidate[:global_mask] = mask
+        frozen[:candidate] = candidate
+        frozen[:quality_thresholds] = Float64.(frozen[:quality_thresholds])
+        frozen[:selection_role] = Symbol(get(
+            frozen, :selection_role,
+            isempty(frozen[:quality_thresholds]) ? :gr_sc_pareto_sweep : :quality_threshold,
+        ))
+        index = Int(frozen[:candidate_index])
+        test_path = haskey(frozen, :legacy_test_path) ? string(frozen[:legacy_test_path]) :
+            joinpath(paths.root, "test", @sprintf("candidate_%02d", index), "test_results.jld2")
+        isfile(test_path) || error("$configuration candidate $index test result is missing: $test_path")
+        test = JLD2.load(test_path)
+        string(test["candidate_id"]) == string(candidate[:candidate_id]) || error("$configuration candidate $index test identity mismatch.")
         episodes = test["episodes"]
         length(episodes) == 8 || error("$configuration test does not contain eight Varying episodes.")
         all(episode -> length(episode.state_nusselt) == 200, episodes) || error(
@@ -229,20 +299,67 @@ function load_configuration(options, configuration)
         all(episode -> Symbol(episode.split) === :test, episodes) || error(
             "$configuration terminal evaluation did not exclusively use the test split.",
         )
-        mask = BitArray(selected[:global_mask])
-        size(mask) == (3, 48, 8) || error("$configuration global mask has size $(size(mask)), expected (3, 48, 8).")
-        count(mask) == Int(selected[:active_inputs]) || error("$configuration global mask/active-input count mismatch.")
-        selected[:global_mask] = mask
-    elseif !isempty(qualified_front)
-        error("$configuration has qualified pooled-front points but no frozen test result; rerun its Simple-NNA analyzer.")
+        frozen[:test_path] = test_path
+        frozen[:test] = test
+        push!(candidates, frozen)
     end
+    candidate_by_index = Dict(Int(item[:candidate_index]) => item for item in candidates)
+    referenced_indices = Set{Int}()
+    for (mapping, quality_threshold) in zip(mappings, expected_thresholds)
+        isapprox(Float64(mapping[:quality_threshold]), quality_threshold; atol = 1e-12, rtol = 1e-10) ||
+            error("$configuration quality-threshold mapping order mismatch.")
+        qualified = filter(row -> float_value(row, :validation_matching) <= quality_threshold, front)
+        expected = isempty(qualified) ? nothing : first(sort(qualified; by = paper_candidate_sort_key))
+        if isnothing(expected)
+            isnothing(mapping[:candidate_id]) && isnothing(mapping[:candidate_index]) ||
+                error("$configuration stores a candidate for empty quality threshold $quality_threshold.")
+        else
+            string(mapping[:candidate_id]) == string_value(expected, :candidate_id) ||
+                error("$configuration candidate for q=$quality_threshold does not match the pooled-front rule.")
+            index = Int(mapping[:candidate_index])
+            haskey(candidate_by_index, index) || error("$configuration mapping references missing candidate $index.")
+            string(candidate_by_index[index][:candidate][:candidate_id]) == string_value(expected, :candidate_id) ||
+                error("$configuration frozen candidate mismatch for q=$quality_threshold.")
+            push!(referenced_indices, index)
+        end
+    end
+    primary_mapping = first(mappings)
+    sweep_indices = Set(Int.(get(selection, "pareto_sweep_candidate_indices", Int[])))
+    if configuration == "gr-sc"
+        Int(selection["pareto_sweep_max_active_groups"]) == SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS ||
+            error("gr-sc Pareto sweep uses an unexpected maximum group count.")
+        isnothing(primary_mapping[:candidate_index]) && !isempty(sweep_indices) &&
+            error("gr-sc stores sweep candidates without a quality-qualified starting candidate.")
+        if !isnothing(primary_mapping[:candidate_index])
+            primary = candidate_by_index[Int(primary_mapping[:candidate_index])][:candidate]
+            expected_sweep_ids = Set(string_value(row, :candidate_id) for row in front if
+                lowercase(string_value(row, :pooled_pareto)) == "true" &&
+                Int(primary[:active_groups]) <= int_value(row, :active_groups) <=
+                    SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS)
+            observed_sweep_ids = Set(string(candidate_by_index[index][:candidate][:candidate_id])
+                                     for index in sweep_indices)
+            observed_sweep_ids == expected_sweep_ids || error(
+                "gr-sc frozen Pareto sweep does not match the pooled front through 17 groups.",
+            )
+        end
+    elseif !isempty(sweep_indices)
+        error("$configuration unexpectedly stores Pareto-sweep candidates.")
+    end
+    Set(keys(candidate_by_index)) == union(referenced_indices, sweep_indices) || error(
+        "$configuration contains an unreferenced frozen test candidate.",
+    )
+    selected = isnothing(primary_mapping[:candidate_index]) ? nothing :
+        candidate_by_index[Int(primary_mapping[:candidate_index])][:candidate]
+    test = isnothing(primary_mapping[:candidate_index]) ? nothing :
+        candidate_by_index[Int(primary_mapping[:candidate_index])][:test]
     native = filter(row ->
         string_value(row, :threshold_id) == "native" &&
         float_value(row, :validation_matching) <= SNN_QUALITY_THRESHOLD,
         evaluations,
     )
     minimum_native_groups = isempty(native) ? missing : minimum(int_value(row, :active_groups) for row in native)
-    return (; configuration, paths, status, evaluations, front, selected, test, minimum_native_groups)
+    return (; configuration, paths, status, evaluations, front, selection, mappings,
+            candidates, selected, test, minimum_native_groups)
 end
 
 function baseline_root()
@@ -269,10 +386,8 @@ function load_varying_baseline(controller)
 end
 
 function validate_expert_identity(configurations, expert_baseline)
-    identifiers = unique(
-        string(data.test["expert_identifier"]) for data in values(configurations)
-        if !isnothing(data.test)
-    )
+    identifiers = unique(string(frozen[:test]["expert_identifier"])
+                         for data in values(configurations) for frozen in data.candidates)
     length(identifiers) <= 1 || error("Simple-NNA analyses use different experts.")
     if !isempty(identifiers)
         expected = replace(only(identifiers), r"^sha256:" => "")
@@ -296,6 +411,7 @@ end
 function table_rows(configurations, expert, unactuated)
     rows = NamedTuple[(;
         configuration = "Full sensor set expert",
+        quality_thresholds = missing,
         active_groups = missing,
         global_sc_sparsity_percent = missing,
         global_gc_sparsity_percent = missing,
@@ -307,9 +423,10 @@ function table_rows(configurations, expert, unactuated)
     )]
     for configuration in SNN_CONFIGURATION_NAMES
         data = configurations[configuration]
-        if isnothing(data.selected)
+        if isempty(data.candidates)
             push!(rows, (;
                 configuration,
+                quality_thresholds = join(quality_thresholds(configuration), "/"),
                 active_groups = missing,
                 global_sc_sparsity_percent = missing,
                 global_gc_sparsity_percent = missing,
@@ -321,23 +438,30 @@ function table_rows(configurations, expert, unactuated)
             ))
             continue
         end
-        sparsity = selected_sparsities(data.selected)
-        push!(rows, (;
-            configuration,
-            active_groups = Int(data.selected[:active_groups]),
-            global_sc_sparsity_percent = sparsity.sc,
-            global_gc_sparsity_percent = sparsity.gc,
-            validation_mse = Float64(data.selected[:validation_matching]),
-            strength = Float64(data.selected[:regularization_strength]),
-            mask_threshold = Float64(data.selected[:threshold_value]),
-            mean_state_nusselt = mean(
-                Float64(value) for episode in data.test["episodes"] for value in episode.state_nusselt
-            ),
-            minimum_native_active_groups_under_quality_threshold = data.minimum_native_groups,
-        ))
+        for frozen in sort(data.candidates; by = item -> Int(item[:candidate_index]))
+            candidate = frozen[:candidate]
+            sparsity = selected_sparsities(candidate)
+            push!(rows, (;
+                configuration,
+                quality_thresholds = isempty(frozen[:quality_thresholds]) ?
+                    "Pareto sweep" :
+                    join(sort(Float64.(frozen[:quality_thresholds]); rev = true), "/"),
+                active_groups = Int(candidate[:active_groups]),
+                global_sc_sparsity_percent = sparsity.sc,
+                global_gc_sparsity_percent = sparsity.gc,
+                validation_mse = Float64(candidate[:validation_matching]),
+                strength = Float64(candidate[:regularization_strength]),
+                mask_threshold = Float64(candidate[:threshold_value]),
+                mean_state_nusselt = mean(
+                    Float64(value) for episode in frozen[:test]["episodes"] for value in episode.state_nusselt
+                ),
+                minimum_native_active_groups_under_quality_threshold = data.minimum_native_groups,
+            ))
+        end
     end
     push!(rows, (;
         configuration = "Unactuated",
+        quality_thresholds = missing,
         active_groups = missing,
         global_sc_sparsity_percent = missing,
         global_gc_sparsity_percent = missing,
@@ -366,7 +490,7 @@ function write_table(output, rows)
     csv_path = joinpath(output, "table_1_selected_candidates.csv")
     markdown_path = joinpath(output, "table_1_selected_candidates.md")
     headers = (
-        :configuration, :active_groups, :global_sc_sparsity_percent,
+        :configuration, :quality_thresholds, :active_groups, :global_sc_sparsity_percent,
         :global_gc_sparsity_percent, :validation_mse, :strength,
         :mask_threshold, :mean_state_nusselt,
         :minimum_native_active_groups_under_quality_threshold,
@@ -380,12 +504,12 @@ function write_table(output, rows)
     fmt(value, format) = value === missing ? "" : Printf.format(Printf.Format(format), value)
     open(markdown_path, "w") do io
         println(io, "# Simple NNA Study selected candidates\n")
-        println(io, "| Configuration | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test mean(state_Nu) | Minimum native groups under quality threshold |")
-        println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        println(io, "| Configuration | Quality q | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test mean(state_Nu) | Minimum native groups under q≤0.02 |")
+        println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for row in rows
-            println(io, "| $(row.configuration) | $(active_groups_value(row)) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) | $(fmt(row.minimum_native_active_groups_under_quality_threshold, "%d")) |")
+            println(io, "| $(row.configuration) | $(csv_value(row.quality_thresholds)) | $(active_groups_value(row)) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) | $(fmt(row.minimum_native_active_groups_under_quality_threshold, "%d")) |")
         end
-        println(io, "\nQuality means validation MSE <= $(SNN_QUALITY_THRESHOLD). Test mean(state_Nu) is the mean over all stored per-step state_Nu values from the eight 200-step Varying test episodes; lower is better. SC sparsity uses 8×48×3 channel inputs; GC sparsity treats a location as occupied when any channel is active. The final column is the only candidate-independent measurement.")
+        println(io, "\nQuality means validation MSE <= q=0.02. For GR-SC, every pooled-Pareto candidate from the sparsest quality-qualified point through 17 active groups is additionally terminal-tested and labeled Pareto sweep. Test mean(state_Nu) is the mean over all stored per-step state_Nu values from the eight 200-step Varying test episodes; lower is better. SC sparsity uses 8×48×3 channel inputs; GC sparsity treats a location as occupied when any channel is active. The final column is evaluated at q=0.02 and is candidate-independent.")
     end
     return (; csv_path, markdown_path)
 end
@@ -588,6 +712,13 @@ function move_glimages_behind_cartesian!(path)
     return path
 end
 
+function quality_index(value)
+    all_thresholds = (SNN_QUALITY_THRESHOLD,)
+    index = findfirst(reference -> isapprox(value, reference; atol = 1e-12, rtol = 1e-10), all_thresholds)
+    isnothing(index) && error("Unknown Simple-NNA quality threshold $value")
+    return index
+end
+
 function make_pareto_figure(configurations, output)
     thresholds, colors, legend_ranks = threshold_styles(configurations)
     row_count = length(PAPER_METHODS)
@@ -660,21 +791,52 @@ function make_pareto_figure(configurations, output)
             line = attr(color = "#111111", width = 2.2),
             marker = attr(color = "#111111", size = 6, symbol = "circle-open"),
         ); row, col)
-        if !isnothing(data.selected)
+        for frozen in data.candidates
+            candidate = frozen[:candidate]
+            selected_thresholds = sort(Float64.(frozen[:quality_thresholds]); rev = true)
+            is_quality_selection = !isempty(selected_thresholds)
+            label = is_quality_selection ?
+                "q≤" * join((@sprintf("%.4g", value) for value in selected_thresholds), "/") :
+                "$(candidate[:active_groups])g"
             add_trace!(plot, scatter(
-                x = [Int(data.selected[:active_groups])],
-                y = [Float64(data.selected[:validation_matching])],
-                mode = "markers", name = "Selected test candidate",
-                legendgroup = "selected", legendrank = 400, showlegend = index == 1,
-                marker = attr(color = "#F2C14E", size = 14, symbol = "star", line = attr(color = "#111111", width = 1.2)),
+                x = [Int(candidate[:active_groups])],
+                y = [Float64(candidate[:validation_matching])],
+                mode = "markers+text", text = [label], textposition = "top center",
+                textfont = attr(size = 10, color = is_quality_selection ? PAPER_QUALITY_COLORS[1] : PAPER_SWEEP_COLOR),
+                name = "Selected $label", showlegend = false,
+                marker = attr(
+                    color = is_quality_selection ? PAPER_QUALITY_COLORS[1] : PAPER_SWEEP_COLOR,
+                    size = 14,
+                    symbol = PAPER_QUALITY_SYMBOL,
+                    line = attr(color = "#111111", width = 1.0),
+                ),
             ); row, col)
         end
         axis_suffix = index == 1 ? "" : string(index)
-        push!(shapes, attr(
-            type = "line", xref = "x$axis_suffix domain", x0 = 0, x1 = 1,
-            yref = "y$axis_suffix", y0 = SNN_QUALITY_THRESHOLD, y1 = SNN_QUALITY_THRESHOLD,
-            line = attr(color = "#555555", width = 1.3, dash = "dash"),
-        ))
+        configuration_name = "$method-$grouping"
+        for quality_threshold in quality_thresholds(configuration_name)
+            qindex = quality_index(quality_threshold)
+            push!(shapes, attr(
+                type = "line", xref = "x$axis_suffix domain", x0 = 0, x1 = 1,
+                yref = "y$axis_suffix", y0 = quality_threshold, y1 = quality_threshold,
+                line = attr(color = PAPER_QUALITY_COLORS[qindex], width = 1.4,
+                            dash = PAPER_QUALITY_DASHES[qindex]),
+            ))
+        end
+        if index == 1
+            for quality_threshold in (SNN_QUALITY_THRESHOLD,)
+                qindex = quality_index(quality_threshold)
+                add_trace!(plot, scatter(
+                    x = [NaN], y = [NaN], mode = "lines+markers",
+                    name = "Quality q≤$(quality_threshold)",
+                    legendgroup = "quality_$quality_threshold", legendrank = 400 + qindex,
+                    line = attr(color = PAPER_QUALITY_COLORS[qindex], width = 1.4,
+                                dash = PAPER_QUALITY_DASHES[qindex]),
+                    marker = attr(color = PAPER_QUALITY_COLORS[qindex], size = 10,
+                                  symbol = PAPER_QUALITY_SYMBOL),
+                ); row, col)
+            end
+        end
     end
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => PAPER_PARETO_WIDTH, :height => PAPER_PARETO_HEIGHT,
@@ -715,7 +877,8 @@ function write_provenance(output, configurations, expert, unactuated)
     for data in values(configurations)
         append!(files, [data.paths.status, data.paths.evaluations, data.paths.front])
         isfile(data.paths.selection) && push!(files, data.paths.selection)
-        isfile(data.paths.test) && push!(files, data.paths.test)
+        isfile(data.paths.legacy_selection) && push!(files, data.paths.legacy_selection)
+        append!(files, [string(candidate[:test_path]) for candidate in data.candidates])
     end
     sort!(unique!(files))
     path = joinpath(output, "provenance.sha256")
@@ -754,7 +917,11 @@ function main(arguments = ARGS)
         joinpath(options.output, "paper_metrics.jld2");
         schema_version = SNN_SCHEMA_VERSION,
         experiment_id = options.experiment_id,
-        quality_threshold = SNN_QUALITY_THRESHOLD,
+        quality_thresholds = Dict(
+            configuration => collect(quality_thresholds(configuration))
+            for configuration in SNN_CONFIGURATION_NAMES
+        ),
+        gr_sc_pareto_sweep_max_active_groups = SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS,
         table_rows = rows,
         table,
         mask_paths,

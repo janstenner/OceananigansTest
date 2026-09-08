@@ -37,6 +37,9 @@ startup and stored in every manifest and run configuration.
   group importance;
 - Pareto objectives `active_inputs` and Varying validation MSE;
 - stricter quality threshold `validation MSE <= 0.02` (Package 8 used `0.03`);
+- a GR-SC-only diagnostic terminal-test sweep over every pooled-Pareto
+  candidate from the sparsest `validation MSE <= 0.02` selection through the
+  candidate with 17 active groups, inclusive;
 - no test data enter strength, checkpoint, threshold, or mask selection.
 
 The four configurations and Package-8 strength grids are:
@@ -75,11 +78,17 @@ bash Revision/Simple_NNA_Study/launch_tmux.sh \
   --analysis-only --experiment-id "$EXPERIMENT_ID" --config go-gc
 ```
 
+All analyzers use the single quality threshold `0.02`. In addition, the
+`gr-sc` analyzer tests every pooled-Pareto candidate in ascending group count
+from its sparsest quality-qualified point through 17 active groups. Analysis
+outputs use `selected_test_candidates.jld2` and numbered
+`test/candidate_XX/` directories.
+
 ## Outputs
 
 Training retains atomic resume state and Pareto checkpoints. Each analyzer
-writes consolidated evaluation CSV/JLD2 files, Pareto SVG/PDF files, and a
-validation-frozen test candidate. The terminal test covers the same eight
+writes consolidated evaluation CSV/JLD2 files, Pareto SVG/PDF files, and the
+validation-frozen test candidate set. The terminal test covers the same eight
 deterministic Varying test cases as Package 8 and preserves split, basis seed,
 mirror, offset, evaluation seed, episode, control step, simulation time,
 actions, rewards, and direct `state_Nu` values.

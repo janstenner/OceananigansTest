@@ -6,9 +6,14 @@ include(joinpath(@__DIR__, "make_paper_figures.jl"))
 function write_fixture_csv(path, configuration, candidate_id; qualified = true)
     mkpath(dirname(path))
     open(path, "w") do io
-        println(io, "run_id,replicate,configuration,strength,update,candidate_id,threshold_id,threshold_value,active_groups,active_inputs,validation_matching,pooled_pareto,under_quality_threshold")
-        println(io, "fixture-r1,1,$configuration,0.01,0,native-$candidate_id,native,0.0,12,1152,$(qualified ? 0.005 : 0.04),false,$qualified")
-        println(io, "fixture-r1,1,$configuration,0.01,25,$candidate_id,threshold_1,0.003,4,576,$(qualified ? 0.004 : 0.04),true,$qualified")
+        println(io, "run_id,replicate,configuration,strength,update,candidate_id,threshold_id,threshold_value,active_groups,active_inputs,validation_matching,pooled_pareto,qualified_quality_thresholds")
+        println(io, "fixture-r1,1,$configuration,0.01,0,native-$candidate_id,native,0.0,12,1152,$(qualified ? 0.005 : 0.04),false,$(qualified ? "0.02" : "")")
+        if configuration == "gr-sc" && qualified
+            println(io, "fixture-r1,1,$configuration,0.01,25,$candidate_id,threshold_1,0.003,4,576,0.015,true,0.02")
+            println(io, "fixture-r1,1,$configuration,0.01,50,$candidate_id-sweep,threshold_1,0.003,5,600,0.005,true,0.02")
+        else
+            println(io, "fixture-r1,1,$configuration,0.01,25,$candidate_id,threshold_1,0.003,4,576,$(qualified ? 0.004 : 0.04),true,$(qualified ? "0.02" : "")")
+        end
     end
 end
 
@@ -59,52 +64,89 @@ end
                     state = :complete,
                     experiment_id = experiment,
                     configuration,
+                    quality_thresholds = collect(quality_thresholds(configuration)),
                 )
                 write_fixture_csv(joinpath(analysis, "evaluations.csv"), configuration, candidate_id; qualified = has_candidate)
                 write_fixture_csv(joinpath(analysis, "pooled_pareto_front.csv"), configuration, candidate_id; qualified = has_candidate)
-                has_candidate || continue
                 mask = falses(3, 48, 8)
                 mask[1, :, :] .= true
                 mask[2, 1:24, :] .= true
-                candidate = Dict{Symbol, Any}(
-                    :candidate_id => candidate_id,
-                    :run_id => "fixture-r1",
-                    :configuration => configuration,
-                    :regularization_strength => 0.01,
-                    :replicate => 1,
-                    :update => 25,
-                    :threshold_id => :threshold_1,
-                    :threshold_value => 0.003,
-                    :validation_matching => 0.004,
-                    :active_groups => 4,
-                    :active_inputs => count(mask),
-                    :global_mask => BitArray(mask),
-                )
+                candidate_specs = if !has_candidate
+                    NamedTuple[]
+                elseif configuration == "gr-sc"
+                    [(id = candidate_id, mse = 0.015, groups = 4, inputs = 576, update = 25,
+                      thresholds = [0.02]),
+                     (id = "$candidate_id-sweep", mse = 0.005, groups = 5, inputs = 600, update = 50,
+                      thresholds = Float64[])]
+                else
+                    [(id = candidate_id, mse = 0.004, groups = 4, inputs = 576, update = 25,
+                      thresholds = [0.02])]
+                end
+                frozen_candidates = Dict{Symbol, Any}[]
+                for (candidate_index, spec) in enumerate(candidate_specs)
+                    candidate_mask = copy(mask)
+                    spec.inputs == 600 && (candidate_mask[2, 25:27, :] .= true)
+                    candidate = Dict{Symbol, Any}(
+                        :candidate_id => spec.id,
+                        :run_id => "fixture-r1",
+                        :configuration => configuration,
+                        :regularization_strength => 0.01,
+                        :replicate => 1,
+                        :update => spec.update,
+                        :threshold_id => :threshold_1,
+                        :threshold_value => 0.003,
+                        :validation_matching => spec.mse,
+                        :active_groups => spec.groups,
+                        :active_inputs => spec.inputs,
+                        :global_mask => BitArray(candidate_mask),
+                    )
+                    push!(frozen_candidates, Dict{Symbol, Any}(
+                        :candidate_index => candidate_index,
+                        :quality_thresholds => spec.thresholds,
+                        :selection_role => isempty(spec.thresholds) ? :gr_sc_pareto_sweep : :quality_threshold,
+                        :candidate => candidate,
+                    ))
+                    episodes = [(
+                        case_id = "fixture-$episode",
+                        split = :test,
+                        base_seed = episode <= 4 ? 101 : 202,
+                        mirror = iseven(episode),
+                        offset = episode % 2 == 0 ? 20 : 0,
+                        evaluation_seed = SNN_MASTER_SEED + episode,
+                        episode,
+                        state_nusselt = fill(2.75 + 0.01 * (candidate_index - 1), 200),
+                    ) for episode in 1:8]
+                    test_directory = joinpath(analysis, "test", @sprintf("candidate_%02d", candidate_index))
+                    mkpath(test_directory)
+                    JLD2.jldsave(
+                        joinpath(test_directory, "test_results.jld2");
+                        candidate_id = spec.id,
+                        active_inputs = spec.inputs,
+                        validation_matching = spec.mse,
+                        expert_identifier = "sha256:fixtureexpert",
+                        case_count = 8,
+                        episodes,
+                    )
+                end
+                mappings = Dict{Symbol, Any}[]
+                for threshold in quality_thresholds(configuration)
+                    match_index = findfirst(spec -> spec.mse <= threshold, candidate_specs)
+                    push!(mappings, Dict{Symbol, Any}(
+                        :quality_threshold => threshold,
+                        :candidate_id => isnothing(match_index) ? nothing : candidate_specs[match_index].id,
+                        :candidate_index => match_index,
+                    ))
+                end
                 JLD2.jldsave(
-                    joinpath(analysis, "selected_test_candidate.jld2");
+                    joinpath(analysis, "selected_test_candidates.jld2");
                     frozen_before_test = true,
                     selection_uses_test_data = false,
-                    quality_threshold = SNN_QUALITY_THRESHOLD,
-                    candidate,
-                )
-                episodes = [(
-                    case_id = "fixture-$episode",
-                    split = :test,
-                    base_seed = episode <= 4 ? 101 : 202,
-                    mirror = iseven(episode),
-                    offset = episode % 2 == 0 ? 20 : 0,
-                    evaluation_seed = SNN_MASTER_SEED + episode,
-                    episode,
-                    state_nusselt = fill(2.75, 200),
-                ) for episode in 1:8]
-                JLD2.jldsave(
-                    joinpath(analysis, "test", "test_results.jld2");
-                    candidate_id,
-                    active_inputs = count(mask),
-                    validation_matching = 0.004,
-                    expert_identifier = "sha256:fixtureexpert",
-                    case_count = 8,
-                    episodes,
+                    quality_thresholds = collect(quality_thresholds(configuration)),
+                    threshold_selections = mappings,
+                    candidates = frozen_candidates,
+                    pareto_sweep_candidate_indices = configuration == "gr-sc" ? [1, 2] : Int[],
+                    pareto_sweep_max_active_groups = configuration == "gr-sc" ?
+                        SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS : nothing,
                 )
             end
             checked = main([
@@ -125,7 +167,7 @@ end
                 "--results-dir", results,
                 "--output-dir", output,
             ])
-            @test length(artifacts.rows) == 6
+            @test length(artifacts.rows) == 7
             @test artifacts.rows[1].configuration == "Full sensor set expert"
             @test artifacts.rows[1].mean_state_nusselt ≈ 2.725
             @test artifacts.rows[end].configuration == "Unactuated"
@@ -137,13 +179,16 @@ end
             gr_gc = only(row for row in artifacts.rows if row.configuration == "gr-gc")
             @test gr_gc.active_groups === missing
             @test gr_gc.minimum_native_active_groups_under_quality_threshold === missing
+            gr_sc = filter(row -> row.configuration == "gr-sc", artifacts.rows)
+            @test length(gr_sc) == 2
+            @test Set(row.quality_thresholds for row in gr_sc) == Set(["0.02", "Pareto sweep"])
             @test all(isfile, artifacts.mask_paths)
             @test length(artifacts.mask_paths) == 2
             @test all(isfile, artifacts.pareto_paths)
             @test all(filesize(path) > 0 for path in vcat(artifacts.mask_paths, artifacts.pareto_paths))
-            @test length(readlines(artifacts.table.csv_path)) == 7
-            @test occursin("go-gc,4/32,", read(artifacts.table.csv_path, String))
-            @test occursin("| go-sc | 4/96 |", read(artifacts.table.markdown_path, String))
+            @test length(readlines(artifacts.table.csv_path)) == 8
+            @test occursin("go-gc,0.02,4/32,", read(artifacts.table.csv_path, String))
+            @test occursin("| go-sc | 0.02 | 4/96 |", read(artifacts.table.markdown_path, String))
             @test occursin("Full sensor set expert", read(artifacts.table.markdown_path, String))
             @test isfile(joinpath(output, "paper_metrics.jld2"))
         finally
