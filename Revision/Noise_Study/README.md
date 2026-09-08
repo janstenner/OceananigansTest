@@ -99,7 +99,7 @@ There is intentionally no analysis worker in this package yet. The standalone
 paper-output builder consumes the atomic worker summaries:
 
 ```bash
-julia --startup-file=no --project=. Revision/Noise_Study/make_paper_tables.jl
+julia --startup-file=no --project=. Revision/Noise_Study/make_paper_figures.jl
 ```
 
 Without arguments it independently chooses the newest Fixed and Varying
@@ -107,12 +107,12 @@ experiment directories. Different experiment IDs only produce warnings and are
 combined. Incomplete worker cells are written as `NA`. The script creates a
 wide CSV and Markdown table with the mean test-set `state_Nu` for every
 controller and noise level, ordered as expert, `C_match`, then sparse. It also
-writes separate Fixed-IC and Varying-IC SVG/PDF noise-response plots. The plot
-curves use the MAT-stability main colors in expert, sparse-apprentice,
-`C_match` order. The ten evaluated relative-noise levels are shown as evenly
-spaced discrete measurement positions with their physical `alpha` values as
-tick labels, while compact JLD2 metrics and SHA-256 provenance cover all
-outputs.
+writes separate Fixed-IC and Varying-IC SVG/PDF noise-response plots and one
+combined supplementary figure of the two frozen `C_match` global sensor masks.
+The mask figure follows the Package-7/8 stripe design. The response curves use
+the MAT-stability main colors in expert, sparse-apprentice, `C_match` order,
+and their horizontal coordinates are proportional to the physical `alpha`
+values. Compact JLD2 metrics and SHA-256 provenance cover all outputs.
 
 ## Validation
 

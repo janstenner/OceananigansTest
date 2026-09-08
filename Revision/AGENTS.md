@@ -152,6 +152,11 @@ Sparse Sensing paper.
   supplementary Pareto cloud uses the same deterministic display-only thinning,
   while the full evaluation set remains authoritative for fronts and selection;
   its threshold markers likewise use opaque legend-only representatives.
+- `Simple_NNA_Study/`: Package-8-derived Varying-IC study for a shared dense
+  IPPO-style apprentice. It retains only GO/GR under GC/SC, uses the unchanged
+  Package-8 seeds, strengths, budgets, split isolation, thresholds, Pareto
+  protocol, and terminal tests, and is launched in four configuration-specific
+  calls sharing one experiment ID.
 - `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
   paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
   resolution, exact protocol-specific physical-channel scales, frozen
@@ -160,14 +165,16 @@ Sparse Sensing paper.
   controller, and noise level; clean baseline import; sequential complete-grid
   noisy rollouts; atomic per-episode persistence; and a filtered persistent
   60-session tmux launcher without an analysis worker.
-- `Noise_Study/make_paper_tables.jl`: Standalone Package-10 paper-output builder
+- `Noise_Study/make_paper_figures.jl`: Standalone Package-10 paper-output builder
   that independently resolves the newest Fixed/Varying experiment IDs, warns
   but continues across mixed IDs, preserves incomplete cells as `NA`, and
-  writes mean test-set `state_Nu` tables plus separate Fixed/Varying SVG/PDF
-  noise-response plots and JLD2/provenance artifacts. Plot curves use the three
-  MAT-stability main colors for expert, sparse apprentice, and `C_match`; the
-  evaluated relative-noise levels use evenly spaced discrete positions with
-  exact `alpha` tick labels.
+  writes mean test-set `state_Nu` tables, separate Fixed/Varying SVG/PDF
+  noise-response plots, a combined supplementary Fixed/Varying `C_match`
+  sensor-mask figure, and JLD2/provenance artifacts. Plot curves use the three
+  MAT-stability main colors for expert, sparse apprentice, and `C_match`, and
+  their horizontal positions are proportional to the physical `alpha` values.
+  The mask figure reuses the Package-7/8 stripe geometry, typography, channel
+  colors, and temperature/vertical-velocity/horizontal-velocity labels.
 - `Noise_Study/results/results_notes.md`: Completed Package-10 protocol,
   channel-scale calculation, quantitative sensor-noise results, and bounded
   robustness--sparsity/Pareto interpretation.
@@ -449,6 +456,24 @@ training. Atomic results preserve dense-reference provenance and training metric
 completed runs are skipped, failed runs restart from seed. Analysis and terminal
 test evaluation remain follow-up work; the production experiment is not complete
 until the runs and their evaluation have finished. See `MaskedTraining/README.md`.
+
+## Simple Dense-NNA Varying-IC Study
+
+`Simple_NNA_Study` is a code-level copy of the Package-8 workflow restricted to
+`go-gc`, `go-sc`, `gr-gc`, and `gr-sc`. Every scientific setting for those four
+configurations remains identical to Package 8. The only model change is a
+parameter-sharing dense apprentice with the Varying-IC IPPO actor layout:
+`Dense(360, h, gelu)`, `Dense(h, h, gelu)`, `Dense(h, 1)`.
+
+The MAT apprentice actor has 47,698 trainable parameters after excluding the
+separate critic encoder and value head. Because the IPPO width rule uses the
+integer `h = floor(10*nna_scale)`, no exact match exists. The closest unchanged
+IPPO architecture uses `h=102`, `nna_scale=10.2`, and 47,432 parameters including
+the scalar `logσ` (266 fewer, 0.56%). Manifests and run configurations preserve
+the target, actual count, and difference, and workers assert them before training.
+The launcher requires one explicit configuration; four calls with one shared
+experiment ID start 36 training workers and four analyzers in total. Production
+runs have not started.
 
 ## Maintenance Rules
 

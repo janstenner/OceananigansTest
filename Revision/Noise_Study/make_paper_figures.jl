@@ -44,11 +44,23 @@ const PAPER_FIGURE_STEMS = Dict(
     :fixed => "figure_1a_noise_robustness_fixed",
     :varying => "figure_1b_noise_robustness_varying",
 )
+const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
+const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
+const PAPER_INACTIVE_COLOR = "#F2F2F2"
+const PAPER_FONT_SIZE = 22
+const PAPER_AXIS_TITLE_SIZE = 22
+const PAPER_TICK_SIZE = 18
+const PAPER_TITLE_SIZE = 30
+const PAPER_SUBPLOT_TITLE_SIZE = 22
+const PAPER_LEGEND_SIZE = 18
+const STRIPE_CHANNEL_WIDTH = 4
+const STRIPE_SENSOR_WIDTH = 3 * STRIPE_CHANNEL_WIDTH + 1
+const STRIPE_COLUMN_COUNT = 48 * STRIPE_SENSOR_WIDTH - 1
 
 function usage(io::IO = stdout)
     println(io, """
     Usage:
-      julia --startup-file=no --project=. Revision/Noise_Study/make_paper_tables.jl \\
+      julia --startup-file=no --project=. Revision/Noise_Study/make_paper_figures.jl \\
         [--experiment-id ID] [--results-dir PATH] [--output-dir PATH] [--check-only]
 
     Without --experiment-id, the script independently selects the newest
@@ -56,7 +68,8 @@ function usage(io::IO = stdout)
     Different or relocated experiment IDs produce warnings but do not abort.
     Missing worker results are written as NA so partial tables and figures can
     be created while the other protocol is still running. Each available
-    protocol produces a separate paper-ready SVG and PDF noise-response plot.
+    protocol produces a separate paper-ready SVG and PDF noise-response plot,
+    and the two frozen C_match masks are combined in one supplementary figure.
     """)
 end
 
@@ -379,6 +392,169 @@ function write_markdown(output, rows, experiments)
     return abspath(path)
 end
 
+function stripe_matrix(mask)
+    size(mask) == (3, 48, 8) || error("Expected a 3×48×8 global mask, found $(size(mask)).")
+    values = fill(NaN, 8, STRIPE_COLUMN_COUNT)
+    text = fill("", 8, STRIPE_COLUMN_COUNT)
+    for vertical in 1:8, horizontal in 1:48, channel in 1:3
+        active = Bool(mask[channel, horizontal, vertical])
+        start = (horizontal - 1) * STRIPE_SENSOR_WIDTH + (channel - 1) * STRIPE_CHANNEL_WIDTH + 1
+        for column in start:(start + STRIPE_CHANNEL_WIDTH - 1)
+            values[vertical, column] = active ? channel : 0
+            text[vertical, column] = "x=$horizontal, z=$vertical<br>$(PAPER_CHANNEL_NAMES[channel]): $(active ? "active" : "inactive")"
+        end
+    end
+    return values, text
+end
+
+stripe_sensor_center(horizontal) =
+    (horizontal - 1) * STRIPE_SENSOR_WIDTH + (3 * STRIPE_CHANNEL_WIDTH + 1) / 2
+
+const STRIPE_COLORSCALE = [
+    [0.0, PAPER_INACTIVE_COLOR], [1 / 6, PAPER_INACTIVE_COLOR],
+    [1 / 6, PAPER_CHANNEL_COLORS[1]], [0.5, PAPER_CHANNEL_COLORS[1]],
+    [0.5, PAPER_CHANNEL_COLORS[2]], [5 / 6, PAPER_CHANNEL_COLORS[2]],
+    [5 / 6, PAPER_CHANNEL_COLORS[3]], [1.0, PAPER_CHANNEL_COLORS[3]],
+]
+
+function preserved_axis(plot, key, styling)
+    existing = get(plot.plot.layout.fields, key, Dict{Any, Any}())
+    fields = Dict{Symbol, Any}(Symbol(name) => value for (name, value) in existing)
+    merge!(fields, styling.fields)
+    return PlotlyJS.attr(; fields...)
+end
+
+axis_key(axis, index) = Symbol(index == 1 ? axis : "$(axis)$(index)")
+
+function paper_axis(title; kwargs...)
+    fields = Dict{Symbol, Any}(
+        :title => PlotlyJS.attr(text = title, standoff = 12, font = PlotlyJS.attr(size = PAPER_AXIS_TITLE_SIZE)),
+        :tickfont => PlotlyJS.attr(size = PAPER_TICK_SIZE),
+    )
+    for (key, value) in kwargs
+        fields[key] = value
+    end
+    return PlotlyJS.attr(; fields...)
+end
+
+function load_c_match_masks()
+    project_root = normpath(joinpath(@__DIR__, "..", ".."))
+    go_study_results = source_defaults(project_root).go_study_results
+    candidates = Dict(
+        protocol => load_c_match_candidate(protocol, go_study_results)
+        for protocol in PAPER_PROTOCOLS
+    )
+    for protocol in PAPER_PROTOCOLS
+        candidate = candidates[protocol].candidate
+        Symbol(candidate[:selection_role]) === :C_match || error("Unexpected selection role for $protocol C_match mask.")
+        size(candidate[:global_mask]) == (3, 48, 8) || error("Unexpected global-mask shape for $protocol C_match.")
+    end
+    return candidates
+end
+
+function write_c_match_mask_plot(output, candidates)
+    plot = PlotlyJS.make_subplots(
+        rows = 1,
+        cols = 2,
+        horizontal_spacing = 0.07,
+        subplot_titles = reshape(["Fixed IC", "Varying IC"], :, 1),
+    )
+    annotations = get(plot.plot.layout.fields, :annotations, Any[])
+    for annotation in annotations
+        annotation.fields[:font] = PlotlyJS.attr(size = PAPER_SUBPLOT_TITLE_SIZE, color = "#252525")
+    end
+    for (column, protocol) in enumerate(PAPER_PROTOCOLS)
+        values, text = stripe_matrix(candidates[protocol].candidate[:global_mask])
+        PlotlyJS.add_trace!(plot, PlotlyJS.heatmap(
+            x = collect(1:STRIPE_COLUMN_COUNT),
+            y = collect(1:8),
+            z = values,
+            text = text,
+            zmin = 0,
+            zmax = 3,
+            colorscale = STRIPE_COLORSCALE,
+            showscale = false,
+            hovertemplate = "%{text}<extra></extra>",
+            xgap = 0,
+            ygap = 1,
+        ); row = 1, col = column)
+    end
+    for (index, (name, color)) in enumerate(zip(
+        ("Inactive", PAPER_CHANNEL_NAMES...),
+        (PAPER_INACTIVE_COLOR, PAPER_CHANNEL_COLORS...),
+    ))
+        PlotlyJS.add_trace!(plot, PlotlyJS.scatter(
+            x = [NaN],
+            y = [NaN],
+            mode = "markers",
+            name = name,
+            marker = PlotlyJS.attr(
+                color = color,
+                size = 11,
+                symbol = "square",
+                line = PlotlyJS.attr(color = "#444444", width = index == 1 ? 1 : 0),
+            ),
+            showlegend = true,
+        ); row = 1, col = 1)
+    end
+    layout = Dict{Symbol, Any}(
+        :template => "plotly_white",
+        :width => 1450,
+        :height => 650,
+        :title => PlotlyJS.attr(
+            text = "Noise robustness: selected C_match sensor masks",
+            x = 0.5,
+            xanchor = "center",
+            font = PlotlyJS.attr(size = PAPER_TITLE_SIZE, color = "#252525"),
+        ),
+        :paper_bgcolor => "white",
+        :plot_bgcolor => "white",
+        :font => PlotlyJS.attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => PlotlyJS.attr(l = 105, r = 35, t = 120, b = 130),
+        :legend => PlotlyJS.attr(
+            orientation = "h",
+            x = 0.5,
+            xanchor = "center",
+            y = -0.20,
+            yanchor = "top",
+            font = PlotlyJS.attr(size = PAPER_LEGEND_SIZE),
+        ),
+    )
+    for index in 1:2
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            "Horizontal sensor index",
+            range = [0.5, STRIPE_COLUMN_COUNT + 0.5],
+            tickmode = "array",
+            tickvals = [stripe_sensor_center(value) for value in 1:4:48],
+            ticktext = string.(1:4:48),
+            showgrid = false,
+            zeroline = false,
+            showline = true,
+            mirror = true,
+            linecolor = "#3A3A3A",
+        ))
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            index == 1 ? "Vertical sensor index" : "",
+            range = [0.5, 8.5],
+            tickmode = "array",
+            tickvals = collect(1:8),
+            showgrid = false,
+            zeroline = false,
+            showline = true,
+            mirror = true,
+            linecolor = "#3A3A3A",
+        ))
+    end
+    PlotlyJS.relayout!(plot, layout)
+    stem = "figure_s1_c_match_sensor_masks"
+    svg_path = abspath(joinpath(output, "$stem.svg"))
+    pdf_path = abspath(joinpath(output, "$stem.pdf"))
+    PlotlyJS.savefig(plot, svg_path; width = 1450, height = 650)
+    PlotlyJS.savefig(plot, pdf_path; width = 1450, height = 650)
+    keep_first_pdf_page!(pdf_path)
+    return (; svg_path, pdf_path)
+end
+
 function keep_first_pdf_page!(path)
     pdfseparate = Sys.which("pdfseparate")
     if isnothing(pdfseparate)
@@ -497,7 +673,7 @@ function write_provenance(output, source_files, experiments)
     path = joinpath(output, "provenance.sha256")
     files = sort!(unique!(abspath.(source_files)))
     open(path, "w") do io
-        println(io, "# Package-10 paper table and figure input manifest")
+        println(io, "# Package-10 paper figure and table input manifest")
         println(io, "# Script SHA-256: $(file_sha256(abspath(@__FILE__)))")
         println(io, "# Experiment IDs: $(join(("$(protocol)=$(identifier)" for (protocol, identifier) in sort!(collect(experiments); by = pair -> string(first(pair)))), ", "))")
         for file in files
@@ -523,9 +699,14 @@ function main(arguments = ARGS)
         append!(missing_results, loaded.missing_results)
     end
     isempty(rows) && error("No Noise-Study table rows could be assembled.")
+    c_match_masks = load_c_match_masks()
+    for selected in values(c_match_masks)
+        push!(source_files, selected.selection_path)
+        push!(source_files, selected.checkpoint_path)
+    end
     if options.check_only
-        println("Noise-Study paper-table inputs read: $(length(long_rows)) complete worker results, $(length(missing_results)) missing worker results.")
-        return (; options, rows, long_rows, source_files, missing_results)
+        println("Noise-Study paper inputs read: $(length(long_rows)) complete worker results, $(length(missing_results)) missing worker results, and two C_match masks.")
+        return (; options, rows, long_rows, source_files, missing_results, c_match_masks)
     end
     mkpath(options.output)
     csv_path = write_csv(options.output, rows)
@@ -535,6 +716,7 @@ function main(arguments = ARGS)
         paths = write_protocol_plot(options.output, rows, protocol)
         isnothing(paths) || (figure_paths[protocol] = paths)
     end
+    c_match_mask_paths = write_c_match_mask_plot(options.output, c_match_masks)
     provenance_path = write_provenance(options.output, source_files, options.experiments)
     metrics_path = atomic_save(
         joinpath(options.output, "paper_metrics.jld2");
@@ -548,10 +730,11 @@ function main(arguments = ARGS)
         csv_path,
         markdown_path,
         figure_paths,
+        c_match_mask_paths,
         provenance_path,
         created_at = string(Dates.now(Dates.UTC)),
     )
-    println("Package-10 paper tables and figures written to $(options.output)")
+    println("Package-10 paper figures and tables written to $(options.output)")
     println("  CSV: $csv_path")
     println("  Markdown: $markdown_path")
     for protocol in PAPER_PROTOCOLS
@@ -559,8 +742,10 @@ function main(arguments = ARGS)
         println("  $(PAPER_PROTOCOL_LABELS[protocol]) SVG: $(figure_paths[protocol].svg_path)")
         println("  $(PAPER_PROTOCOL_LABELS[protocol]) PDF: $(figure_paths[protocol].pdf_path)")
     end
+    println("  C_match masks SVG: $(c_match_mask_paths.svg_path)")
+    println("  C_match masks PDF: $(c_match_mask_paths.pdf_path)")
     isempty(missing_results) || println("  Missing worker results represented as NA: $(length(missing_results))")
-    return (; options, rows, long_rows, csv_path, markdown_path, figure_paths, provenance_path, metrics_path)
+    return (; options, rows, long_rows, csv_path, markdown_path, figure_paths, c_match_mask_paths, provenance_path, metrics_path)
 end
 
 abspath(PROGRAM_FILE) == abspath(@__FILE__) && main()

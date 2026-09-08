@@ -15,6 +15,12 @@ const EXPERT_APPRENTICE_PROTOCOL = Symbol(
 EXPERT_APPRENTICE_PROTOCOL in (:fixed, :varying) || error(
     "DISTILLATION_PROTOCOL must be fixed or varying.",
 )
+const EXPERT_APPRENTICE_ARCHITECTURE = Symbol(
+    lowercase(get(ENV, "DISTILLATION_APPRENTICE_ARCHITECTURE", "mat")),
+)
+EXPERT_APPRENTICE_ARCHITECTURE in (:mat, :simple_nna) || error(
+    "DISTILLATION_APPRENTICE_ARCHITECTURE must be mat or simple_nna.",
+)
 
 randomIC = EXPERT_APPRENTICE_PROTOCOL === :varying
 group_channels = lowercase(get(ENV, "DISTILLATION_GROUP_CHANNELS", "true")) in
@@ -34,6 +40,9 @@ if !isdefined(@__MODULE__, :DISTILLATION_CORPUS)
 end
 if !isdefined(@__MODULE__, :ParetoArchiveManager)
     include(joinpath(@__DIR__, "ParetoArchive.jl"))
+end
+if !isdefined(@__MODULE__, :SimpleNNAPolicy)
+    include(joinpath(@__DIR__, "SimpleNNA.jl"))
 end
 
 allow_fresh_expert = lowercase(
@@ -218,11 +227,12 @@ function resolved_regularization_strength(config::ApprenticeTrainingConfig, kind
     return rIC ? kind_config.regularization_strength_varying : kind_config.regularization_strength_fixed
 end
 
-apprentice_agent = create_agent_mat(n_actors = actuators,
+function create_mat_apprentice_agent(model_rng)
+    return create_agent_mat(n_actors = actuators,
                     action_space = actionspace,
                     state_space = env.state_space,
                     use_gpu = false, 
-                    rng = rng,
+                    rng = model_rng,
                     y = y, p = p,
                     start_steps = start_steps, 
                     start_policy = start_policy,
@@ -257,12 +267,54 @@ apprentice_agent = create_agent_mat(n_actors = actuators,
                     tanh_end = tanh_end,
                     positional_encoding = positional_encoding,
                     )
+end
 
+function parameter_count(model)
+    return sum(length, Flux.trainables(model); init = 0)
+end
 
-apprentice = apprentice_agent.policy
+function mat_apprentice_actor_parameter_count(policy)
+    encoder = policy.encoder
+    return parameter_count(encoder.embedding) +
+           parameter_count(encoder.position_encoding) +
+           parameter_count(encoder.ln) +
+           parameter_count(encoder.dropout) +
+           parameter_count(encoder.blocks) +
+           parameter_count(policy.decoder)
+end
 
-encoder = apprentice.encoder
-decoder = apprentice.decoder
+if EXPERT_APPRENTICE_ARCHITECTURE === :mat
+    apprentice_agent = create_mat_apprentice_agent(rng)
+    apprentice = apprentice_agent.policy
+    const MAT_APPRENTICE_ACTOR_PARAMETER_COUNT = mat_apprentice_actor_parameter_count(apprentice)
+    const SIMPLE_NNA_HIDDEN_SIZE = 0
+    const SIMPLE_NNA_SCALE = NaN
+    const SIMPLE_NNA_PARAMETER_COUNT = 0
+else
+    const MAT_APPRENTICE_ACTOR_PARAMETER_COUNT = let
+        reference_policy = create_mat_apprentice_agent(deepcopy(rng)).policy
+        mat_apprentice_actor_parameter_count(reference_policy)
+    end
+    apprentice_agent = nothing
+    apprentice = create_simple_nna_apprentice(
+        state_space = env.state_space,
+        action_space = actionspace,
+        rng = rng,
+        n_actors = actuators,
+        learning_rate = learning_rate,
+        betas = betas,
+        fun = gelu,
+        tanh_end = false,
+        start_logσ = -10.0f0,
+        target_parameter_count = MAT_APPRENTICE_ACTOR_PARAMETER_COUNT,
+    )
+    const SIMPLE_NNA_HIDDEN_SIZE = apprentice.hidden_size
+    const SIMPLE_NNA_SCALE = apprentice.nna_scale
+    const SIMPLE_NNA_PARAMETER_COUNT = simple_nna_actual_parameter_count(apprentice)
+end
+
+input_embedding_weight(model::SimpleNNAPolicy) = model.mean_network.layers[1].weight
+input_embedding_weight(model) = model.encoder.embedding.weight
 
 # Training, validation, and candidate generation are defined below from the
 # DistillationCorpus data. No mutable global input mask is used.
@@ -641,7 +693,7 @@ struct HardThresholdSpec
 end
 
 function regularizer_groups(model; group_rows_by_overlap::Bool, group_channels::Bool)
-    n_inputs = size(transpose(model.encoder.embedding.weight), 1)
+    n_inputs = size(transpose(input_embedding_weight(model)), 1)
     groups = group_rows_by_overlap ? get_row_groups(; group_channels) : [[index] for index in 1:n_inputs]
     any_shared(groups) && error("Regularizer groups overlap; masks would no longer be unambiguous.")
     sort(vcat(groups...)) == collect(1:n_inputs) || error("Regularizer groups do not cover every input.")
@@ -649,12 +701,12 @@ function regularizer_groups(model; group_rows_by_overlap::Bool, group_channels::
 end
 
 function group_importances(model, groups)
-    weights_by_input = transpose(model.encoder.embedding.weight)
+    weights_by_input = transpose(input_embedding_weight(model))
     return Float64[norm(view(weights_by_input, group, :)) for group in groups]
 end
 
 function threshold_importances(model, groups; mode::Symbol = :group_l2)
-    weights_by_input = transpose(model.encoder.embedding.weight)
+    weights_by_input = transpose(input_embedding_weight(model))
     if mode === :group_l2
         input_importances = nothing
         group_values = group_importances(model, groups)
@@ -745,7 +797,7 @@ function candidate_masks(
 )
     importance_data = threshold_importances(model, groups; mode = threshold_importance_mode)
     importances = importance_data.group_importances
-    n_inputs = size(transpose(model.encoder.embedding.weight), 1)
+    n_inputs = size(transpose(input_embedding_weight(model)), 1)
     specifications = collect(threshold_specs)
     length(unique(spec.id for spec in specifications)) == length(specifications) || error(
         "Hard-threshold IDs must be unique.",
@@ -816,6 +868,7 @@ function candidates_with_group_reduction(records)
 end
 
 function teacher_forced_actions(model, observations, expert_actions)
+    model isa SimpleNNAPolicy && return model.mean_network(observations)
     observation_representation, _ = model.encoder(observations)
     action_dimension = size(model.decoder.embedding.weight, 2)
     batch_size = size(observations, 3)
@@ -829,6 +882,7 @@ function teacher_forced_actions(model, observations, expert_actions)
 end
 
 function apprentice_actions(model, observations, expert_actions; prediction_mode::Symbol)
+    model isa SimpleNNAPolicy && return model.mean_network(observations)
     if prediction_mode === :autoregressive
         return prob(model, observations, nothing).μ
     elseif prediction_mode === :teacher_forced
@@ -1045,7 +1099,7 @@ function train_apprentice!(
     ))
     sample_count = Int(train_dataset[:sample_count])
     sampler = DistillationBatchSampler(sample_count, training_rng)
-    operator_weights = ones(eltype(model.encoder.embedding.weight), length(groups))
+    operator_weights = ones(eltype(input_embedding_weight(model)), length(groups))
     input_mask = ones(Float32, size(env.state, 1))
     losses = Float64[]
     total_updates = config.regularized_updates + config.post_pruning_finetune_updates
@@ -1115,20 +1169,31 @@ function train_apprentice!(
         )
         masked_observations = batch.observations .* reshape(input_mask, :, 1, 1)
         batch_loss = Ref(NaN)
-        encoder_gradient, decoder_gradient = Flux.gradient(model.encoder, model.decoder) do trial_encoder, trial_decoder
-            observation_representation, _ = trial_encoder(masked_observations)
-            action_dimension = size(trial_decoder.embedding.weight, 2)
-            shifted_actions = cat(
-                zeros(Float32, action_dimension, 1, length(indices)),
-                batch.expert_actions[:, 1:end-1, :];
-                dims = 2,
-            )
-            predicted_actions, _ = trial_decoder(shifted_actions, observation_representation)
-            loss = mean(abs2, predicted_actions .- batch.expert_actions)
-            Zygote.ignore() do
-                batch_loss[] = Float64(loss)
+        if model isa SimpleNNAPolicy
+            model_gradient = only(Flux.gradient(model) do trial_model
+                predicted_actions = trial_model.mean_network(masked_observations)
+                loss = mean(abs2, predicted_actions .- batch.expert_actions)
+                Zygote.ignore() do
+                    batch_loss[] = Float64(loss)
+                end
+                return loss
+            end)
+        else
+            encoder_gradient, decoder_gradient = Flux.gradient(model.encoder, model.decoder) do trial_encoder, trial_decoder
+                observation_representation, _ = trial_encoder(masked_observations)
+                action_dimension = size(trial_decoder.embedding.weight, 2)
+                shifted_actions = cat(
+                    zeros(Float32, action_dimension, 1, length(indices)),
+                    batch.expert_actions[:, 1:end-1, :];
+                    dims = 2,
+                )
+                predicted_actions, _ = trial_decoder(shifted_actions, observation_representation)
+                loss = mean(abs2, predicted_actions .- batch.expert_actions)
+                Zygote.ignore() do
+                    batch_loss[] = Float64(loss)
+                end
+                return loss
             end
-            return loss
         end
         if !isfinite(batch_loss[])
             stop_on_numerical_failure!(
@@ -1143,13 +1208,17 @@ function train_apprentice!(
                 operator_weights,
             )
         end
-        Flux.update!(model.encoder_state_tree, model.encoder, encoder_gradient)
-        Flux.update!(model.decoder_state_tree, model.decoder, decoder_gradient)
+        if model isa SimpleNNAPolicy
+            Flux.update!(model.optimizer_state, model, model_gradient)
+        else
+            Flux.update!(model.encoder_state_tree, model.encoder, encoder_gradient)
+            Flux.update!(model.decoder_state_tree, model.decoder, decoder_gradient)
+        end
 
         if update <= config.regularized_updates && mod(update, config.proximal_interval) == 0
             if method_config.regularizer === :grouped
                 apply_grouped_regularizer!(
-                    model.encoder.embedding.weight;
+                    input_embedding_weight(model);
                     groups,
                     regularization_strength,
                     theta_mode = method_config.theta_mode,
@@ -1158,7 +1227,7 @@ function train_apprentice!(
                 )
             elseif method_config.regularizer === :group_reweighted
                 apply_group_reweighted_regularizer!(
-                    model.encoder.embedding.weight;
+                    input_embedding_weight(model);
                     groups,
                     operator_weights,
                     regularization_strength,
@@ -1302,7 +1371,8 @@ function apprentice_save_stem(; group_channels_value = group_channels)
     method_tag = string(normalize_apprentice_kind(apprentice_training_kind))
     protocol_tag = string(EXPERT_APPRENTICE_PROTOCOL)
     grouping_tag = group_channels_value ? "grouped_channels" : "separate_channels"
-    return "MAT_Apprentice_$(method_tag)_$(protocol_tag)_$(grouping_tag)"
+    architecture_tag = EXPERT_APPRENTICE_ARCHITECTURE === :mat ? "MAT" : "Simple_NNA"
+    return "$(architecture_tag)_Apprentice_$(method_tag)_$(protocol_tag)_$(grouping_tag)"
 end
 
 function apprentice_save_path(number = nothing; group_channels_value = group_channels)

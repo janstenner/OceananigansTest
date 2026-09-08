@@ -1,6 +1,6 @@
 # Implementation Plan for the Paper Revision
 
-Stand: 2026-09-01
+Stand: 2026-09-08
 
 Dieser Plan enthält nur ganze, in sinnvoller Reihenfolge abzuarbeitende Implementierungs- und Experimentpakete.
 Nur die Paketüberschriften sind abhakbar.
@@ -298,6 +298,37 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   - Das finale Varying-IC-Modell folgt aus einem gespeicherten, leckagefreien und reproduzierbaren Pareto Set.
 
+- [ ] **Simple-NNA-Studie — Varying-IC-Distillation mit IPPO-artigem Dense Actor**
+
+  Umfang:
+
+  - Codekopie der Paket-8-Pipeline unter `Revision/Simple_NNA_Study`.
+  - Ausschließlich GO und GR, jeweils mit GC und SC; Seeds, Strength-Raster,
+    100.000-Update-Budget, Batches, Validation-Takt, Thresholds, Pareto-Regeln,
+    Qualitätsgrenze und Train-/Validation-/Test-Splits bleiben identisch zu
+    Paket 8.
+  - Parameter-sharing Dense-Apprentice entsprechend dem Varying-IC-IPPO-Actor:
+    zwei gleich breite GELU-Hidden-Layer und ein linearer Action-Head.
+  - Nächstmöglicher unveränderter IPPO-Scale `nna_scale=10.2` (`h=102`) mit
+    47.432 Parametern inklusive `logσ` gegenüber 47.698 Parametern des MAT-
+    Apprentice-Actors ohne separaten Critic-Encoder und Value-Head. Ein exakter
+    Treffer ist mit der ganzzahligen gemeinsamen IPPO-Hidden-Breite nicht möglich;
+    Ziel, Istwert und Differenz werden in Manifest und Run-Konfiguration gespeichert.
+  - Vier getrennte tmux-Launcher-Aufrufe mit gemeinsamer Experiment-ID für
+    `go-gc`, `go-sc`, `gr-gc` und `gr-sc`; insgesamt 36 Trainingsworker und vier
+    Analyseworker.
+
+  Implementierungsstand (2026-09-08):
+
+  - Dense-Apprentice, Package-8-abgeleitete Worker/Analyzer/Plots, atomare
+    Persistenz, vierkonfigurativer Launcher und Architektur-/Manifesttests sind
+    implementiert. Produktionsruns stehen noch aus.
+
+  Abschluss:
+
+  - Für alle vier Konfigurationen liegen vollständig ausgewertete, validation-
+    selektierte Varying-IC-Ergebnisse vor und sind mit Paket 8 vergleichbar.
+
 - [x] **Paket 9 — Baselines bei gleicher Sensorzahl — GESTRICHEN**
 
   Status:
@@ -353,12 +384,14 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Ergänzungslevel `0.30/0.40/0.50` beziehungsweise `0.70/1.00` starten.
   - Der erste Produktionslauncher startet bewusst keinen Analysis-Worker; die
     spätere Auswertung folgt als separates Julia-Skript.
-  - `Noise_Study/make_paper_tables.jl` erzeugt unabhängig vom Launcher eine
-    CSV- und Markdown-Ergebnistabelle über Controller, Rauschlevel und mittleres
-    Testset-`state_Nu`. Ohne Argument verwendet es je Protokoll die neueste
-    Experiment-ID; unterschiedliche IDs führen nur zu einer Warnung, und noch
-    fehlende Workerresultate werden als `NA` erhalten. Die Kandidaten erscheinen
-    in der Reihenfolge Expert, `C_match`, Sparse.
+  - `Noise_Study/make_paper_figures.jl` erzeugt unabhängig vom Launcher die
+    Fixed-/Varying-Noise-Kurven, eine gemeinsame Supplementary-Figure der beiden
+    `C_match`-Sensormasken sowie eine CSV- und Markdown-Ergebnistabelle über
+    Controller, Rauschlevel und mittleres Testset-`state_Nu`. Ohne Argument
+    verwendet es je Protokoll die neueste Experiment-ID; unterschiedliche IDs
+    führen nur zu einer Warnung, und noch fehlende Workerresultate werden als
+    `NA` erhalten. Die Kandidaten erscheinen in der Reihenfolge Expert,
+    `C_match`, Sparse.
   - `Noise_Study/results/results_notes.md` dokumentiert den abgeschlossenen
     Aufbau, die protokollspezifische Berechnung der Kanalskalen, die vollständigen
     mittleren Testset-`state_Nu`-Ergebnisse und die beobachtete Abstufung der

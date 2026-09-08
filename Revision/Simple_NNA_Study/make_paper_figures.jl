@@ -1,0 +1,768 @@
+ENV["GKSwstype"] = get(ENV, "GKSwstype", "100")
+
+using JLD2
+using PlotlyJS
+using Printf
+using SHA
+using Statistics
+
+# None of the paper-figure labels require MathJax. Disabling it also avoids a
+# spurious missing-extension message in Kaleido's Windows PDF output.
+PlotlyJS.PlotlyKaleido.kill_kaleido()
+PlotlyJS.PlotlyKaleido.start(plotlyjs = PlotlyJS._js_path, mathjax = false)
+
+include(joinpath(@__DIR__, "SimpleNNAStudy.jl"))
+using .SimpleNNAStudy
+
+const PAPER_METHODS = ("go", "gr")
+const PAPER_GROUPINGS = ("gc", "sc")
+const PAPER_METHOD_NAMES = Dict(
+    "go" => "GO", "gr" => "GR",
+)
+const PAPER_ZERO_THRESHOLD_COLOR = "#277DA1"
+const PAPER_DEFAULT_THRESHOLD_COLORS = ("#F2A13A", "#EE8D32", "#E6782B", "#D96624")
+const PAPER_EXTRA_THRESHOLD_COLORS = ("#D73027", "#B2182B", "#8B0A1A", "#67000D")
+const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
+const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
+const PAPER_INACTIVE_COLOR = "#F2F2F2"
+const PAPER_GRID_COLOR = "#E6E6E6"
+const PAPER_FONT_SIZE = 22
+const PAPER_AXIS_TITLE_SIZE = 22
+const PAPER_TICK_SIZE = 18
+const PAPER_TITLE_SIZE = 30
+const PAPER_SUBPLOT_TITLE_SIZE = 22
+const PAPER_LEGEND_SIZE = 18
+const PAPER_EVALUATION_LOG_BINS = 24
+const PAPER_PARETO_WIDTH = 1450
+const PAPER_PARETO_HEIGHT = 850
+const DEFAULT_SNN_RESULTS = joinpath(@__DIR__, "results")
+const STRIPE_CHANNEL_WIDTH = 4
+const STRIPE_SENSOR_WIDTH = 3 * STRIPE_CHANNEL_WIDTH + 1
+const STRIPE_COLUMN_COUNT = 48 * STRIPE_SENSOR_WIDTH - 1
+
+function usage(io::IO = stdout)
+    println(io, """
+    Usage:
+      julia --startup-file=no --project=. Revision/Simple_NNA_Study/make_paper_figures.jl \\
+        [--experiment-id ID] [--results-dir PATH] [--output-dir PATH] [--check-only]
+
+    The script reads completed Simple-NNA analyses and existing Varying baseline
+    artifacts. Without --experiment-id it uses the newest direct directory in
+    the results root. It never selects a new candidate or executes a rollout.
+    """)
+end
+
+function parse_arguments(arguments)
+    values = Dict{String, Any}(
+        "experiment_id" => nothing,
+        "results_dir" => DEFAULT_SNN_RESULTS,
+        "output_dir" => nothing,
+        "check_only" => false,
+    )
+    index = 1
+    while index <= length(arguments)
+        argument = arguments[index]
+        if argument == "--help"
+            usage()
+            return nothing
+        elseif argument == "--check-only"
+            values["check_only"] = true
+            index += 1
+        elseif startswith(argument, "--")
+            index < length(arguments) || error("Missing value after $argument.")
+            key = replace(argument[3:end], "-" => "_")
+            haskey(values, key) || error("Unknown option '$argument'.")
+            values[key] = arguments[index + 1]
+            index += 2
+        else
+            error("Unknown argument '$argument'.")
+        end
+    end
+    results_root = abspath(string(values["results_dir"]))
+    experiment_id = isnothing(values["experiment_id"]) ?
+        latest_experiment_id(results_root) : normalize_experiment_id(values["experiment_id"])
+    output = isnothing(values["output_dir"]) ?
+        joinpath(results_root, experiment_id, "paper") : abspath(string(values["output_dir"]))
+    return (; experiment_id, results_root, output, check_only = Bool(values["check_only"]))
+end
+
+function latest_experiment_id(results_root)
+    isdir(results_root) || error("Simple-NNA results directory is missing: $results_root")
+    directories = [
+        joinpath(results_root, name) for name in readdir(results_root)
+        if isdir(joinpath(results_root, name)) &&
+           !startswith(name, ".") &&
+           any(configuration -> isdir(joinpath(results_root, name, configuration)), SNN_CONFIGURATION_NAMES) &&
+           try
+               normalize_experiment_id(name)
+               true
+           catch
+               false
+           end
+    ]
+    isempty(directories) && error("No Simple-NNA experiment directories found below $results_root.")
+    timestamped = filter(path -> occursin(r"^\d{6}_\d{6}$", basename(path)), directories)
+    newest = isempty(timestamped) ?
+        last(sort(directories; by = path -> (stat(path).mtime, basename(path)))) :
+        last(sort(timestamped; by = basename))
+    identifier = normalize_experiment_id(basename(newest))
+    println("No --experiment-id supplied; using newest Simple-NNA results directory: $identifier")
+    return identifier
+end
+
+function split_csv_line(line::AbstractString)
+    fields = String[]
+    buffer = IOBuffer()
+    quoted = false
+    index = firstindex(line)
+    while index <= lastindex(line)
+        character = line[index]
+        if character == '"'
+            next_index = nextind(line, index)
+            if quoted && next_index <= lastindex(line) && line[next_index] == '"'
+                write(buffer, '"')
+                index = nextind(line, next_index)
+                continue
+            end
+            quoted = !quoted
+        elseif character == ',' && !quoted
+            push!(fields, String(take!(buffer)))
+        else
+            write(buffer, character)
+        end
+        index = nextind(line, index)
+    end
+    quoted && error("Unterminated quoted CSV field.")
+    push!(fields, String(take!(buffer)))
+    return fields
+end
+
+function read_csv(path)
+    isfile(path) || error("Required Simple-NNA CSV is missing: $path")
+    lines = readlines(path)
+    isempty(lines) && error("CSV is empty: $path")
+    headers = Symbol.(split_csv_line(lines[1]))
+    rows = Dict{Symbol, String}[]
+    for line in lines[2:end]
+        isempty(strip(line)) && continue
+        values = split_csv_line(line)
+        length(values) == length(headers) || error("Malformed CSV row in $path")
+        push!(rows, Dict(headers[index] => values[index] for index in eachindex(headers)))
+    end
+    return rows
+end
+
+string_value(row, key) = string(row[key])
+int_value(row, key) = parse(Int, string(row[key]))
+float_value(row, key) = parse(Float64, string(row[key]))
+
+function normalize_record(record)
+    return Dict{Symbol, Any}(Symbol(key) => value for (key, value) in pairs(record))
+end
+
+file_sha256(path) = open(path, "r") do io
+    bytes2hex(SHA.sha256(io))
+end
+
+function analysis_paths(options, configuration)
+    root = analysis_directory(options.results_root, options.experiment_id, configuration)
+    return (;
+        root,
+        status = joinpath(root, "status.jld2"),
+        evaluations = joinpath(root, "evaluations.csv"),
+        front = joinpath(root, "pooled_pareto_front.csv"),
+        selection = joinpath(root, "selected_test_candidate.jld2"),
+        test = joinpath(root, "test", "test_results.jld2"),
+    )
+end
+
+function load_configuration(options, configuration)
+    paths = analysis_paths(options, configuration)
+    all(isfile, (paths.status, paths.evaluations, paths.front)) || error(
+        "$configuration analysis is incomplete below $(paths.root).",
+    )
+    status = JLD2.load(paths.status)
+    Symbol(status["state"]) === :complete || error("$configuration analysis status is not complete.")
+    stored_experiment_id = string(status["experiment_id"])
+    if stored_experiment_id != options.experiment_id
+        @warn "$configuration experiment mismatch; continuing with relocated analysis artifacts." selected_experiment_id=options.experiment_id stored_experiment_id analysis_directory=paths.root
+    end
+    string(status["configuration"]) == configuration || error("$configuration status mismatch.")
+    evaluations = read_csv(paths.evaluations)
+    front = read_csv(paths.front)
+    qualified_front = filter(
+        row -> float_value(row, :validation_matching) <= SNN_QUALITY_THRESHOLD,
+        front,
+    )
+    selected = nothing
+    test = nothing
+    if isfile(paths.selection) || isfile(paths.test)
+        isfile(paths.selection) && isfile(paths.test) || error(
+            "$configuration has only one of selection and test result.",
+        )
+        selection = JLD2.load(paths.selection)
+        Bool(selection["frozen_before_test"]) || error("$configuration selection was not frozen before test.")
+        selection["selection_uses_test_data"] == false || error("$configuration selection used test data.")
+        Float64(selection["quality_threshold"]) == SNN_QUALITY_THRESHOLD || error("$configuration quality threshold mismatch.")
+        selected = normalize_record(selection["candidate"])
+        test = JLD2.load(paths.test)
+        isempty(qualified_front) && error("$configuration stores a test candidate although its pooled front has no qualified point.")
+        expected = first(sort(qualified_front; by = row -> (
+            int_value(row, :active_inputs),
+            int_value(row, :active_groups),
+            float_value(row, :validation_matching),
+            int_value(row, :update),
+            string_value(row, :run_id),
+            string_value(row, :candidate_id),
+        )))
+        string(selected[:candidate_id]) == string_value(expected, :candidate_id) || error(
+            "$configuration frozen test candidate does not match the sparsest qualified pooled-front point.",
+        )
+        string(test["candidate_id"]) == string(selected[:candidate_id]) || error("$configuration test candidate mismatch.")
+        Int(test["active_inputs"]) == Int(selected[:active_inputs]) || error("$configuration active-input mismatch.")
+        Float64(test["validation_matching"]) <= SNN_QUALITY_THRESHOLD || error("$configuration selected candidate exceeds quality threshold.")
+        episodes = test["episodes"]
+        length(episodes) == 8 || error("$configuration test does not contain eight Varying episodes.")
+        all(episode -> length(episode.state_nusselt) == 200, episodes) || error(
+            "$configuration test episodes do not all contain 200 state_Nu values.",
+        )
+        all(episode -> Symbol(episode.split) === :test, episodes) || error(
+            "$configuration terminal evaluation did not exclusively use the test split.",
+        )
+        mask = BitArray(selected[:global_mask])
+        size(mask) == (3, 48, 8) || error("$configuration global mask has size $(size(mask)), expected (3, 48, 8).")
+        count(mask) == Int(selected[:active_inputs]) || error("$configuration global mask/active-input count mismatch.")
+        selected[:global_mask] = mask
+    elseif !isempty(qualified_front)
+        error("$configuration has qualified pooled-front points but no frozen test result; rerun its Simple-NNA analyzer.")
+    end
+    native = filter(row ->
+        string_value(row, :threshold_id) == "native" &&
+        float_value(row, :validation_matching) <= SNN_QUALITY_THRESHOLD,
+        evaluations,
+    )
+    minimum_native_groups = isempty(native) ? missing : minimum(int_value(row, :active_groups) for row in native)
+    return (; configuration, paths, status, evaluations, front, selected, test, minimum_native_groups)
+end
+
+function baseline_root()
+    return abspath(get(
+        ENV,
+        "REVISION_BASELINE_RESULTS_DIR",
+        joinpath(@__DIR__, "..", "Baselines", "results"),
+    ))
+end
+
+function load_varying_baseline(controller)
+    path = joinpath(baseline_root(), "varying", "$controller.jld2")
+    isfile(path) || error("Varying $controller baseline is missing: $path")
+    loaded = JLD2.load(path)
+    string(loaded["status"]) == "complete" || error("Varying $controller baseline is incomplete.")
+    Symbol(loaded["protocol"]) === :varying || error("Varying $controller baseline protocol mismatch.")
+    Symbol(loaded["controller"]) === controller || error("Varying $controller baseline controller mismatch.")
+    Int(loaded["case_count"]) == 8 || error("Varying $controller baseline must contain eight episodes.")
+    episodes = loaded["episodes"]
+    all(episode -> length(episode.state_nusselt) == 200, episodes) || error(
+        "Varying $controller baseline episodes must contain 200 state_Nu values.",
+    )
+    return (; controller, path, loaded, episodes)
+end
+
+function validate_expert_identity(configurations, expert_baseline)
+    identifiers = unique(
+        string(data.test["expert_identifier"]) for data in values(configurations)
+        if !isnothing(data.test)
+    )
+    length(identifiers) <= 1 || error("Simple-NNA analyses use different experts.")
+    if !isempty(identifiers)
+        expected = replace(only(identifiers), r"^sha256:" => "")
+        string(expert_baseline.loaded["expert_sha256"]) == expected || error(
+            "Varying expert baseline does not match the Simple-NNA expert.",
+        )
+    end
+    return nothing
+end
+
+function selected_sparsities(selected)
+    mask = selected[:global_mask]
+    active_channel_inputs = count(mask)
+    occupied_locations = count(dropdims(any(mask; dims = 1); dims = 1))
+    return (;
+        sc = 100 * (1 - active_channel_inputs / (8 * 48 * 3)),
+        gc = 100 * (1 - occupied_locations / (8 * 48)),
+    )
+end
+
+function table_rows(configurations, expert, unactuated)
+    rows = NamedTuple[(;
+        configuration = "Full sensor set expert",
+        active_groups = missing,
+        global_sc_sparsity_percent = missing,
+        global_gc_sparsity_percent = missing,
+        validation_mse = missing,
+        strength = missing,
+        mask_threshold = missing,
+        mean_state_nusselt = mean(Float64(value) for episode in expert.episodes for value in episode.state_nusselt),
+        minimum_native_active_groups_under_quality_threshold = missing,
+    )]
+    for configuration in SNN_CONFIGURATION_NAMES
+        data = configurations[configuration]
+        if isnothing(data.selected)
+            push!(rows, (;
+                configuration,
+                active_groups = missing,
+                global_sc_sparsity_percent = missing,
+                global_gc_sparsity_percent = missing,
+                validation_mse = missing,
+                strength = missing,
+                mask_threshold = missing,
+                mean_state_nusselt = missing,
+                minimum_native_active_groups_under_quality_threshold = data.minimum_native_groups,
+            ))
+            continue
+        end
+        sparsity = selected_sparsities(data.selected)
+        push!(rows, (;
+            configuration,
+            active_groups = Int(data.selected[:active_groups]),
+            global_sc_sparsity_percent = sparsity.sc,
+            global_gc_sparsity_percent = sparsity.gc,
+            validation_mse = Float64(data.selected[:validation_matching]),
+            strength = Float64(data.selected[:regularization_strength]),
+            mask_threshold = Float64(data.selected[:threshold_value]),
+            mean_state_nusselt = mean(
+                Float64(value) for episode in data.test["episodes"] for value in episode.state_nusselt
+            ),
+            minimum_native_active_groups_under_quality_threshold = data.minimum_native_groups,
+        ))
+    end
+    push!(rows, (;
+        configuration = "Unactuated",
+        active_groups = missing,
+        global_sc_sparsity_percent = missing,
+        global_gc_sparsity_percent = missing,
+        validation_mse = missing,
+        strength = missing,
+        mask_threshold = missing,
+        mean_state_nusselt = mean(Float64(value) for episode in unactuated.episodes for value in episode.state_nusselt),
+        minimum_native_active_groups_under_quality_threshold = missing,
+    ))
+    return rows
+end
+
+csv_value(value) = value === missing ? "" : string(value)
+
+function active_groups_value(row)
+    row.active_groups === missing && return ""
+    total = endswith(row.configuration, "-gc") ? 32 :
+            endswith(row.configuration, "-sc") ? 96 :
+            error("Cannot determine total group count for $(row.configuration).")
+    return "$(row.active_groups)/$total"
+end
+
+table_value(row, key) = key === :active_groups ? active_groups_value(row) : csv_value(getproperty(row, key))
+
+function write_table(output, rows)
+    csv_path = joinpath(output, "table_1_selected_candidates.csv")
+    markdown_path = joinpath(output, "table_1_selected_candidates.md")
+    headers = (
+        :configuration, :active_groups, :global_sc_sparsity_percent,
+        :global_gc_sparsity_percent, :validation_mse, :strength,
+        :mask_threshold, :mean_state_nusselt,
+        :minimum_native_active_groups_under_quality_threshold,
+    )
+    open(csv_path, "w") do io
+        println(io, join(string.(headers), ','))
+        for row in rows
+            println(io, join((table_value(row, key) for key in headers), ','))
+        end
+    end
+    fmt(value, format) = value === missing ? "" : Printf.format(Printf.Format(format), value)
+    open(markdown_path, "w") do io
+        println(io, "# Simple NNA Study selected candidates\n")
+        println(io, "| Configuration | Active groups | Global SC sparsity | Global GC sparsity | Validation MSE | Strength | Mask threshold | Test mean(state_Nu) | Minimum native groups under quality threshold |")
+        println(io, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for row in rows
+            println(io, "| $(row.configuration) | $(active_groups_value(row)) | $(fmt(row.global_sc_sparsity_percent, "%.2f%%")) | $(fmt(row.global_gc_sparsity_percent, "%.2f%%")) | $(fmt(row.validation_mse, "%.4e")) | $(fmt(row.strength, "%.6g")) | $(fmt(row.mask_threshold, "%.6g")) | $(fmt(row.mean_state_nusselt, "%.6f")) | $(fmt(row.minimum_native_active_groups_under_quality_threshold, "%d")) |")
+        end
+        println(io, "\nQuality means validation MSE <= $(SNN_QUALITY_THRESHOLD). Test mean(state_Nu) is the mean over all stored per-step state_Nu values from the eight 200-step Varying test episodes; lower is better. SC sparsity uses 8×48×3 channel inputs; GC sparsity treats a location as occupied when any channel is active. The final column is the only candidate-independent measurement.")
+    end
+    return (; csv_path, markdown_path)
+end
+
+function panel_titles(methods = PAPER_METHODS)
+    return reshape([
+        "$(PAPER_METHOD_NAMES[method]) - $(uppercase(grouping))"
+        for method in methods for grouping in PAPER_GROUPINGS
+    ], :, 1)
+end
+
+function stripe_matrix(mask)
+    values = fill(NaN, 8, STRIPE_COLUMN_COUNT)
+    text = fill("", 8, STRIPE_COLUMN_COUNT)
+    for vertical in 1:8, horizontal in 1:48, channel in 1:3
+        active = Bool(mask[channel, horizontal, vertical])
+        start = (horizontal - 1) * STRIPE_SENSOR_WIDTH + (channel - 1) * STRIPE_CHANNEL_WIDTH + 1
+        for column in start:(start + STRIPE_CHANNEL_WIDTH - 1)
+            values[vertical, column] = active ? channel : 0
+            text[vertical, column] = "x=$horizontal, z=$vertical<br>$(PAPER_CHANNEL_NAMES[channel]): $(active ? "active" : "inactive")"
+        end
+    end
+    return values, text
+end
+
+stripe_sensor_center(horizontal) =
+    (horizontal - 1) * STRIPE_SENSOR_WIDTH + (3 * STRIPE_CHANNEL_WIDTH + 1) / 2
+
+const STRIPE_COLORSCALE = [
+    [0.0, PAPER_INACTIVE_COLOR], [1 / 6, PAPER_INACTIVE_COLOR],
+    [1 / 6, PAPER_CHANNEL_COLORS[1]], [0.5, PAPER_CHANNEL_COLORS[1]],
+    [0.5, PAPER_CHANNEL_COLORS[2]], [5 / 6, PAPER_CHANNEL_COLORS[2]],
+    [5 / 6, PAPER_CHANNEL_COLORS[3]], [1.0, PAPER_CHANNEL_COLORS[3]],
+]
+
+function preserved_axis(plot, key, styling)
+    existing = get(plot.plot.layout.fields, key, Dict{Any, Any}())
+    fields = Dict{Symbol, Any}(Symbol(name) => value for (name, value) in existing)
+    merge!(fields, styling.fields)
+    return attr(; fields...)
+end
+
+axis_key(axis, index) = Symbol(index == 1 ? axis : "$(axis)$(index)")
+
+function style_subplot_titles!(plot)
+    annotations = get(plot.plot.layout.fields, :annotations, Any[])
+    for annotation in annotations
+        annotation.fields[:font] = attr(size = PAPER_SUBPLOT_TITLE_SIZE, color = "#252525")
+    end
+    return plot
+end
+
+function paper_axis(title; kwargs...)
+    fields = Dict{Symbol, Any}(
+        :title => attr(text = title, standoff = 12, font = attr(size = PAPER_AXIS_TITLE_SIZE)),
+        :tickfont => attr(size = PAPER_TICK_SIZE),
+    )
+    for (key, value) in kwargs
+        fields[key] = value
+    end
+    return attr(; fields...)
+end
+
+function thin_evaluation_cloud(rows, log_mse_range; bin_count = PAPER_EVALUATION_LOG_BINS)
+    bin_count > 0 || throw(ArgumentError("bin_count must be positive."))
+    lower, upper = log_mse_range
+    upper > lower || throw(ArgumentError("The log-MSE display range must be increasing."))
+    buckets = Dict{Tuple{Int, Int, Int}, Tuple{Float64, Dict{Symbol, String}}}()
+    for row in rows
+        loss = float_value(row, :validation_matching)
+        log_loss = log10(loss)
+        lower <= log_loss <= upper || continue
+        bin = clamp(floor(Int, bin_count * (log_loss - lower) / (upper - lower)), 0, bin_count - 1)
+        key = (int_value(row, :replicate), int_value(row, :active_groups), bin)
+        center = lower + (bin + 0.5) * (upper - lower) / bin_count
+        distance = abs(log_loss - center)
+        previous = get(buckets, key, nothing)
+        if isnothing(previous) || distance < previous[1]
+            buckets[key] = (distance, row)
+        end
+    end
+    selected = [value[2] for value in values(buckets)]
+    sort!(selected; by = row -> (
+        int_value(row, :replicate),
+        int_value(row, :active_groups),
+        float_value(row, :validation_matching),
+        int_value(row, :update),
+    ))
+    return selected
+end
+
+function make_mask_figure(
+    configurations,
+    output;
+    methods = PAPER_METHODS,
+    stem = "figure_1_selected_sensor_masks",
+    title = "Simple NNA Study: selected global input masks",
+)
+    row_count = length(methods)
+    height = row_count == 4 ? 1550 : 850
+    plot = make_subplots(rows = row_count, cols = 2, vertical_spacing = row_count == 4 ? 0.055 : 0.10, horizontal_spacing = 0.07, subplot_titles = panel_titles(methods))
+    style_subplot_titles!(plot)
+    for (row, method) in enumerate(methods), (col, grouping) in enumerate(PAPER_GROUPINGS)
+        data = configurations["$method-$grouping"]
+        if isnothing(data.selected)
+            add_trace!(plot, scatter(x = [72], y = [4.5], mode = "text", text = ["NR"], textfont = attr(size = 22, color = "#777777"), showlegend = false); row, col)
+        else
+            values, text = stripe_matrix(data.selected[:global_mask])
+            add_trace!(plot, heatmap(
+                x = collect(1:STRIPE_COLUMN_COUNT), y = collect(1:8),
+                z = values, text = text, zmin = 0, zmax = 3,
+                colorscale = STRIPE_COLORSCALE, showscale = false,
+                hovertemplate = "%{text}<extra></extra>",
+                xgap = 0, ygap = 1,
+            ); row, col)
+        end
+    end
+    for (index, (name, color)) in enumerate(zip(("Inactive", PAPER_CHANNEL_NAMES...), (PAPER_INACTIVE_COLOR, PAPER_CHANNEL_COLORS...)))
+        add_trace!(plot, scatter(
+            x = [NaN], y = [NaN], mode = "markers", name = name,
+            marker = attr(color = color, size = 11, symbol = "square", line = attr(color = "#444444", width = index == 1 ? 1 : 0)),
+            legendgroup = "mask_legend", showlegend = true,
+        ); row = 1, col = 1)
+    end
+    layout = Dict{Symbol, Any}(
+        :template => "plotly_white", :width => 1450, :height => height,
+        :title => attr(text = title, x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
+        :paper_bgcolor => "white", :plot_bgcolor => "white",
+        :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => attr(l = 105, r = 35, t = 120, b = 125),
+        :legend => attr(
+            orientation = "h", x = 0.5, xanchor = "center",
+            y = row_count == 4 ? -0.055 : -0.13, yanchor = "top",
+            font = attr(size = PAPER_LEGEND_SIZE),
+        ),
+    )
+    for index in 1:(2 * row_count)
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            index > 2 * (row_count - 1) ? "Horizontal sensor index" : "",
+            range = [0.5, STRIPE_COLUMN_COUNT + 0.5], tickmode = "array",
+            tickvals = [stripe_sensor_center(value) for value in 1:4:48],
+            ticktext = string.(1:4:48), showticklabels = index > 2 * (row_count - 1),
+            showgrid = false, zeroline = false,
+            showline = true, mirror = true, linecolor = "#3A3A3A",
+        ))
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            isodd(index) ? "Vertical sensor index" : "",
+            range = [0.5, 8.5], tickmode = "array", tickvals = collect(1:8),
+            showgrid = false, zeroline = false, showline = true, mirror = true, linecolor = "#3A3A3A",
+        ))
+    end
+    relayout!(plot, layout)
+    paths = String[]
+    for extension in ("svg", "pdf")
+        path = joinpath(output, "$stem.$extension")
+        PlotlyJS.savefig(plot, path; width = 1450, height = height)
+        push!(paths, path)
+    end
+    return paths
+end
+
+function threshold_styles(configurations)
+    thresholds = sort!(unique(reduce(vcat, [
+        [float_value(row, :threshold_value) for row in data.evaluations]
+        for data in values(configurations)
+    ])))
+    is_default(value) = any(reference -> isapprox(value, reference; atol = 1e-12, rtol = 1e-10), SNN_THRESHOLDS)
+    zero = filter(iszero, thresholds)
+    defaults = filter(value -> !iszero(value) && is_default(value), thresholds)
+    extras = filter(value -> !iszero(value) && !is_default(value), thresholds)
+    ordered = vcat(zero, defaults, extras)
+    colors = Dict{Float64, String}()
+    ranks = Dict{Float64, Int}()
+    for value in zero
+        colors[value] = PAPER_ZERO_THRESHOLD_COLOR
+        ranks[value] = 50
+    end
+    for (index, value) in enumerate(defaults)
+        colors[value] = PAPER_DEFAULT_THRESHOLD_COLORS[mod1(index, length(PAPER_DEFAULT_THRESHOLD_COLORS))]
+        ranks[value] = 100 + index
+    end
+    for (index, value) in enumerate(extras)
+        colors[value] = PAPER_EXTRA_THRESHOLD_COLORS[mod1(index, length(PAPER_EXTRA_THRESHOLD_COLORS))]
+        ranks[value] = 200 + index
+    end
+    return ordered, colors, ranks
+end
+
+function move_glimages_behind_cartesian!(path)
+    svg = read(path, String)
+    matches = collect(eachmatch(r"<g class=\"glimages\">.*?</g>"s, svg))
+    length(matches) == 1 || error("Expected one glimages layer in $path, found $(length(matches)).")
+    layer = only(matches).match
+    without = replace(svg, layer => ""; count = 1)
+    marker = "<g class=\"cartesianlayer\">"
+    occursin(marker, without) || error("Cartesian SVG layer is missing in $path.")
+    temporary = path * ".tmp"
+    write(temporary, replace(without, marker => layer * marker; count = 1))
+    mv(temporary, path; force = true)
+    return path
+end
+
+function make_pareto_figure(configurations, output)
+    thresholds, colors, legend_ranks = threshold_styles(configurations)
+    row_count = length(PAPER_METHODS)
+    plot = make_subplots(rows = row_count, cols = 2, vertical_spacing = 0.10, horizontal_spacing = 0.07, subplot_titles = panel_titles())
+    style_subplot_titles!(plot)
+    shapes = Any[]
+    all_losses = [
+        float_value(item, :validation_matching)
+        for data in values(configurations)
+        for item in data.evaluations
+        if isfinite(float_value(item, :validation_matching)) && float_value(item, :validation_matching) > 0
+    ]
+    isempty(all_losses) && error("No finite Simple-NNA evaluation losses were found.")
+    y_range = [log10(minimum(all_losses)) - 0.15, log10(10.0)]
+    maxima = Dict(grouping => 1 for grouping in PAPER_GROUPINGS)
+    shown_thresholds = Set{Float64}()
+    original_point_count = 0
+    displayed_point_count = 0
+    for (row, method) in enumerate(PAPER_METHODS), (col, grouping) in enumerate(PAPER_GROUPINGS)
+        data = configurations["$method-$grouping"]
+        index = 2 * (row - 1) + col
+        eligible = filter(item ->
+            isfinite(float_value(item, :validation_matching)) &&
+            float_value(item, :validation_matching) > 0,
+            data.evaluations,
+        )
+        if !isempty(eligible)
+            maxima[grouping] = max(maxima[grouping], maximum(int_value(item, :active_groups) for item in eligible))
+        end
+        for threshold in thresholds
+            complete_selection = filter(item -> float_value(item, :threshold_value) == threshold, eligible)
+            isempty(complete_selection) && continue
+            selected = thin_evaluation_cloud(complete_selection, y_range)
+            original_point_count += length(complete_selection)
+            displayed_point_count += length(selected)
+            showlegend = !(threshold in shown_thresholds)
+            showlegend && push!(shown_thresholds, threshold)
+            if showlegend
+                add_trace!(plot, scatter(
+                    x = [NaN], y = [NaN], mode = "markers", name = "τ=$(threshold)",
+                    showlegend = true, legendgroup = "threshold_$threshold",
+                    legendrank = legend_ranks[threshold],
+                    marker = attr(color = colors[threshold], size = 8, opacity = 1.0, symbol = "circle"),
+                ); row, col)
+            end
+            add_trace!(plot, scattergl(
+                x = int_value.(selected, Ref(:active_groups)),
+                y = float_value.(selected, Ref(:validation_matching)),
+                mode = "markers", name = "τ=$(threshold)", showlegend = false,
+                legendgroup = "threshold_$threshold", legendrank = legend_ranks[threshold],
+                marker = attr(
+                    color = colors[threshold], size = 4, opacity = 0.32,
+                    symbol = [("circle", "diamond", "square")[int_value(item, :replicate)] for item in selected],
+                ),
+                customdata = hcat(
+                    int_value.(selected, Ref(:active_inputs)),
+                    int_value.(selected, Ref(:replicate)),
+                    float_value.(selected, Ref(:strength)),
+                    int_value.(selected, Ref(:update)),
+                ),
+                hovertemplate = "groups=%{x}<br>inputs=%{customdata[0]}<br>MSE=%{y:.4e}<br>replicate=%{customdata[1]}<br>strength=%{customdata[2]:.4g}<br>update=%{customdata[3]}<extra></extra>",
+            ); row, col)
+        end
+        front = sort(filter(item -> float_value(item, :validation_matching) > 0, data.front); by = item -> int_value(item, :active_inputs))
+        add_trace!(plot, scatter(
+            x = int_value.(front, Ref(:active_groups)),
+            y = float_value.(front, Ref(:validation_matching)),
+            mode = "lines+markers", name = "Pooled Pareto front",
+            legendgroup = "pooled_front", legendrank = 300, showlegend = index == 1,
+            line = attr(color = "#111111", width = 2.2),
+            marker = attr(color = "#111111", size = 6, symbol = "circle-open"),
+        ); row, col)
+        if !isnothing(data.selected)
+            add_trace!(plot, scatter(
+                x = [Int(data.selected[:active_groups])],
+                y = [Float64(data.selected[:validation_matching])],
+                mode = "markers", name = "Selected test candidate",
+                legendgroup = "selected", legendrank = 400, showlegend = index == 1,
+                marker = attr(color = "#F2C14E", size = 14, symbol = "star", line = attr(color = "#111111", width = 1.2)),
+            ); row, col)
+        end
+        axis_suffix = index == 1 ? "" : string(index)
+        push!(shapes, attr(
+            type = "line", xref = "x$axis_suffix domain", x0 = 0, x1 = 1,
+            yref = "y$axis_suffix", y0 = SNN_QUALITY_THRESHOLD, y1 = SNN_QUALITY_THRESHOLD,
+            line = attr(color = "#555555", width = 1.3, dash = "dash"),
+        ))
+    end
+    layout = Dict{Symbol, Any}(
+        :template => "plotly_white", :width => PAPER_PARETO_WIDTH, :height => PAPER_PARETO_HEIGHT,
+        :title => attr(text = "Simple-NNA Varying-IC sparsity distillation: evaluation landscapes and pooled Pareto fronts", x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
+        :paper_bgcolor => "white", :plot_bgcolor => "white", :shapes => shapes,
+        :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => attr(l = 110, r = 35, t = 120, b = 135),
+        :legend => attr(
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.075, yanchor = "top",
+            font = attr(size = PAPER_LEGEND_SIZE),
+        ),
+    )
+    for index in 1:(2 * row_count)
+        grouping = isodd(index) ? "gc" : "sc"
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            index > 2 * (row_count - 1) ? "Active groups" : "", range = [-0.5, maxima[grouping] + 1],
+            showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
+            gridcolor = PAPER_GRID_COLOR, zeroline = false,
+        ))
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            isodd(index) ? "Validation MSE" : "", type = "log", range = y_range,
+            showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
+            gridcolor = PAPER_GRID_COLOR, zeroline = false,
+        ))
+    end
+    relayout!(plot, layout)
+    svg_path = joinpath(output, "figure_s1_pareto_comparison.svg")
+    pdf_path = joinpath(output, "figure_s1_pareto_comparison.pdf")
+    PlotlyJS.savefig(plot, svg_path; width = PAPER_PARETO_WIDTH, height = PAPER_PARETO_HEIGHT)
+    move_glimages_behind_cartesian!(svg_path)
+    PlotlyJS.savefig(plot, pdf_path; width = PAPER_PARETO_WIDTH, height = PAPER_PARETO_HEIGHT)
+    println("Pareto display retained $displayed_point_count of $original_point_count evaluations after deterministic log-MSE binning; fronts and candidate selection still use all evaluations.")
+    return [svg_path, pdf_path]
+end
+
+function write_provenance(output, configurations, expert, unactuated)
+    files = String[expert.path, unactuated.path]
+    for data in values(configurations)
+        append!(files, [data.paths.status, data.paths.evaluations, data.paths.front])
+        isfile(data.paths.selection) && push!(files, data.paths.selection)
+        isfile(data.paths.test) && push!(files, data.paths.test)
+    end
+    sort!(unique!(files))
+    path = joinpath(output, "provenance.sha256")
+    open(path, "w") do io
+        println(io, "# Simple-NNA paper input manifest")
+        println(io, "# Script SHA-256: $(file_sha256(abspath(@__FILE__)))")
+        for file in files
+            println(io, "$(file_sha256(file))  $(replace(relpath(file, output), '\\' => '/'))")
+        end
+    end
+    return path
+end
+
+function main(arguments = ARGS)
+    options = parse_arguments(arguments)
+    isnothing(options) && return nothing
+    configurations = Dict(
+        configuration => load_configuration(options, configuration)
+        for configuration in SNN_CONFIGURATION_NAMES
+    )
+    expert = load_varying_baseline(:expert)
+    unactuated = load_varying_baseline(:unactuated)
+    validate_expert_identity(configurations, expert)
+    rows = table_rows(configurations, expert, unactuated)
+    if options.check_only
+        qualified = count(data -> !isnothing(data.selected), values(configurations))
+        println("Simple-NNA paper inputs valid: $qualified/$(length(SNN_CONFIGURATION_NAMES)) qualified selected candidates.")
+        return (; options, configurations, expert, unactuated, rows)
+    end
+    mkpath(options.output)
+    table = write_table(options.output, rows)
+    mask_paths = make_mask_figure(configurations, options.output)
+    pareto_paths = make_pareto_figure(configurations, options.output)
+    provenance = write_provenance(options.output, configurations, expert, unactuated)
+    atomic_save(
+        joinpath(options.output, "paper_metrics.jld2");
+        schema_version = SNN_SCHEMA_VERSION,
+        experiment_id = options.experiment_id,
+        quality_threshold = SNN_QUALITY_THRESHOLD,
+        table_rows = rows,
+        table,
+        mask_paths,
+        pareto_paths,
+        provenance,
+    )
+    println("Simple-NNA paper artifacts written to $(options.output)")
+    return (; options, configurations, rows, table, mask_paths, pareto_paths, provenance)
+end
+
+abspath(PROGRAM_FILE) == abspath(@__FILE__) && main()
