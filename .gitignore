@@ -7,4 +7,6 @@ video_output/*
 
 .CondaPkg/*
 
+tmp/
+
 parameters.jld2

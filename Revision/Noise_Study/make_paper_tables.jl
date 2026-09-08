@@ -408,7 +408,7 @@ function write_protocol_plot(output, rows, protocol::Symbol)
         y_values = [ismissing(value) ? NaN : Float64(value) for value in values]
         all(isnan, y_values) && continue
         push!(traces, PlotlyJS.scatter(
-            x = collect(eachindex(NOISE_LEVELS)),
+            x = Float64.(collect(NOISE_LEVELS)),
             y = y_values,
             customdata = Float64.(collect(NOISE_LEVELS)),
             mode = "lines+markers",
@@ -441,11 +441,12 @@ function write_protocol_plot(output, rows, protocol::Symbol)
         font = PlotlyJS.attr(family = "Arial, sans-serif", size = 22, color = "#303030"),
         xaxis = PlotlyJS.attr(
             title = PlotlyJS.attr(text = "Evaluated relative noise level α", standoff = 12, font = PlotlyJS.attr(size = 22)),
-            tickmode = "array",
-            tickvals = collect(eachindex(NOISE_LEVELS)),
-            ticktext = [@sprintf("%.2f", Float64(level)) for level in NOISE_LEVELS],
+            tickmode = "linear",
+            tick0 = 0.0,
+            dtick = 0.1,
+            tickformat = ".1f",
             tickfont = PlotlyJS.attr(size = 18),
-            range = [0.7, length(NOISE_LEVELS) + 0.3],
+            range = [-0.03, 1.03],
             showline = true,
             mirror = true,
             linecolor = "#3A3A3A",
