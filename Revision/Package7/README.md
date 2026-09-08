@@ -96,9 +96,13 @@ results/<timestamp>/<configuration>/analysis/
     test_curves.svg
 ```
 
-The plot contains every 25-update evaluation from all three strengths and all
-three seeds, with four threshold colors and the pooled Pareto front. The hover
-data identify the strength; the x-axis shows active groups on a linear scale.
+The analysis plot contains every 25-update evaluation from all three strengths
+and all three seeds, with four threshold colors and the pooled Pareto front.
+The paper plot deterministically retains one representative per replicate,
+active-group count, threshold, and log-MSE display bin to remove visually
+overlapping points and keep the SVG/PDF compact. Pareto construction and
+candidate selection continue to use every evaluation. The hover data identify
+the strength; the x-axis shows active groups on a linear scale.
 `evaluations.csv` contains the native point from every checkpoint plus only
 those hard-threshold points that reduce the active-group count. Hard thresholds
 without a group-count reduction are skipped before validation. In contrast,

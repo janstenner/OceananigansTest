@@ -140,6 +140,11 @@ Sparse Sensing paper.
 - `GO_Sensitivity/make_paper_figures.jl`: Paper-output typography uses enlarged
   axis, tick, panel-title, figure-title, and legend fonts with matching margins
   for full-width manuscript inclusion.
+- `Package7/make_paper_figures.jl`: Fixed-IC sparsity-study paper figures use
+  the same enlarged typography. Its supplementary Pareto cloud is
+  deterministically thinned in replicate-, threshold-, active-group-, and
+  log-MSE-aware display bins, while Pareto construction and candidate selection
+  continue to use the complete evaluation set.
 - `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
   paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
   resolution, exact protocol-specific physical-channel scales, frozen
