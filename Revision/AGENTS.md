@@ -145,6 +145,10 @@ Sparse Sensing paper.
   deterministically thinned in replicate-, threshold-, active-group-, and
   log-MSE-aware display bins, while Pareto construction and candidate selection
   continue to use the complete evaluation set.
+- `Package8/make_paper_figures.jl`: Varying-IC sparsity-study paper figures
+  mirror the Package-7 typography, dimensions, margins, and legends. Its
+  supplementary Pareto cloud uses the same deterministic display-only thinning,
+  while the full evaluation set remains authoritative for fronts and selection.
 - `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
   paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
   resolution, exact protocol-specific physical-channel scales, frozen

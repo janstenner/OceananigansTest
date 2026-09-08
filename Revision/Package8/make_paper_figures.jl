@@ -6,6 +6,11 @@ using Printf
 using SHA
 using Statistics
 
+# None of the paper-figure labels require MathJax. Disabling it also avoids a
+# spurious missing-extension message in Kaleido's Windows PDF output.
+PlotlyJS.PlotlyKaleido.kill_kaleido()
+PlotlyJS.PlotlyKaleido.start(plotlyjs = PlotlyJS._js_path, mathjax = false)
+
 include(joinpath(@__DIR__, "Package8Study.jl"))
 using .Package8Study
 
@@ -18,9 +23,18 @@ const PAPER_ZERO_THRESHOLD_COLOR = "#277DA1"
 const PAPER_DEFAULT_THRESHOLD_COLORS = ("#F2A13A", "#EE8D32", "#E6782B", "#D96624")
 const PAPER_EXTRA_THRESHOLD_COLORS = ("#D73027", "#B2182B", "#8B0A1A", "#67000D")
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
-const PAPER_CHANNEL_NAMES = ("Buoyancy b", "Vertical velocity w", "Horizontal velocity u")
+const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
 const PAPER_INACTIVE_COLOR = "#F2F2F2"
 const PAPER_GRID_COLOR = "#E6E6E6"
+const PAPER_FONT_SIZE = 22
+const PAPER_AXIS_TITLE_SIZE = 22
+const PAPER_TICK_SIZE = 18
+const PAPER_TITLE_SIZE = 30
+const PAPER_SUBPLOT_TITLE_SIZE = 22
+const PAPER_LEGEND_SIZE = 18
+const PAPER_EVALUATION_LOG_BINS = 24
+const PAPER_PARETO_WIDTH = 1450
+const PAPER_PARETO_HEIGHT = 1450
 const DEFAULT_P8_RESULTS = joinpath(@__DIR__, "results")
 const STRIPE_CHANNEL_WIDTH = 4
 const STRIPE_SENSOR_WIDTH = 3 * STRIPE_CHANNEL_WIDTH + 1
@@ -29,7 +43,7 @@ const STRIPE_COLUMN_COUNT = 48 * STRIPE_SENSOR_WIDTH - 1
 function usage(io::IO = stdout)
     println(io, """
     Usage:
-      julia --startup-file=no --project=. Revision/Package7/make_paper_figures.jl \\
+      julia --startup-file=no --project=. Revision/Package8/make_paper_figures.jl \\
         [--experiment-id ID] [--results-dir PATH] [--output-dir PATH] [--check-only]
 
     The script reads completed Package-8 analyses and existing Varying baseline
@@ -416,6 +430,53 @@ end
 
 axis_key(axis, index) = Symbol(index == 1 ? axis : "$(axis)$(index)")
 
+function style_subplot_titles!(plot)
+    annotations = get(plot.plot.layout.fields, :annotations, Any[])
+    for annotation in annotations
+        annotation.fields[:font] = attr(size = PAPER_SUBPLOT_TITLE_SIZE, color = "#252525")
+    end
+    return plot
+end
+
+function paper_axis(title; kwargs...)
+    fields = Dict{Symbol, Any}(
+        :title => attr(text = title, standoff = 12, font = attr(size = PAPER_AXIS_TITLE_SIZE)),
+        :tickfont => attr(size = PAPER_TICK_SIZE),
+    )
+    for (key, value) in kwargs
+        fields[key] = value
+    end
+    return attr(; fields...)
+end
+
+function thin_evaluation_cloud(rows, log_mse_range; bin_count = PAPER_EVALUATION_LOG_BINS)
+    bin_count > 0 || throw(ArgumentError("bin_count must be positive."))
+    lower, upper = log_mse_range
+    upper > lower || throw(ArgumentError("The log-MSE display range must be increasing."))
+    buckets = Dict{Tuple{Int, Int, Int}, Tuple{Float64, Dict{Symbol, String}}}()
+    for row in rows
+        loss = float_value(row, :validation_matching)
+        log_loss = log10(loss)
+        lower <= log_loss <= upper || continue
+        bin = clamp(floor(Int, bin_count * (log_loss - lower) / (upper - lower)), 0, bin_count - 1)
+        key = (int_value(row, :replicate), int_value(row, :active_groups), bin)
+        center = lower + (bin + 0.5) * (upper - lower) / bin_count
+        distance = abs(log_loss - center)
+        previous = get(buckets, key, nothing)
+        if isnothing(previous) || distance < previous[1]
+            buckets[key] = (distance, row)
+        end
+    end
+    selected = [value[2] for value in values(buckets)]
+    sort!(selected; by = row -> (
+        int_value(row, :replicate),
+        int_value(row, :active_groups),
+        float_value(row, :validation_matching),
+        int_value(row, :update),
+    ))
+    return selected
+end
+
 function make_mask_figure(
     configurations,
     output;
@@ -426,6 +487,7 @@ function make_mask_figure(
     row_count = length(methods)
     height = row_count == 4 ? 1550 : 850
     plot = make_subplots(rows = row_count, cols = 2, vertical_spacing = row_count == 4 ? 0.055 : 0.10, horizontal_spacing = 0.07, subplot_titles = panel_titles(methods))
+    style_subplot_titles!(plot)
     for (row, method) in enumerate(methods), (col, grouping) in enumerate(PAPER_GROUPINGS)
         data = configurations["$method-$grouping"]
         if isnothing(data.selected)
@@ -450,22 +512,27 @@ function make_mask_figure(
     end
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => 1450, :height => height,
-        :title => attr(text = title, x = 0.5, xanchor = "center"),
+        :title => attr(text = title, x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         :paper_bgcolor => "white", :plot_bgcolor => "white",
-        :font => attr(family = "Arial, sans-serif", size = 13, color = "#303030"),
-        :margin => attr(l = 80, r = 30, t = 100, b = 100),
-        :legend => attr(orientation = "h", x = 0.5, xanchor = "center", y = row_count == 4 ? -0.055 : -0.105, yanchor = "top"),
+        :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => attr(l = 105, r = 35, t = 120, b = 125),
+        :legend => attr(
+            orientation = "h", x = 0.5, xanchor = "center",
+            y = row_count == 4 ? -0.055 : -0.13, yanchor = "top",
+            font = attr(size = PAPER_LEGEND_SIZE),
+        ),
     )
     for index in 1:(2 * row_count)
-        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), attr(
-            title = index > 2 * (row_count - 1) ? "Horizontal sensor index" : "",
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            index > 2 * (row_count - 1) ? "Horizontal sensor index" : "",
             range = [0.5, STRIPE_COLUMN_COUNT + 0.5], tickmode = "array",
             tickvals = [stripe_sensor_center(value) for value in 1:4:48],
-            ticktext = string.(1:4:48), showgrid = false, zeroline = false,
+            ticktext = string.(1:4:48), showticklabels = index > 2 * (row_count - 1),
+            showgrid = false, zeroline = false,
             showline = true, mirror = true, linecolor = "#3A3A3A",
         ))
-        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), attr(
-            title = isodd(index) ? "Vertical sensor index" : "",
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            isodd(index) ? "Vertical sensor index" : "",
             range = [0.5, 8.5], tickmode = "array", tickvals = collect(1:8),
             showgrid = false, zeroline = false, showline = true, mirror = true, linecolor = "#3A3A3A",
         ))
@@ -524,10 +591,20 @@ end
 function make_pareto_figure(configurations, output)
     thresholds, colors, legend_ranks = threshold_styles(configurations)
     plot = make_subplots(rows = 4, cols = 2, vertical_spacing = 0.055, horizontal_spacing = 0.07, subplot_titles = panel_titles())
+    style_subplot_titles!(plot)
     shapes = Any[]
-    all_losses = Float64[]
+    all_losses = [
+        float_value(item, :validation_matching)
+        for data in values(configurations)
+        for item in data.evaluations
+        if isfinite(float_value(item, :validation_matching)) && float_value(item, :validation_matching) > 0
+    ]
+    isempty(all_losses) && error("No finite Package-8 evaluation losses were found.")
+    y_range = [log10(minimum(all_losses)) - 0.15, log10(10.0)]
     maxima = Dict(grouping => 1 for grouping in PAPER_GROUPINGS)
     shown_thresholds = Set{Float64}()
+    original_point_count = 0
+    displayed_point_count = 0
     for (row, method) in enumerate(PAPER_METHODS), (col, grouping) in enumerate(PAPER_GROUPINGS)
         data = configurations["$method-$grouping"]
         index = 2 * (row - 1) + col
@@ -536,13 +613,15 @@ function make_pareto_figure(configurations, output)
             float_value(item, :validation_matching) > 0,
             data.evaluations,
         )
-        append!(all_losses, float_value.(eligible, Ref(:validation_matching)))
         if !isempty(eligible)
             maxima[grouping] = max(maxima[grouping], maximum(int_value(item, :active_groups) for item in eligible))
         end
         for threshold in thresholds
-            selected = filter(item -> float_value(item, :threshold_value) == threshold, eligible)
-            isempty(selected) && continue
+            complete_selection = filter(item -> float_value(item, :threshold_value) == threshold, eligible)
+            isempty(complete_selection) && continue
+            selected = thin_evaluation_cloud(complete_selection, y_range)
+            original_point_count += length(complete_selection)
+            displayed_point_count += length(selected)
             showlegend = !(threshold in shown_thresholds)
             showlegend && push!(shown_thresholds, threshold)
             add_trace!(plot, scattergl(
@@ -588,25 +667,26 @@ function make_pareto_figure(configurations, output)
             line = attr(color = "#555555", width = 1.3, dash = "dash"),
         ))
     end
-    isempty(all_losses) && error("No finite Package-8 evaluation losses were found.")
-    y_range = [log10(minimum(all_losses)) - 0.15, log10(10.0)]
     layout = Dict{Symbol, Any}(
-        :template => "plotly_white", :width => 1450, :height => 1650,
-        :title => attr(text = "Package 8: evaluation landscapes and pooled Pareto fronts", x = 0.5, xanchor = "center"),
+        :template => "plotly_white", :width => PAPER_PARETO_WIDTH, :height => PAPER_PARETO_HEIGHT,
+        :title => attr(text = "Varying-IC sparsity distillation: evaluation landscapes and pooled Pareto fronts", x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         :paper_bgcolor => "white", :plot_bgcolor => "white", :shapes => shapes,
-        :font => attr(family = "Arial, sans-serif", size = 13, color = "#303030"),
-        :margin => attr(l = 85, r = 30, t = 100, b = 110),
-        :legend => attr(orientation = "h", x = 0.5, xanchor = "center", y = -0.06, yanchor = "top"),
+        :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => attr(l = 110, r = 35, t = 120, b = 135),
+        :legend => attr(
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.075, yanchor = "top",
+            font = attr(size = PAPER_LEGEND_SIZE),
+        ),
     )
     for index in 1:8
         grouping = isodd(index) ? "gc" : "sc"
-        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), attr(
-            title = index > 6 ? "Active groups" : "", range = [-0.5, maxima[grouping] + 1],
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            index > 6 ? "Active groups" : "", range = [-0.5, maxima[grouping] + 1],
             showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
             gridcolor = PAPER_GRID_COLOR, zeroline = false,
         ))
-        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), attr(
-            title = isodd(index) ? "Validation MSE" : "", type = "log", range = y_range,
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            isodd(index) ? "Validation MSE" : "", type = "log", range = y_range,
             showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
             gridcolor = PAPER_GRID_COLOR, zeroline = false,
         ))
@@ -614,9 +694,10 @@ function make_pareto_figure(configurations, output)
     relayout!(plot, layout)
     svg_path = joinpath(output, "figure_s1_pareto_comparison.svg")
     pdf_path = joinpath(output, "figure_s1_pareto_comparison.pdf")
-    PlotlyJS.savefig(plot, svg_path; width = 1450, height = 1650)
+    PlotlyJS.savefig(plot, svg_path; width = PAPER_PARETO_WIDTH, height = PAPER_PARETO_HEIGHT)
     move_glimages_behind_cartesian!(svg_path)
-    PlotlyJS.savefig(plot, pdf_path; width = 1450, height = 1650)
+    PlotlyJS.savefig(plot, pdf_path; width = PAPER_PARETO_WIDTH, height = PAPER_PARETO_HEIGHT)
+    println("Pareto display retained $displayed_point_count of $original_point_count evaluations after deterministic log-MSE binning; fronts and candidate selection still use all evaluations.")
     return [svg_path, pdf_path]
 end
 
@@ -664,14 +745,14 @@ function main(arguments = ARGS)
             options.output;
             methods = ("go", "gr"),
             stem = "figure_1a_selected_sensor_masks_go_gr",
-            title = "Package 8: GO and GR selected global input masks",
+            title = "Varying-IC sparsity distillation: selected GO and GR sensor masks",
         ),
         make_mask_figure(
             configurations,
             options.output;
             methods = ("group-lasso", "growl"),
             stem = "figure_1b_selected_sensor_masks_group_lasso_growl",
-            title = "Package 8: Group Lasso and GrOWL selected global input masks",
+            title = "Varying-IC sparsity distillation: selected Group Lasso and GrOWL sensor masks",
         ),
     )
     pareto_paths = make_pareto_figure(configurations, options.output)
