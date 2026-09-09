@@ -79,11 +79,29 @@ seeds, initial/final hashes and observed IC trace), plus the mask provenance,
 dense reference, control-step count and throughput. Exceptions have separate
 `.failure.jld2` diagnostics and do not mark a run complete.
 
-This implementation prepares and executes the requested training experiment.
-Aggregate plots and final deterministic validation/test evaluation remain a
-separate follow-up; use the same Comparison validation cases and the existing
-one Fixed/eight Varying Revision test cases, with masked deterministic actions
-and full-sensor rewards. Do not reselect masks from these results.
+The 40 requested training runs and their aggregate learning-curve plots are
+complete. Final deterministic validation/test evaluation remains a separate
+follow-up; use the same Comparison validation cases and the existing one
+Fixed/eight Varying Revision test cases, with masked deterministic actions and
+full-sensor rewards. Do not reselect masks from these results.
+
+## Paper learning curves
+
+After all 40 runs are complete, generate the paired Fixed- and Varying-IC
+learning-curve figures with:
+
+```bash
+julia --startup-file=no --project=. Revision/MaskedTraining/make_paper_figures.jl
+```
+
+The script strictly validates all ten Dense-MAT, GC-mask, and SC-mask runs for
+each protocol against the frozen manifest. It writes a combined Fixed/Varying
+figure as SVG and PDF under `results/paper/learning_curves_combined.*`, with one
+centered horizontal legend below both panels. It also writes
+`final_100_statistics.csv`. The figure uses the MAT-IPPO rolling-50 presentation
+with individual runs, IQR, median, and dashed arithmetic mean. The three series
+use the blue, orange, and magenta colors from MAT Stability.
+Use `--check-only` to validate inputs without rendering.
 
 ## Checks
 
@@ -94,6 +112,7 @@ julia --startup-file=no --project=. Revision/MaskedTraining/test_runtime.jl fixe
 julia --startup-file=no --project=. Revision/MaskedTraining/test_runtime.jl varying
 julia --startup-file=no --project=. Revision/MaskedTraining/test_worker.jl fixed
 julia --startup-file=no --project=. Revision/MaskedTraining/test_worker.jl varying
+julia --startup-file=no --project=. Revision/MaskedTraining/test_make_paper_figures.jl
 bash -n Revision/MaskedTraining/launch_tmux.sh
 ```
 

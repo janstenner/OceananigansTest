@@ -14,8 +14,9 @@ include(joinpath(SNN_DISTILLATION_DIRECTORY, "ParetoArchive.jl"))
 const DEFAULT_RESULTS_ROOT = joinpath(@__DIR__, "results")
 const SNN_TEST_STEPS = 200
 const THRESHOLD_COLOR_PALETTE = ("#2166AC", "#92C5DE", "#D6604D", "#67001F")
-const QUALITY_THRESHOLD_COLORS = ("#B2182B",)
 const QUALITY_THRESHOLD_DASHES = ("dash",)
+const QUALITY_THRESHOLD_LINE_COLOR = "#555555"
+const SELECTED_CANDIDATE_COLOR = "#F2C14E"
 const PARETO_SWEEP_CANDIDATE_COLOR = "#7B3294"
 const REPLICATE_SYMBOLS = Dict(1 => "circle", 2 => "diamond", 3 => "square")
 
@@ -288,23 +289,23 @@ function make_plot_loaded(options, records, pooled_front, selections, output_dir
         customdata = hcat(front_active_groups, front_active_inputs),
         hovertemplate = "groups=%{customdata[0]}<br>global inputs=%{customdata[1]}<br>MSE=%{y:.4e}<extra>pooled Pareto front</extra>",
     ))
+    shown_candidate_roles = Set{Symbol}()
     for selection in selections.unique_candidates
         candidate = selection[:candidate]
         selected_thresholds = sort(Float64.(selection[:quality_thresholds]); rev = true)
         is_quality_selection = !isempty(selected_thresholds)
-        label = is_quality_selection ?
-            "q≤" * join((@sprintf("%.4g", value) for value in selected_thresholds), "/") :
-            "$(candidate[:active_groups])g"
+        candidate_role = is_quality_selection ? :selected : :additional
+        show_candidate_legend = !(candidate_role in shown_candidate_roles)
+        push!(shown_candidate_roles, candidate_role)
         push!(traces, PlotlyJS.scatter(
             x = [Int(candidate[:active_groups])],
             y = [Float64(candidate[:validation_matching])],
-            mode = "markers+text",
-            text = [label],
-            textposition = "top center",
-            name = "Selected $label",
-            showlegend = false,
+            mode = "markers",
+            name = is_quality_selection ? "Selected test candidate" : "Additional GR-SC candidates",
+            legendgroup = is_quality_selection ? "selected" : "gr_sc_sweep",
+            showlegend = show_candidate_legend,
             marker = PlotlyJS.attr(
-                color = is_quality_selection ? QUALITY_THRESHOLD_COLORS[1] : PARETO_SWEEP_CANDIDATE_COLOR,
+                color = is_quality_selection ? SELECTED_CANDIDATE_COLOR : PARETO_SWEEP_CANDIDATE_COLOR,
                 size = 14,
                 symbol = "star", line = PlotlyJS.attr(color = "#111111", width = 1.0),
             ),
@@ -340,7 +341,7 @@ function make_plot_loaded(options, records, pooled_front, selections, output_dir
             y0 = threshold,
             y1 = threshold,
             line = PlotlyJS.attr(
-                color = QUALITY_THRESHOLD_COLORS[index], width = 1.5,
+                color = QUALITY_THRESHOLD_LINE_COLOR, width = 1.3,
                 dash = QUALITY_THRESHOLD_DASHES[index],
             ),
         ) for (index, threshold) in enumerate(quality_thresholds(options.configuration))],

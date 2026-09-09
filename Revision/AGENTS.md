@@ -454,9 +454,16 @@ standard Revision run files, never Higher-Ra run files or corpora.
 states and terminal callbacks. Full state is restored before every environment
 step and hook callback, so rewards retain all sensors. Masks never change during
 training. Atomic results preserve dense-reference provenance and training metrics;
-completed runs are skipped, failed runs restart from seed. Analysis and terminal
-test evaluation remain follow-up work; the production experiment is not complete
-until the runs and their evaluation have finished. See `MaskedTraining/README.md`.
+completed runs are skipped, failed runs restart from seed. The 40 production
+runs and aggregate learning curves are complete. Deterministic validation and
+terminal test evaluation remain follow-up work; see `MaskedTraining/README.md`.
+`MaskedTraining/make_paper_figures.jl` validates the ten paired Dense-MAT,
+GC-mask, and SC-mask results per protocol and writes a combined two-panel
+Fixed/Varying rolling-50 figure plus final-100 statistics below `results/paper`.
+The plot design matches the MAT-IPPO comparison: individual runs above the IQR
+ribbon, solid median, dashed arithmetic mean, and one shared horizontal legend
+below both panels. Dense/GC/SC use the three MAT-Stability configuration colors
+blue/orange/magenta.
 
 ## Simple Dense-NNA Varying-IC Study
 
@@ -481,7 +488,8 @@ Only the `gr-sc` analyzer extends terminal testing beyond the `0.02` quality
 selection. Starting at the sparsest qualifying pooled-front point, it tests
 every subsequent pooled-Pareto candidate in ascending active-group order
 through 17 groups inclusive. Analyzer and paper Pareto plots label the complete
-tested sweep; the other configurations retain one `0.02`-selected candidate.
+tested sweep. The paper mask figure displays the 17-group candidate for GR-SC;
+the other configurations retain their `0.02`-selected masks.
 
 ## Maintenance Rules
 

@@ -327,7 +327,8 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     Persistenz, vierkonfigurativer Launcher und Architektur-/Manifesttests sind
     implementiert. Die Qualitätsgrenze wurde vor der erneuten Analyse auf
     Validation-MSE `0.02` verschärft; GR-SC erhält zusätzlich den diagnostischen
-    Pareto-Testsweep bis einschließlich 17 Gruppen samt Plotmarkierungen.
+    Pareto-Testsweep bis einschließlich 17 Gruppen samt Plotmarkierungen; im
+    Paper-Maskenplot wird für GR-SC gezielt der 17-Gruppen-Kandidat gezeigt.
 
   Abschluss:
 
@@ -481,8 +482,12 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Atomare Ergebnisse, eingefrorene Provenienz, einzelne Logs, vollständige
     Restart-Erkennung und Fehlerdiagnostik sind vorhanden. Unterbrochene Runs
     starten mit demselben Seed neu; keine Fortsetzung mitten im Training.
-  - Produktionsruns und die anschließende aggregierte sowie deterministische
-    Validation-/Testauswertung stehen noch aus; das Paket bleibt offen.
+  - Die 40 Produktionsruns sind abgeschlossen. `make_paper_figures.jl` erzeugt
+    aus den jeweils zehn gepaarten Dense-MAT-, GC- und SC-Runs eine gemeinsame
+    Fixed-/Varying-Figure im MAT-IPPO-Stil und Final-100-Statistiken unter
+    `results/paper`.
+  - Die deterministische Validation-/Testauswertung steht noch aus; das Paket
+    bleibt offen.
 
   Umfang:
 

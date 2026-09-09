@@ -83,6 +83,8 @@ All analyzers use the single quality threshold `0.02`. In addition, the
 from its sparsest quality-qualified point through 17 active groups. Analysis
 outputs use `selected_test_candidates.jld2` and numbered
 `test/candidate_XX/` directories.
+The paper mask figure uses the 17-group sweep candidate in the GR-SC panel;
+the other panels continue to show their quality-selected candidates.
 
 ## Outputs
 

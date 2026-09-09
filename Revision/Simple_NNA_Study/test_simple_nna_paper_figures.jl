@@ -10,7 +10,7 @@ function write_fixture_csv(path, configuration, candidate_id; qualified = true)
         println(io, "fixture-r1,1,$configuration,0.01,0,native-$candidate_id,native,0.0,12,1152,$(qualified ? 0.005 : 0.04),false,$(qualified ? "0.02" : "")")
         if configuration == "gr-sc" && qualified
             println(io, "fixture-r1,1,$configuration,0.01,25,$candidate_id,threshold_1,0.003,4,576,0.015,true,0.02")
-            println(io, "fixture-r1,1,$configuration,0.01,50,$candidate_id-sweep,threshold_1,0.003,5,600,0.005,true,0.02")
+            println(io, "fixture-r1,1,$configuration,0.01,50,$candidate_id-sweep,threshold_1,0.003,17,600,0.005,true,0.02")
         else
             println(io, "fixture-r1,1,$configuration,0.01,25,$candidate_id,threshold_1,0.003,4,576,$(qualified ? 0.004 : 0.04),true,$(qualified ? "0.02" : "")")
         end
@@ -39,6 +39,9 @@ end
 @testset "Simple-NNA paper artifacts" begin
     @test vec(panel_titles()) == [
         "GO - GC", "GO - SC", "GR - GC", "GR - SC",
+    ]
+    @test vec(mask_panel_titles()) == [
+        "GO - GC", "GO - SC", "GR - GC", "GR - SC (17-group candidate)",
     ]
     mktempdir() do directory
         latest_root = joinpath(directory, "latest")
@@ -76,7 +79,7 @@ end
                 elseif configuration == "gr-sc"
                     [(id = candidate_id, mse = 0.015, groups = 4, inputs = 576, update = 25,
                       thresholds = [0.02]),
-                     (id = "$candidate_id-sweep", mse = 0.005, groups = 5, inputs = 600, update = 50,
+                     (id = "$candidate_id-sweep", mse = 0.005, groups = 17, inputs = 600, update = 50,
                       thresholds = Float64[])]
                 else
                     [(id = candidate_id, mse = 0.004, groups = 4, inputs = 576, update = 25,

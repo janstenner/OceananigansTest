@@ -22,9 +22,10 @@ const PAPER_METHOD_NAMES = Dict(
 const PAPER_ZERO_THRESHOLD_COLOR = "#277DA1"
 const PAPER_DEFAULT_THRESHOLD_COLORS = ("#F2A13A", "#EE8D32", "#E6782B", "#D96624")
 const PAPER_EXTRA_THRESHOLD_COLORS = ("#D73027", "#B2182B", "#8B0A1A", "#67000D")
-const PAPER_QUALITY_COLORS = ("#B2182B",)
 const PAPER_QUALITY_DASHES = ("dash",)
 const PAPER_QUALITY_SYMBOL = "star"
+const PAPER_QUALITY_LINE_COLOR = "#555555"
+const PAPER_SELECTED_CANDIDATE_COLOR = "#F2C14E"
 const PAPER_SWEEP_COLOR = "#7B3294"
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
 const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
@@ -601,6 +602,26 @@ function thin_evaluation_cloud(rows, log_mse_range; bin_count = PAPER_EVALUATION
     return selected
 end
 
+function mask_display_candidate(data)
+    data.configuration == "gr-sc" || return data.selected
+    matches = filter(
+        frozen -> Int(frozen[:candidate][:active_groups]) ==
+                  SNN_GR_SC_PARETO_SWEEP_MAX_ACTIVE_GROUPS,
+        data.candidates,
+    )
+    length(matches) == 1 || error(
+        "GR-SC mask figure requires exactly one tested 17-group candidate; found $(length(matches)).",
+    )
+    return only(matches)[:candidate]
+end
+
+function mask_panel_titles(methods = PAPER_METHODS)
+    titles = vec(panel_titles(methods))
+    index = findfirst(==("GR - SC"), titles)
+    !isnothing(index) && (titles[index] = "GR - SC (17-group candidate)")
+    return reshape(titles, :, 1)
+end
+
 function make_mask_figure(
     configurations,
     output;
@@ -610,14 +631,15 @@ function make_mask_figure(
 )
     row_count = length(methods)
     height = row_count == 4 ? 1550 : 850
-    plot = make_subplots(rows = row_count, cols = 2, vertical_spacing = row_count == 4 ? 0.055 : 0.10, horizontal_spacing = 0.07, subplot_titles = panel_titles(methods))
+    plot = make_subplots(rows = row_count, cols = 2, vertical_spacing = row_count == 4 ? 0.055 : 0.10, horizontal_spacing = 0.07, subplot_titles = mask_panel_titles(methods))
     style_subplot_titles!(plot)
     for (row, method) in enumerate(methods), (col, grouping) in enumerate(PAPER_GROUPINGS)
         data = configurations["$method-$grouping"]
-        if isnothing(data.selected)
+        displayed = mask_display_candidate(data)
+        if isnothing(displayed)
             add_trace!(plot, scatter(x = [72], y = [4.5], mode = "text", text = ["NR"], textfont = attr(size = 22, color = "#777777"), showlegend = false); row, col)
         else
-            values, text = stripe_matrix(data.selected[:global_mask])
+            values, text = stripe_matrix(displayed[:global_mask])
             add_trace!(plot, heatmap(
                 x = collect(1:STRIPE_COLUMN_COUNT), y = collect(1:8),
                 z = values, text = text, zmin = 0, zmax = 3,
@@ -795,17 +817,14 @@ function make_pareto_figure(configurations, output)
             candidate = frozen[:candidate]
             selected_thresholds = sort(Float64.(frozen[:quality_thresholds]); rev = true)
             is_quality_selection = !isempty(selected_thresholds)
-            label = is_quality_selection ?
-                "q≤" * join((@sprintf("%.4g", value) for value in selected_thresholds), "/") :
-                "$(candidate[:active_groups])g"
             add_trace!(plot, scatter(
                 x = [Int(candidate[:active_groups])],
                 y = [Float64(candidate[:validation_matching])],
-                mode = "markers+text", text = [label], textposition = "top center",
-                textfont = attr(size = 10, color = is_quality_selection ? PAPER_QUALITY_COLORS[1] : PAPER_SWEEP_COLOR),
-                name = "Selected $label", showlegend = false,
+                mode = "markers",
+                name = is_quality_selection ? "Selected test candidate" : "Additional GR-SC candidates",
+                showlegend = false,
                 marker = attr(
-                    color = is_quality_selection ? PAPER_QUALITY_COLORS[1] : PAPER_SWEEP_COLOR,
+                    color = is_quality_selection ? PAPER_SELECTED_CANDIDATE_COLOR : PAPER_SWEEP_COLOR,
                     size = 14,
                     symbol = PAPER_QUALITY_SYMBOL,
                     line = attr(color = "#111111", width = 1.0),
@@ -819,23 +838,27 @@ function make_pareto_figure(configurations, output)
             push!(shapes, attr(
                 type = "line", xref = "x$axis_suffix domain", x0 = 0, x1 = 1,
                 yref = "y$axis_suffix", y0 = quality_threshold, y1 = quality_threshold,
-                line = attr(color = PAPER_QUALITY_COLORS[qindex], width = 1.4,
+                line = attr(color = PAPER_QUALITY_LINE_COLOR, width = 1.3,
                             dash = PAPER_QUALITY_DASHES[qindex]),
             ))
         end
         if index == 1
-            for quality_threshold in (SNN_QUALITY_THRESHOLD,)
-                qindex = quality_index(quality_threshold)
-                add_trace!(plot, scatter(
-                    x = [NaN], y = [NaN], mode = "lines+markers",
-                    name = "Quality q≤$(quality_threshold)",
-                    legendgroup = "quality_$quality_threshold", legendrank = 400 + qindex,
-                    line = attr(color = PAPER_QUALITY_COLORS[qindex], width = 1.4,
-                                dash = PAPER_QUALITY_DASHES[qindex]),
-                    marker = attr(color = PAPER_QUALITY_COLORS[qindex], size = 10,
-                                  symbol = PAPER_QUALITY_SYMBOL),
-                ); row, col)
-            end
+            add_trace!(plot, scatter(
+                x = [NaN], y = [NaN], mode = "markers",
+                name = "Selected test candidate",
+                legendgroup = "selected", legendrank = 400,
+                marker = attr(color = PAPER_SELECTED_CANDIDATE_COLOR, size = 12,
+                              symbol = PAPER_QUALITY_SYMBOL,
+                              line = attr(color = "#111111", width = 1.0)),
+            ); row, col)
+            add_trace!(plot, scatter(
+                x = [NaN], y = [NaN], mode = "markers",
+                name = "Additional GR-SC candidates",
+                legendgroup = "gr_sc_sweep", legendrank = 410,
+                marker = attr(color = PAPER_SWEEP_COLOR, size = 12,
+                              symbol = PAPER_QUALITY_SYMBOL,
+                              line = attr(color = "#111111", width = 1.0)),
+            ); row, col)
         end
     end
     layout = Dict{Symbol, Any}(
@@ -843,9 +866,9 @@ function make_pareto_figure(configurations, output)
         :title => attr(text = "Simple-NNA Varying-IC sparsity distillation: evaluation landscapes and pooled Pareto fronts", x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         :paper_bgcolor => "white", :plot_bgcolor => "white", :shapes => shapes,
         :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
-        :margin => attr(l = 110, r = 35, t = 120, b = 135),
+        :margin => attr(l = 110, r = 35, t = 120, b = 190),
         :legend => attr(
-            orientation = "h", x = 0.5, xanchor = "center", y = -0.075, yanchor = "top",
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.14, yanchor = "top",
             font = attr(size = PAPER_LEGEND_SIZE),
         ),
     )
