@@ -1,5 +1,28 @@
 # Main Figure: Iteration 2
 
+## Ausgewählter Export mit Robotern
+
+[Kombiniertes SVG](exports/dense_sparse_all_12_brackets_robots.svg) ·
+[PNG-Vorschau](exports/dense_sparse_all_12_brackets_robots.png)
+
+Dense steht oben, Sparse darunter. Beide Panels zeigen alle zwölf Windows
+mit Klammern, ohne Panelüberschriften oder Fußzeilen. Unter den Aktuatoren
+stehen je zwölf Instanzen der bereitgestellten `robot.svg`, in denselben
+Lila-/Magenta-Abstufungen wie die Klammern. Nummern und Agent-Boxen unten
+entfallen; die Zuordnungslabels an den oberen Klammern bleiben erhalten.
+Die Roboter sind als editierbare Vektorpfade direkt im SVG enthalten.
+
+~~~powershell
+julia --startup-file=no --project=. "Revision/Main Figure/make_robot_export.jl"
+~~~
+
+Der Aufruf erzeugt das SVG und eine Provenienzdatei unter `exports/`.
+`--output-dir`, `--experiment-id`, `--state-file` und `--check-only` werden
+unterstützt. Der Export liest den Roboter direkt neben dem Skript; die
+SVG-Pfadgeometrie bleibt erhalten. Die PNG-Datei dient nur als Vorschau.
+
+## Asset-Bibliothek
+
 Die aktuelle Bibliothek enthält **56 editierbare SVGs**. Einstieg:
 [filterbare Galerie](assets/index.html), [Übersicht](assets/preview.png),
 [alle zwölf Windows im Vergleich](assets/all_windows_comparison.png) und

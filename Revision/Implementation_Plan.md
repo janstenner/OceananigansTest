@@ -516,6 +516,11 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     und Magenta-Abstufungen für Sparse sowie passende Aktuator-/Controller-
     Bausteine. Datenherkunft und alle zwölf lokalen Maskenzuordnungen werden
     geprüft; Provenienz, filterbare HTML-Galerie und PNG-Vorschauen liegen bei.
+  - `Main Figure/make_robot_export.jl` exportiert die ausgewählte Variante
+    mit allen zwölf Klammer-Windows: Dense oben, Sparse unten, mit je zwölf
+    eingefärbten Instanzen der bereitgestellten `robot.svg` anstelle der
+    unteren Nummern und Agent-Boxen, ohne Panelüberschriften und Fußzeilen.
+    Das SVG enthält die Roboter als direkt editierbare Vektorpfade.
   - Die endgültige Main-Figure-Komposition und ihr PDF-Export erfolgen manuell;
     dieser Asset-Schritt schließt Paket 12 nicht ab.
 

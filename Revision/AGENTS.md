@@ -31,6 +31,12 @@ Sparse Sensing paper.
   a bracket lane; periodic fragments retain agent identity. Physical-state
   displays omit positional encoding. SHA-256 provenance and the README record
   sources and regeneration; iteration-1 assets remain under `iterations/01/`.
+- `Main Figure/make_robot_export.jl`: Selected 12-agent bracket-only stacked
+  SVG export, dense above sparse. Reuses the validated temperature/mask and
+  bracket layers; embeds the supplied `robot.svg` as 24 recolored inline
+  vector icons below the actuators. Omits panel headings, footers, bottom
+  numbers and agent boxes, while retaining the upper bracket labels. Writes
+  the composition and source/robot provenance under `Main Figure/exports/`.
 - `Run_Files/FixedIC_MAT.jl` and `Run_Files/FixedIC_IPPO.jl`: Standalone
   fixed-initial-condition entry points.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone
