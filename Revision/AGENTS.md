@@ -23,11 +23,14 @@ Sparse Sensing paper.
 - `Main Figure/make_assets.jl`: Explicit SVG-only asset builder for the paper's
   dense-to-sparse multi-agent schematic. Reads the saved two-plume checkpoint
   and a pinned, frozen Package-8 Varying-IC GO-GC mask, verifies all twelve
-  local/global mask mappings, and exports physical sensor values, channel-mask
-  stripes, three example windows, twelve-actuator/controller fragments,
-  separate legends, an HTML gallery, and SHA-256 provenance. Physical-state
-  displays omit positional encoding. `Main Figure/README.md` documents the
-  exact sources, coordinates, shared-MAT interpretation and regeneration.
+  local/global mask mappings, and exports temperature-only sensor views. Each
+  point represents a complete T/w/u location under GC. Iteration 2 uses fixed
+  purple colors for dense agents and magenta for sparse agents, ten selections
+  of 1-12 windows in full-frame and bracket-only styles, actuator/controller
+  fragments, and a filterable HTML gallery. Nonoverlapping windows may share
+  a bracket lane; periodic fragments retain agent identity. Physical-state
+  displays omit positional encoding. SHA-256 provenance and the README record
+  sources and regeneration; iteration-1 assets remain under `iterations/01/`.
 - `Run_Files/FixedIC_MAT.jl` and `Run_Files/FixedIC_IPPO.jl`: Standalone
   fixed-initial-condition entry points.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone

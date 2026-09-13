@@ -509,10 +509,13 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
 
   - `Main Figure/make_assets.jl` erzeugt eine SVG-Asset-Bibliothek aus dem
     gespeicherten Two-Plume-Zustand und der eingefrorenen Varying-IC-GO-GC-Maske
-    aus Paket 8 (`260830_231109`): dichte/maskierte Sensorwerte, Kanalmasken,
-    exemplarische 15-Spalten-Windows, zwölf Aktuatoren, Controller-Bausteine
-    und Distillationspfeil. Datenherkunft und alle zwölf lokalen Maskenzuordnungen
-    werden geprüft; Provenienz und HTML-/PNG-Vorschauen liegen bei.
+    aus Paket 8 (`260830_231109`): Temperaturansichten der dichten/maskierten
+    Sensororte; jeder Punkt repräsentiert alle drei GC-Kanäle. Iteration 2
+    enthält zehn Auswahlen von einem bis zu allen zwölf 15-Spalten-Windows,
+    jeweils mit Rahmen/Klammern oder nur Klammern, Lila-Abstufungen für Dense
+    und Magenta-Abstufungen für Sparse sowie passende Aktuator-/Controller-
+    Bausteine. Datenherkunft und alle zwölf lokalen Maskenzuordnungen werden
+    geprüft; Provenienz, filterbare HTML-Galerie und PNG-Vorschauen liegen bei.
   - Die endgültige Main-Figure-Komposition und ihr PDF-Export erfolgen manuell;
     dieser Asset-Schritt schließt Paket 12 nicht ab.
 
