@@ -20,6 +20,14 @@ Sparse Sensing paper.
 - `package10.md`: Frozen controller, channel-scale, white-noise, pairing,
   worker-ownership, persistence, and launch protocol for the Package-10 sensor-
   noise study.
+- `Main Figure/make_assets.jl`: Explicit SVG-only asset builder for the paper's
+  dense-to-sparse multi-agent schematic. Reads the saved two-plume checkpoint
+  and a pinned, frozen Package-8 Varying-IC GO-GC mask, verifies all twelve
+  local/global mask mappings, and exports physical sensor values, channel-mask
+  stripes, three example windows, twelve-actuator/controller fragments,
+  separate legends, an HTML gallery, and SHA-256 provenance. Physical-state
+  displays omit positional encoding. `Main Figure/README.md` documents the
+  exact sources, coordinates, shared-MAT interpretation and regeneration.
 - `Run_Files/FixedIC_MAT.jl` and `Run_Files/FixedIC_IPPO.jl`: Standalone
   fixed-initial-condition entry points.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone

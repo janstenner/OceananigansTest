@@ -1,6 +1,6 @@
 # Implementation Plan for the Paper Revision
 
-Stand: 2026-09-08
+Stand: 2026-09-13
 
 Dieser Plan enthält nur ganze, in sinnvoller Reihenfolge abzuarbeitende Implementierungs- und Experimentpakete.
 Nur die Paketüberschriften sind abhakbar.
@@ -504,6 +504,17 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   - Beide im Paper gezeigten Masked-versus-Unmasked-Experimente sind vollständig neu durchgeführt und reproduzierbar.
 
 - [ ] **Paket 12 — Vollständige Neuerstellung der Paper-Ergebnisse und Reproduzierbarkeitsaudit**
+
+  Implementierungsstand Main-Figure-Assets (2026-09-13):
+
+  - `Main Figure/make_assets.jl` erzeugt eine SVG-Asset-Bibliothek aus dem
+    gespeicherten Two-Plume-Zustand und der eingefrorenen Varying-IC-GO-GC-Maske
+    aus Paket 8 (`260830_231109`): dichte/maskierte Sensorwerte, Kanalmasken,
+    exemplarische 15-Spalten-Windows, zwölf Aktuatoren, Controller-Bausteine
+    und Distillationspfeil. Datenherkunft und alle zwölf lokalen Maskenzuordnungen
+    werden geprüft; Provenienz und HTML-/PNG-Vorschauen liegen bei.
+  - Die endgültige Main-Figure-Komposition und ihr PDF-Export erfolgen manuell;
+    dieser Asset-Schritt schließt Paket 12 nicht ab.
 
   Umfang:
 
