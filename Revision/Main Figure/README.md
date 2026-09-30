@@ -183,3 +183,29 @@ provenance.json enthält Quell- und Generator-Hashes, Maskenidentität,
 Sensorindizes, Agentfarben, alle Vergleichsauswahlen und die Zuordnungen
 aller zwölf Windows. Die endgültige Figure-Komposition und der PDF-Export
 erfolgen weiterhin manuell.
+
+## Setup-Figuren (Figure 2 und Figure 3b)
+
+`make_setup_figures.jl` erzeugt die direkt einsetzbaren Panels für Figure 2
+und Figure 3(b) des Manuskripts unter `exports/setup/` (SVG und PDF):
+
+~~~powershell
+julia --startup-file=no --project=. "Revision/Main Figure/make_setup_figures.jl"
+~~~
+
+- `figure_2a_uncontrolled`: gespeicherter Two-Plume-Zustand `RBmodel300.jld2`
+  (Fixed-IC-Anfangszustand).
+- `figure_2b_controlled`: Zustand nach der deterministischen
+  200-Schritt-Testepisode des Fixed-IC-Experten ab (a).
+- `figure_2c_boundary_control`: Aktionen des letzten Schritts und die daraus
+  über `bottom_T` entstehende Bodentemperatur; Heizen/Kühlen relativ zu
+  $T_b = 2$ ist warm/kühl schattiert (Farben: `WARM`/`COOL` im Skript).
+- `figure_3b_sensor_window`: Temperatur plus Positional Encoding im
+  47-Spalten-Fenster von Agent 6 (mittlerer Agent in Figure 3a) im Zustand (a).
+
+Die Temperaturfarben stammen aus `RBC_analyse/sensor_plot.jl` (Bereich 1 bis
+2,5); das Fenster nutzt dieselben Farben auf dem Bereich 0 bis 3. Der Rollout
+wird gegen die gespeicherten Aktionen aus `Revision/Baselines` geprüft. Die
+Panels sind für ihre LaTeX-Breiten (0.32 bzw. 0.48 `\columnwidth`) auf etwa
+7,5 pt Schrift ausgelegt. `setup_figures_provenance.json` hält Hashes,
+Abweichung vom Baseline-Rollout und die verwendeten Aktionen fest.

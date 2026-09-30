@@ -40,6 +40,14 @@ Sparse Sensing paper.
 - `Main Figure/make_bottom_temperature_plots.jl`: One deterministic evaluation
   of the Varying Dense Expert and selected GO-GC Apprentice at the illustrated
   two-plume state; exports separate `bottom_T` curves without a rollout.
+- `Main Figure/make_setup_figures.jl`: Manuscript Figure 2 and Figure 3(b).
+  Replays the deterministic 200-step Fixed-IC expert test episode from
+  `RBmodel300.jld2` (checked against `Baselines/results/fixed/expert.jld2`) and
+  exports ready-to-include SVG/PDF panels under `Main Figure/exports/setup/`:
+  the uncontrolled and controlled temperature fields with the original
+  `RBC_analyse/sensor_plot.jl` colors, the last-step actions with the resulting
+  `bottom_T` profile, and the 47-column temperature-plus-positional-encoding
+  window of agent 6. Panels target about 7.5 pt text at their LaTeX widths.
 - `Run_Files/FixedIC_MAT.jl` and `Run_Files/FixedIC_IPPO.jl`: Standalone
   fixed-initial-condition entry points.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone
