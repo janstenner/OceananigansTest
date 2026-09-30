@@ -40,6 +40,16 @@ const PAPER_LEGEND_SIZE = 18
 const PAPER_EVALUATION_LOG_BINS = 24
 const PAPER_PARETO_WIDTH = 1450
 const PAPER_PARETO_HEIGHT = 850
+const PAPER_CHANNEL_RUN_COLORS = (
+    "rgba(39, 125, 161, 0.22)",
+    "rgba(242, 161, 58, 0.22)",
+    "rgba(180, 26, 92, 0.22)",
+)
+const PAPER_CHANNEL_RIBBON_COLORS = (
+    "rgba(39, 125, 161, 0.14)",
+    "rgba(242, 161, 58, 0.14)",
+    "rgba(180, 26, 92, 0.14)",
+)
 const DEFAULT_SNN_RESULTS = joinpath(@__DIR__, "results")
 const STRIPE_CHANNEL_WIDTH = 4
 const STRIPE_SENSOR_WIDTH = 3 * STRIPE_CHANNEL_WIDTH + 1
@@ -895,7 +905,234 @@ function make_pareto_figure(configurations, output)
     return [svg_path, pdf_path]
 end
 
-function write_provenance(output, configurations, expert, unactuated)
+function load_channel_group_trajectories(options, configuration)
+    expected_updates = expected_evaluation_updates(SNN_UPDATES)
+    trajectories = NamedTuple[]
+    source_paths = String[]
+    for strength in SNN_STRENGTH_GRIDS[configuration], replicate in SNN_REPLICATES
+        job = job_for(options.experiment_id, configuration, strength, replicate)
+        path = joinpath(run_directory(options.results_root, job), "evaluations.jld2")
+        isfile(path) || error("Missing Simple-NNA evaluations for channel-group trajectory: $path")
+        loaded = JLD2.load(path)
+        haskey(loaded, "batches") || error("Channel-group trajectory source lacks evaluation batches: $path")
+        batches = sort(collect(loaded["batches"]); by = batch -> Int(batch[:update]))
+        updates = Int[]
+        active_groups_by_channel = [Int[] for _ in 1:3]
+        for batch in batches
+            candidates = [normalize_record(candidate) for candidate in batch[:candidates]]
+            native = filter(candidate -> Symbol(candidate[:threshold_id]) === :native, candidates)
+            length(native) == 1 || error("Expected one native candidate at update $(batch[:update]) in $path")
+            group_mask = BitVector(only(native)[:group_mask])
+            expected_group_count = endswith(configuration, "-gc") ? 32 : 96
+            length(group_mask) == expected_group_count || error(
+                "Channel-group trajectory mask has the wrong size in $path",
+            )
+            channel_counts = endswith(configuration, "-gc") ?
+                fill(count(group_mask), 3) :
+                [count(@view group_mask[channel:3:end]) for channel in 1:3]
+            push!(updates, Int(batch[:update]))
+            for channel in 1:3
+                push!(active_groups_by_channel[channel], channel_counts[channel])
+            end
+        end
+        updates == expected_updates || error("Channel-group trajectory has incomplete updates in $path")
+        push!(trajectories, (; strength = Float64(strength), replicate = Int(replicate),
+                             updates, active_groups_by_channel))
+        push!(source_paths, path)
+    end
+    return (; trajectories, source_paths)
+end
+
+function aggregate_channel_group_trajectories(trajectories, channel)
+    length(trajectories) == length(SNN_STRENGTH_GRIDS[first(SNN_CONFIGURATION_NAMES)]) * length(SNN_REPLICATES) ||
+        error("Expected nine channel-group trajectories per configuration.")
+    updates = first(trajectories).updates
+    all(trajectory -> trajectory.updates == updates, trajectories) || error(
+        "Channel-group trajectories do not share one update grid.",
+    )
+    values = reduce(hcat, (trajectory.active_groups_by_channel[channel] for trajectory in trajectories))
+    return (;
+        updates,
+        mean = vec(mean(values; dims = 2)),
+        median = [median(@view values[index, :]) for index in axes(values, 1)],
+        q25 = [quantile(@view(values[index, :]), 0.25) for index in axes(values, 1)],
+        q75 = [quantile(@view(values[index, :]), 0.75) for index in axes(values, 1)],
+    )
+end
+
+function make_channel_pruning_figure(options, output)
+    plot = make_subplots(
+        rows = 2,
+        cols = 2,
+        vertical_spacing = 0.12,
+        horizontal_spacing = 0.08,
+        subplot_titles = panel_titles(),
+    )
+    style_subplot_titles!(plot)
+    source_paths = String[]
+    for (index, configuration) in enumerate(SNN_CONFIGURATION_NAMES)
+        row = (index - 1) ÷ 2 + 1
+        col = (index - 1) % 2 + 1
+        loaded = load_channel_group_trajectories(options, configuration)
+        append!(source_paths, loaded.source_paths)
+        for channel in 1:3
+            aggregate = aggregate_channel_group_trajectories(loaded.trajectories, channel)
+            add_trace!(plot, scatter(
+                x = aggregate.updates, y = aggregate.q25, mode = "lines",
+                line = attr(width = 0), hoverinfo = "skip", showlegend = false,
+            ); row, col)
+            add_trace!(plot, scatter(
+                x = aggregate.updates, y = aggregate.q75, mode = "lines",
+                line = attr(width = 0), fill = "tonexty",
+                fillcolor = PAPER_CHANNEL_RIBBON_COLORS[channel],
+                hoverinfo = "skip", showlegend = false,
+            ); row, col)
+            for trajectory in loaded.trajectories
+                add_trace!(plot, scatter(
+                    x = trajectory.updates, y = trajectory.active_groups_by_channel[channel],
+                    mode = "lines", showlegend = false,
+                    line = attr(color = PAPER_CHANNEL_RUN_COLORS[channel], width = 1.0),
+                    hovertemplate = "Update %{x}<br>Active groups %{y}<extra>$(PAPER_CHANNEL_NAMES[channel]), strength=$(trajectory.strength), replicate=$(trajectory.replicate)</extra>",
+                ); row, col)
+            end
+            median_width = endswith(configuration, "-gc") ? (6.0, 4.2, 2.4)[channel] : 3.0
+            add_trace!(plot, scatter(
+                x = aggregate.updates, y = aggregate.median, mode = "lines",
+                name = PAPER_CHANNEL_NAMES[channel],
+                legendgroup = "channel_$channel", legendrank = channel,
+                showlegend = index == 1,
+                line = attr(color = PAPER_CHANNEL_COLORS[channel], width = median_width),
+                hovertemplate = "Update %{x}<br>Median active groups %{y:.1f}<extra>$(PAPER_CHANNEL_NAMES[channel])</extra>",
+            ); row, col)
+            add_trace!(plot, scatter(
+                x = aggregate.updates, y = aggregate.mean, mode = "lines",
+                showlegend = false,
+                line = attr(color = PAPER_CHANNEL_COLORS[channel], width = 2, dash = "dash"),
+                hovertemplate = "Update %{x}<br>Mean active groups %{y:.1f}<extra>$(PAPER_CHANNEL_NAMES[channel])</extra>",
+            ); row, col)
+        end
+    end
+    for (name, rank, line_style) in (
+        ("Individual runs", 10, attr(color = "rgba(70, 70, 70, 0.25)", width = 1.0)),
+        ("Median + IQR", 11, attr(color = "#555555", width = 3)),
+        ("Arithmetic mean", 12, attr(color = "#555555", width = 2, dash = "dash")),
+    )
+        add_trace!(plot, scatter(
+            x = [NaN], y = [NaN], mode = "lines", name = name,
+            legendgroup = "style_$rank", legendrank = rank,
+            line = line_style, hoverinfo = "skip",
+        ); row = 1, col = 1)
+    end
+    layout = Dict{Symbol, Any}(
+        :template => "plotly_white", :width => 1450, :height => 850,
+        :title => attr(text = "Simple-NNA input-channel pruning trajectories", x = 0.5,
+                       xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
+        :paper_bgcolor => "white", :plot_bgcolor => "white",
+        :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => attr(l = 115, r = 35, t = 120, b = 165),
+        :legend => attr(
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.13, yanchor = "top",
+            traceorder = "normal", font = attr(size = PAPER_LEGEND_SIZE),
+        ),
+        :hovermode => "x unified",
+    )
+    for index in 1:4
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            index > 2 ? "Update" : "", range = [0, SNN_UPDATES], tickformat = ",d",
+            showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
+            gridcolor = PAPER_GRID_COLOR, zeroline = false,
+        ))
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            isodd(index) ? "Active local-window groups" : "", range = [0, 32], dtick = 4,
+            showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
+            gridcolor = PAPER_GRID_COLOR, zeroline = false,
+        ))
+    end
+    relayout!(plot, layout)
+    paths = String[]
+    for extension in ("svg", "pdf")
+        path = joinpath(output, "figure_2_channel_pruning_trajectories.$extension")
+        PlotlyJS.savefig(plot, path; width = 1450, height = 850)
+        push!(paths, path)
+    end
+    return (; paths, source_paths)
+end
+
+function make_gr_sc_channel_pruning_figure(options, output)
+    configuration = "gr-sc"
+    loaded = load_channel_group_trajectories(options, configuration)
+    plot = PlotlyJS.Plot()
+    for channel in 1:3
+        aggregate = aggregate_channel_group_trajectories(loaded.trajectories, channel)
+        add_trace!(plot, scatter(
+            x = aggregate.updates, y = aggregate.q25, mode = "lines",
+            line = attr(width = 0), hoverinfo = "skip", showlegend = false,
+        ))
+        add_trace!(plot, scatter(
+            x = aggregate.updates, y = aggregate.q75, mode = "lines",
+            line = attr(width = 0), fill = "tonexty",
+            fillcolor = PAPER_CHANNEL_RIBBON_COLORS[channel],
+            hoverinfo = "skip", showlegend = false,
+        ))
+        for trajectory in loaded.trajectories
+            add_trace!(plot, scatter(
+                x = trajectory.updates, y = trajectory.active_groups_by_channel[channel],
+                mode = "lines", showlegend = false,
+                line = attr(color = PAPER_CHANNEL_RUN_COLORS[channel], width = 1.0),
+                hovertemplate = "Update %{x}<br>Active groups %{y}<extra>$(PAPER_CHANNEL_NAMES[channel]), strength=$(trajectory.strength), replicate=$(trajectory.replicate)</extra>",
+            ))
+        end
+        add_trace!(plot, scatter(
+            x = aggregate.updates, y = aggregate.median, mode = "lines",
+            name = PAPER_CHANNEL_NAMES[channel],
+            legendgroup = "channel_$channel", legendrank = channel,
+            line = attr(color = PAPER_CHANNEL_COLORS[channel], width = 3),
+            hovertemplate = "Update %{x}<br>Median active groups %{y:.1f}<extra>$(PAPER_CHANNEL_NAMES[channel])</extra>",
+        ))
+    end
+    for (name, rank, line_style) in (
+        ("Individual runs", 10, attr(color = "rgba(70, 70, 70, 0.25)", width = 1.0)),
+        ("Median + IQR", 11, attr(color = "#555555", width = 3)),
+    )
+        add_trace!(plot, scatter(
+            x = [NaN], y = [NaN], mode = "lines", name = name,
+            legendgroup = "style_$rank", legendrank = rank,
+            line = line_style, hoverinfo = "skip",
+        ))
+    end
+    relayout!(plot,
+        template = "plotly_white", width = 1100, height = 650,
+        title = attr(text = "GR-SC Channel Pruning Trajectories", x = 0.5,
+                     xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
+        paper_bgcolor = "white", plot_bgcolor = "white",
+        font = attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        margin = attr(l = 120, r = 35, t = 95, b = 150),
+        xaxis = paper_axis(
+            "Update", range = [0, SNN_UPDATES], tickformat = ",d",
+            showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
+            gridcolor = PAPER_GRID_COLOR, zeroline = false,
+        ),
+        yaxis = paper_axis(
+            "Active local-window groups", range = [0, 32], dtick = 4,
+            showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
+            gridcolor = PAPER_GRID_COLOR, zeroline = false,
+        ),
+        legend = attr(
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.18, yanchor = "top",
+            traceorder = "normal", font = attr(size = PAPER_LEGEND_SIZE),
+        ),
+        hovermode = "x unified",
+    )
+    paths = String[]
+    for extension in ("svg", "pdf")
+        path = joinpath(output, "figure_3_gr_sc_channel_pruning_trajectories.$extension")
+        PlotlyJS.savefig(plot, path; width = 1100, height = 650)
+        push!(paths, path)
+    end
+    return paths
+end
+
+function write_provenance(output, configurations, expert, unactuated; additional_files = String[])
     files = String[expert.path, unactuated.path]
     for data in values(configurations)
         append!(files, [data.paths.status, data.paths.evaluations, data.paths.front])
@@ -903,6 +1140,7 @@ function write_provenance(output, configurations, expert, unactuated)
         isfile(data.paths.legacy_selection) && push!(files, data.paths.legacy_selection)
         append!(files, [string(candidate[:test_path]) for candidate in data.candidates])
     end
+    append!(files, additional_files)
     sort!(unique!(files))
     path = joinpath(output, "provenance.sha256")
     open(path, "w") do io
@@ -935,7 +1173,13 @@ function main(arguments = ARGS)
     table = write_table(options.output, rows)
     mask_paths = make_mask_figure(configurations, options.output)
     pareto_paths = make_pareto_figure(configurations, options.output)
-    provenance = write_provenance(options.output, configurations, expert, unactuated)
+    channel_pruning = make_channel_pruning_figure(options, options.output)
+    channel_pruning_paths = channel_pruning.paths
+    gr_sc_channel_pruning_paths = make_gr_sc_channel_pruning_figure(options, options.output)
+    provenance = write_provenance(
+        options.output, configurations, expert, unactuated;
+        additional_files = channel_pruning.source_paths,
+    )
     atomic_save(
         joinpath(options.output, "paper_metrics.jld2");
         schema_version = SNN_SCHEMA_VERSION,
@@ -949,10 +1193,13 @@ function main(arguments = ARGS)
         table,
         mask_paths,
         pareto_paths,
+        channel_pruning_paths,
+        gr_sc_channel_pruning_paths,
         provenance,
     )
     println("Simple-NNA paper artifacts written to $(options.output)")
-    return (; options, configurations, rows, table, mask_paths, pareto_paths, provenance)
+    return (; options, configurations, rows, table, mask_paths, pareto_paths,
+            channel_pruning_paths, gr_sc_channel_pruning_paths, provenance)
 end
 
 abspath(PROGRAM_FILE) == abspath(@__FILE__) && main()

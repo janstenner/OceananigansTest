@@ -90,7 +90,12 @@ the other panels continue to show their quality-selected candidates.
 
 Training retains atomic resume state and Pareto checkpoints. Each analyzer
 writes consolidated evaluation CSV/JLD2 files, Pareto SVG/PDF files, and the
-validation-frozen test candidate set. The terminal test covers the same eight
+validation-frozen test candidate set. The paper generator additionally writes
+a four-panel SVG/PDF of the native-mask active local-window groups by input
+channel for all strengths and replicates, including the median, IQR, and
+arithmetic mean. GC curves coincide across channels because GC groups couple
+temperature and both velocity components. It also writes a titled GR-SC-only
+channel-pruning version without the arithmetic mean. The terminal test covers the same eight
 deterministic Varying test cases as Package 8 and preserves split, basis seed,
 mirror, offset, evaluation seed, episode, control step, simulation time,
 actions, rewards, and direct `state_Nu` values.

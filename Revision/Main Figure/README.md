@@ -23,6 +23,13 @@ SVG-Pfadgeometrie bleibt erhalten. Die PNG-Datei dient nur als Vorschau.
 
 ## Asset-Bibliothek
 
+Die zwei separaten Outputs für denselben Two-Plume-Zustand liegen unter
+[`exports/dense_expert_bottom_temperature.svg`](exports/dense_expert_bottom_temperature.svg)
+und [`exports/go_gc_apprentice_bottom_temperature.svg`](exports/go_gc_apprentice_bottom_temperature.svg).
+`make_bottom_temperature_plots.jl` berechnet dafür die deterministischen
+Aktionsmittelwerte mit T/w/u und Position Encoding und setzt sie in die
+originale `bottom_T`-Funktion ein.
+
 Die aktuelle Bibliothek enthält **56 editierbare SVGs**. Einstieg:
 [filterbare Galerie](assets/index.html), [Übersicht](assets/preview.png),
 [alle zwölf Windows im Vergleich](assets/all_windows_comparison.png) und

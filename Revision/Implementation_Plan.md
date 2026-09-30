@@ -521,6 +521,9 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
     eingefärbten Instanzen der bereitgestellten `robot.svg` anstelle der
     unteren Nummern und Agent-Boxen, ohne Panelüberschriften und Fußzeilen.
     Das SVG enthält die Roboter als direkt editierbare Vektorpfade.
+  - `Main Figure/make_bottom_temperature_plots.jl` ergänzt zwei separate
+    `bottom_T`-Linienplots der deterministischen Expert-/GO-GC-Outputs für
+    genau den dargestellten Two-Plume-Zustand.
   - Die endgültige Main-Figure-Komposition und ihr PDF-Export erfolgen manuell;
     dieser Asset-Schritt schließt Paket 12 nicht ab.
 

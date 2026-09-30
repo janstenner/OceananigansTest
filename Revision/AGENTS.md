@@ -37,6 +37,9 @@ Sparse Sensing paper.
   vector icons below the actuators. Omits panel headings, footers, bottom
   numbers and agent boxes, while retaining the upper bracket labels. Writes
   the composition and source/robot provenance under `Main Figure/exports/`.
+- `Main Figure/make_bottom_temperature_plots.jl`: One deterministic evaluation
+  of the Varying Dense Expert and selected GO-GC Apprentice at the illustrated
+  two-plume state; exports separate `bottom_T` curves without a rollout.
 - `Run_Files/FixedIC_MAT.jl` and `Run_Files/FixedIC_IPPO.jl`: Standalone
   fixed-initial-condition entry points.
 - `Run_Files/VaryingIC_MAT.jl` and `Run_Files/VaryingIC_IPPO.jl`: Standalone
@@ -175,6 +178,11 @@ Sparse Sensing paper.
   protocol, and terminal tests, but uses the stricter validation-quality
   threshold `0.02` plus a diagnostic Pareto test sweep only for `gr-sc`;
   it is launched in four configuration-specific calls sharing one experiment ID.
+  Its paper generator also renders four native-mask channel-pruning panels for
+  active local-window groups, with temperature, vertical velocity, and
+  horizontal velocity shown in mask-figure colors across all strength/replicate
+  runs, plus channel-wise medians, IQRs, and arithmetic means. A separate titled
+  GR-SC channel-pruning artifact omits the arithmetic mean.
 - `Noise_Study/NoiseStudy.jl` and `prepare_manifest.jl`: Package-10 constants,
   paired noise seeds, validation-only sparse-SC and Package-6 `C_match`
   resolution, exact protocol-specific physical-channel scales, frozen
