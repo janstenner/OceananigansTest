@@ -107,8 +107,8 @@ experiment directories. Different experiment IDs only produce warnings and are
 combined. Incomplete worker cells are written as `NA`. The script creates a
 wide CSV and Markdown table with the mean test-set `state_Nu` for every
 controller and noise level, ordered as expert, `C_match`, then sparse. It also
-writes separate Fixed-IC and Varying-IC SVG/PDF noise-response plots and one
-combined supplementary figure of the two frozen `C_match` global sensor masks.
+writes one two-panel Fixed-IC/Varying-IC SVG/PDF noise-response figure with a
+shared legend and one combined supplementary figure of the two frozen `C_match` global sensor masks.
 The mask figure follows the Package-7/8 stripe design. The response curves use
 the MAT-stability main colors in expert, sparse-apprentice, `C_match` order,
 and their horizontal coordinates are proportional to the physical `alpha`

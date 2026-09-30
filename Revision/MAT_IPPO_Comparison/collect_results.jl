@@ -472,7 +472,7 @@ function plot_learning_curves_combined(records, stats, plot_directory)
 
     xaxis, yaxis, yaxis_with_title = combined_axis_styles(
         "Episode",
-        "Score (rolling mean, window=$WINDOW)",
+        "Reward ($WINDOW-episode rolling mean)",
     )
     left_xaxis_fields = Dict{Symbol, Any}(xaxis.fields)
     left_xaxis_fields[:domain] = [0.0, 0.46]
@@ -508,6 +508,7 @@ function plot_learning_curves_combined(records, stats, plot_directory)
     )
     output = joinpath(plot_directory, "learning_curves_combined.svg")
     PlotlyJS.savefig(plot_handle, output; width = 1500, height = 700)
+    PlotlyJS.savefig(plot_handle, splitext(output)[1] * ".pdf"; width = 1500, height = 700)
     return output
 end
 
@@ -643,6 +644,7 @@ function plot_validation_performance_combined(final, plot_directory)
     )
     output = joinpath(plot_directory, "validation_performance_combined.svg")
     PlotlyJS.savefig(plot_handle, output; width = 1400, height = 650)
+    PlotlyJS.savefig(plot_handle, splitext(output)[1] * ".pdf"; width = 1400, height = 650)
     return output
 end
 
@@ -831,7 +833,7 @@ function plot_learning_curves(records, stats, plot_directory)
             plot_layout(
                 "$(uppercasefirst(string(protocol))) IC learning curves",
                 "Episode",
-                "Score (rolling mean, window=$WINDOW)",
+                "Reward ($WINDOW-episode rolling mean)",
             ),
         )
         save_svg(plot_object, joinpath(plot_directory, "$(protocol)_learning_curves"))
@@ -863,7 +865,7 @@ function plot_learning_curves(records, stats, plot_directory)
             plot_layout(
                 "$(uppercasefirst(string(protocol))) IC individual runs",
                 "Episode",
-                "Score (rolling mean, window=$WINDOW)",
+                "Reward ($WINDOW-episode rolling mean)",
             ),
         )
         save_svg(individual, joinpath(plot_directory, "$(protocol)_individual_curves"))

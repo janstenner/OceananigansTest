@@ -543,3 +543,28 @@ Nicht Teil dieses Plans sind ein Reward-Modul oder Reward-Estimator-Training, zu
   Abschluss:
 
   - Jede im Paper berichtete Zahl und jedes Resultat-Artefakt lässt sich aus den gespeicherten Revision-Runs reproduzieren und anschließend in `Revision_Workpackages.md` dokumentieren.
+
+### Pareto-Darstellung (2026-09-30)
+
+- Die bestehenden Paper-Skripte von GO Sensitivity, Paket 7/8, Simple NNA und beiden Higher-Ra-Studien wurden neu ausgeführt.
+- Größere Vektormarker, blaue Fronten und violette Kandidatensterne folgen dem GO-Sensitivity-Stil; die separate GR-Front in GO Sensitivity behält ihre Methodenfarbe.
+- Die reine Anzeigeausdünnung verwendet durchgehend 16 logarithmische MSE-Intervalle, auch für GO Sensitivity. Fronten und eingefrorene Kandidaten verwenden weiterhin alle Evaluierungen.
+- Die Paper-PDFs wurden mit `fix_pdf_grid_fills.py` bereinigt; `make_varying_sc_pareto.py` erzeugt erneut die vier SC-Panels im Haupttext. `main_hans2.tex` nennt die aktualisierten Punktzahlen.
+- Alle realen Exporte und die Paket-7/8-Tests sowie der GO-Sensitivity-Selbsttest laufen erfolgreich. Der Simple-NNA-Test scheitert auch mit unverändertem HEAD an einer fehlenden synthetischen Trajektoriendatei.
+
+### Pareto style follow-up (2026-09-30)
+
+GO Sensitivity omits attainment bands and curves from the plot and legend; C_sparse uses the violet star and C_match the open gray diamond. Other Pareto clouds use opaque size-6 markers with colors blended 45% toward white. Higher-Ra quality lines are gray and distinguished by dash pattern; their legends contain lines only, and candidate stars have no labels. The 16-bin thinning and scientific results are unchanged. Re-render only; no tests or manuscript prose edits requested.
+
+### Pareto-Farbangleichung (2026-09-30)
+
+- GO-Sensitivity-Wolkenfarben einheitlich auf CIELAB-Abstand 20 zu Weiß gesetzt; die Legende zeigt dieselben Farben. Die übrigen Pareto-Wolken sind 72 % Richtung Weiß gemischt (mittlerer Abstand 22).
+- Alle Replikate werden in den Pareto-Wolken und in den GO-Reset-Panels als Kreise dargestellt; die GO-Hauptfigur C/D bleibt unverändert. Die GO-Stabilitätsfigur ist jetzt 2x2 (ohne Archiv-Konvergenz-Panels E/F, deren Code auskommentiert ist) und wird zusätzlich als PDF exportiert.
+- Paper-PDFs kopiert und bereinigt; `make_varying_sc_pareto.py` bettet die Package-8-Seite jetzt einmal als Form-XObject ein, statt sie zehnmal zu kopieren.
+
+### Lesbarkeit der Paper-Figuren (2026-09-30)
+
+- Alle Datenfiguren haben effektiv etwa 7,5 pt Schrift bei ihrer LaTeX-Einbindungsbreite, keine Titel im Bild, Log-MSE-Achsen nur mit Zehnerpotenzen und einzeilige Masken-Legenden.
+- GO Sensitivity nutzt eine geordnete Viridis-Palette für die Strengths (hell = schwach, dunkel = stark), C<sub>match</sub>/C<sub>sparse</sub>-Notation und Panel-Labels (a)-(d).
+- Noise Study erzeugt eine kombinierte zweiteilige Robustheitsfigur; die MAT-/IPPO-/Masked-Figuren heißen auf der y-Achse `Reward (50-episode rolling mean)` und werden zusätzlich als PDF exportiert.
+- Im Manuskript: booktabs-Tabellen mit siunitx-Ausrichtung, `adjustbox` statt `\resizebox`, Nusselt-Zahlen in Tabellen mit vier Nachkommastellen, Caption-Korrekturen (magenta Sterne, Higher-Ra-Qualitätslinien und Maskendetails).

@@ -214,7 +214,7 @@ function learning_curves_combined(curves)
         ticks = "outside", gridcolor = "#E6E6E6", zeroline = false,
     )
     yaxis_fields = Dict{Symbol, Any}(yaxis_style.fields)
-    yaxis_fields[:title] = attr(text = "Score (rolling mean, window=$WINDOW)", standoff = 12)
+    yaxis_fields[:title] = attr(text = "Reward ($WINDOW-episode rolling mean)", standoff = 12)
     annotations = plot_handle.plot.layout.fields[:annotations]
     annotations[1].fields[:x] = 0.23
     annotations[2].fields[:x] = 0.77

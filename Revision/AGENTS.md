@@ -161,12 +161,19 @@ Sparse Sensing paper.
   axis, tick, panel-title, figure-title, and legend fonts with matching margins
   for full-width manuscript inclusion. Transparent or visually lightened
   evaluation clouds use separate opaque markers in the figure legends.
+  Both GO evaluation-cloud variants use the same deterministic 16-bin log-MSE
+  thinning as the other paper Pareto plots, separately by strength, replicate,
+  and active-group count. The main cloud keeps the existing MSE <= 1 display
+  cutoff. Both variants report original/displayed counts and export SVG/PDF.
 - `Package7/make_paper_figures.jl`: Fixed-IC sparsity-study paper figures use
   the same enlarged typography. Its supplementary Pareto cloud is
   deterministically thinned in replicate-, threshold-, active-group-, and
   log-MSE-aware display bins, while Pareto construction and candidate selection
   continue to use the complete evaluation set. Threshold markers remain
-  transparent in the panels but are fully opaque in the legend.
+  transparent in the panels but are fully opaque in the legend. Cloud markers
+  are size 5 with 16 log-MSE bins, fronts are blue with width 3 and filled
+  size-7 circles, and selected candidates are magenta size-14 stars with white
+  outlines, matching GO Sensitivity. Package 8 and Simple-NNA use this style.
 - `Package8/make_paper_figures.jl`: Varying-IC sparsity-study paper figures
   mirror the Package-7 typography, dimensions, margins, and legends. Its
   supplementary Pareto cloud uses the same deterministic display-only thinning,
@@ -194,8 +201,8 @@ Sparse Sensing paper.
 - `Noise_Study/make_paper_figures.jl`: Standalone Package-10 paper-output builder
   that independently resolves the newest Fixed/Varying experiment IDs, warns
   but continues across mixed IDs, preserves incomplete cells as `NA`, and
-  writes mean test-set `state_Nu` tables, separate Fixed/Varying SVG/PDF
-  noise-response plots, a combined supplementary Fixed/Varying `C_match`
+  writes mean test-set `state_Nu` tables, one two-panel Fixed/Varying SVG/PDF
+  noise-response figure with a shared legend, a combined supplementary Fixed/Varying `C_match`
   sensor-mask figure, and JLD2/provenance artifacts. Plot curves use the three
   MAT-stability main colors for expert, sparse apprentice, and `C_match`, and
   their horizontal positions are proportional to the physical `alpha` values.
@@ -242,7 +249,9 @@ Sparse Sensing paper.
   match Package 7/8 with opacity `0.32` and the same blue/orange threshold
   palette, but use separate opaque legend-only markers. Their legend entries
   use the compact `τ=<value>` form without a `mask` prefix. All quality-threshold
-  candidates use star symbols with a light-to-dark red gradient.
+  candidates use magenta size-14 stars with white outlines, matching GO
+  Sensitivity. Quality lines/text retain their red gradient. Clouds use size 5
+  and 16 log-MSE bins; fronts are blue with width 3 and filled size-7 circles.
 - `Higher_Ra_Study/Higher_Ra_Study.md`: Implemented expert extraction, local
   distillation corpora, unactuated baselines, and GO/GR production workflow.
 
@@ -547,3 +556,30 @@ the other configurations retain their `0.02`-selected masks.
   b=...)` in Oceananigans.
 - Update this file when the corpus schema, physical configuration, split
   protocol, transformation rules, or public API changes.
+
+## Pareto Figure Update (2026-09-30)
+
+Updated the existing GO-Sensitivity, Package-7/8, Simple-NNA, and Higher-Ra
+paper generators to align marker/front/candidate styling and use 16 display
+bins for the larger markers. Thinned clouds use vector scatter traces so PDF
+exports preserve the foreground order of fronts and candidate markers.
+Full-data fronts, frozen candidates, and terminal
+test results remain authoritative. No training or new candidate selection is
+part of this figure refresh. The existing manuscript PDF cleanup and SC panel
+composition scripts finish the exports.
+Validation: Package-7 and Package-8 paper tests pass (23/23 each), and the
+GO-Sensitivity self-test passes. All production figure generators complete.
+The Simple-NNA synthetic test fixture lacks evaluations.jld2; the same error
+occurs on the unchanged HEAD script. Selected-candidate CSVs are unchanged.
+
+### Pareto style follow-up (2026-09-30)
+
+GO Sensitivity omits attainment bands and curves from the plot and legend; C_sparse uses the violet star and C_match the open gray diamond. Other Pareto clouds use opaque size-6 markers with colors blended 45% toward white. Higher-Ra quality lines are gray and distinguished by dash pattern; their legends contain lines only, and candidate stars have no labels. The 16-bin thinning and scientific results are unchanged. Re-render only; no tests or manuscript prose edits requested.
+
+### Pareto color alignment (2026-09-30)
+
+The GO-Sensitivity main-cloud tints are each moved away from white to the same CIELAB distance 20 (`#D9D4EE`, `#B9DAE8`, `#FBD3CA`, `#EFCCD6`, `#FFEBCA`), and their legend markers use these same colors. Package-7/8, Simple-NNA, and Higher-Ra clouds are blended 72% toward white (mean CIELAB distance 22). Every Pareto cloud and the GO stability-diagnostic reset panels draw all replicates as circles. GO main-figure panels C/D keep their replicate symbols. The GO stability figure is a 2x2 layout (hitting times, reset rates) exported as SVG/PDF; the archive-convergence panels E/F are commented out in `make_supplement_figure`. Re-render only; scientific results and display thinning are unchanged.
+
+### Paper figure readability (2026-09-30)
+
+All manuscript data figures target about 7.5 pt ticks and axis titles at their LaTeX inclusion width, matching the MAT-stability, MAT-IPPO, and masked-training figures (26 px text, 30 px panel titles, 24 px legends at 1400-1500 px; Higher-Ra uses 30/34/28 px for its 0.85 text width). In-figure titles are removed because the captions carry them. Log MSE axes show decades only as powers of ten. Mask legends are single horizontal rows. GO Sensitivity uses one ordered viridis strength palette (light = weakest, dark = strongest) for its lines and, as pastel tints with rising intensity, for its clouds; strengths are labeled `Fixed / Varying` under one legend title, candidates as C<sub>match</sub>/C<sub>sparse</sub>, and panels as (a)-(d). Higher-Ra mask panels no longer carry threshold/group/deviation subtitles; the manuscript captions report them. Noise Study writes one combined two-panel robustness figure. MAT-stability, MAT-IPPO, and masked-training y axes read `Reward (50-episode rolling mean)`, and the collectors also export the combined paper figures as PDF.

@@ -30,20 +30,27 @@ const GR_COLOR = "#F2A13A"
 const THIRD_COLOR = "#B41A5C"
 const NEUTRAL_COLOR = "#4D4D4D"
 const GRID_COLOR = "#E6E6E6"
-const STRENGTH_COLORS = ("#2166AC", "#4393C3", "#92C5DE", "#D6604D", "#B2182B")
-# Reuse the four-color threshold palette selected from the GO-strength
-# calibration and add the earlier packages' yellow-orange for strength five.
-const EVALUATION_STRENGTH_COLORS = ("#2166AC", "#92C5DE", "#D6604D", "#67001F", GR_COLOR)
-const ALTERNATIVE_EVALUATION_COLORS = ("#E4E0F3", "#E1EFF5", "#FDEAE6", "#F8E9ED", "#FFF2DC")
+# One ordered GO-strength palette for all figures: viridis steps from light (weakest)
+# to dark (strongest regularization).
+const STRENGTH_COLORS = ("#7AD151", "#22A884", "#2A788E", "#414487", "#440154")
+const EVALUATION_STRENGTH_COLORS = STRENGTH_COLORS
+# Main-figure cloud colors: the same hues moved toward white, with CIELAB distance from
+# white rising from 16 to 26 with strength (mean 21, matching the other Pareto clouds).
+const ALTERNATIVE_EVALUATION_COLORS = ("#E3F5DB", "#BFE6DC", "#B4D0D7", "#C3C4D9", "#CDBAD1")
+const STRENGTH_LEGEND_TITLE = "GO strength (Fixed / Varying):"
+const CANDIDATE_PLOT_NAMES = Dict("C_match" => "C<sub>match</sub>", "C_sparse" => "C<sub>sparse</sub>")
 const REPLICATE_COLORS = (GO_COLOR, GR_COLOR, THIRD_COLOR)
 const RESET_COLORS = Dict(:group => GO_COLOR, :mse => GR_COLOR, :joint => THIRD_COLOR)
 const RESET_LABELS = Dict(:group => "Group reset", :mse => "MSE reset", :joint => "Joint reset")
-const PAPER_FONT_SIZE = 22
-const PAPER_AXIS_TITLE_SIZE = 22
-const PAPER_TICK_SIZE = 18
-const PAPER_TITLE_SIZE = 30
-const PAPER_SUBPLOT_TITLE_SIZE = 22
-const PAPER_LEGEND_SIZE = 18
+# Sized for about 7.5 pt ticks and axis titles at full text width, matching the MAT figures.
+const PAPER_FONT_SIZE = 26
+const PAPER_AXIS_TITLE_SIZE = 26
+const PAPER_TICK_SIZE = 26
+const PAPER_SUBPLOT_TITLE_SIZE = 30
+const PAPER_LEGEND_SIZE = 24
+# Match the display density of the other Pareto figures with 5-pixel markers.
+const PAPER_EVALUATION_LOG_BINS = 16
+# Thinned clouds use vector scatter so fronts and candidates stay above them in PDF exports.
 const CONTROLLER_COLORS = Dict(
     "expert" => NEUTRAL_COLOR,
     "C_match" => GO_COLOR,
@@ -531,6 +538,10 @@ function paper_axis(title; log = false, reversed = false, range = nothing, kwarg
         :zeroline => false,
         :type => log ? "log" : "linear",
     )
+    if log
+        fields[:dtick] = 1
+        fields[:exponentformat] = "power"
+    end
     reversed && (fields[:autorange] = "reversed")
     !isnothing(range) && (fields[:range] = range)
     for (key, value) in kwargs
@@ -539,12 +550,11 @@ function paper_axis(title; log = false, reversed = false, range = nothing, kwarg
     return attr(; fields...)
 end
 
-function common_layout(; width, height, title, showlegend = true)
+function common_layout(; width, height, showlegend = true)
     return Layout(
         template = "plotly_white",
         width = width,
         height = height,
-        title = attr(text = title, x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         paper_bgcolor = "white",
         plot_bgcolor = "white",
         font = attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
@@ -554,13 +564,19 @@ function common_layout(; width, height, title, showlegend = true)
     )
 end
 
-function row_legend(y; font_size = PAPER_LEGEND_SIZE)
-    return attr(
-        orientation = "h", x = 0.5, xanchor = "center", y = y, yanchor = "top",
-        bgcolor = "rgba(255,255,255,0.92)", bordercolor = "#CFCFCF", borderwidth = 1,
-        font = attr(size = font_size),
+function row_legend(y; font_size = PAPER_LEGEND_SIZE, title = nothing)
+    fields = Dict{Symbol, Any}(
+        :orientation => "h", :x => 0.5, :xanchor => "center", :y => y, :yanchor => "top",
+        :bgcolor => "rgba(255,255,255,0.92)", :bordercolor => "#CFCFCF", :borderwidth => 1,
+        :font => attr(size = font_size),
     )
+    isnothing(title) || (fields[:title] = attr(text = title, side = "left", font = attr(size = font_size)))
+    return attr(; fields...)
 end
+
+strength_label(index) = @sprintf("%.4g / %.4g", P6_STRENGTHS[:fixed][index], P6_STRENGTHS[:varying][index])
+
+minus_sign(text) = replace(text, "-" => "−")
 
 function style_subplot_titles!(plot_handle)
     annotations = get(plot_handle.plot.layout.fields, :annotations, Any[])
@@ -625,7 +641,6 @@ function add_pareto_panel!(plot_handle, data, row, col; showlegend, legend_id = 
         ); row, col)
     end
     for method in ("go", "gr")
-        add_attainment_band!(plot_handle, data, method, row, col; showlegend, legend_id)
         selected = sort([item for item in data.fronts if string_value(item, :front_scope) == "global_method" && string_value(item, :method) == method]; by = item -> int_value(item, :active_groups))
         color = method == "go" ? GO_COLOR : GR_COLOR
         add_trace!(plot_handle, scatter(
@@ -637,8 +652,8 @@ function add_pareto_panel!(plot_handle, data, row, col; showlegend, legend_id = 
         ); row, col)
     end
     candidate_styles = Dict(
-        "C_match" => (symbol = "star", color = THIRD_COLOR, size = 14),
-        "C_sparse" => (symbol = "diamond-open", color = NEUTRAL_COLOR, size = 12),
+        "C_match" => (symbol = "diamond-open", color = NEUTRAL_COLOR, size = 12),
+        "C_sparse" => (symbol = "star", color = THIRD_COLOR, size = 14),
     )
     for role in ("C_match", "C_sparse")
         haskey(data.candidates, role) || continue
@@ -646,7 +661,7 @@ function add_pareto_panel!(plot_handle, data, row, col; showlegend, legend_id = 
         style = candidate_styles[role]
         add_trace!(plot_handle, scatter(
             x = [Int(candidate[:active_groups])], y = [Float64(candidate[:validation_matching])],
-            mode = "markers", name = role, showlegend = showlegend,
+            mode = "markers", name = CANDIDATE_PLOT_NAMES[role], showlegend = showlegend,
             marker = attr(symbol = style.symbol, color = style.color, size = style.size, line = attr(color = "white", width = 1.2)),
             legendgroup = role, legend = legend_id,
         ); row, col)
@@ -699,22 +714,51 @@ function go_evaluations(data, strength_index)
     return selected
 end
 
+function thin_evaluation_cloud(rows, log_mse_range; bin_count = PAPER_EVALUATION_LOG_BINS)
+    bin_count > 0 || throw(ArgumentError("bin_count must be positive."))
+    lower, upper = log_mse_range
+    upper > lower || throw(ArgumentError("The log-MSE display range must be increasing."))
+    buckets = Dict{Tuple{Int, Int, Int}, Tuple{Float64, Dict{Symbol, String}}}()
+    for row in rows
+        loss = float_value(row, :validation_matching)
+        log_loss = log10(loss)
+        lower <= log_loss <= upper || continue
+        bin = clamp(floor(Int, bin_count * (log_loss - lower) / (upper - lower)), 0, bin_count - 1)
+        key = (int_value(row, :replicate), int_value(row, :active_groups), bin)
+        center = lower + (bin + 0.5) * (upper - lower) / bin_count
+        distance = abs(log_loss - center)
+        previous = get(buckets, key, nothing)
+        if isnothing(previous) || distance < previous[1]
+            buckets[key] = (distance, row)
+        end
+    end
+    selected = [value[2] for value in values(buckets)]
+    sort!(selected; by = row -> (
+        int_value(row, :replicate),
+        int_value(row, :active_groups),
+        float_value(row, :validation_matching),
+        int_value(row, :update),
+    ))
+    return selected
+end
+
 function add_all_evaluations_panel!(plot_handle, data, row, col; showlegend)
+    y_range = all_evaluations_y_range(data)
+    original_count = displayed_count = 0
     for strength_index in eachindex(P6_STRENGTHS[data.protocol])
-        selected = go_evaluations(data, strength_index)
-        label = @sprintf(
-            "GO strength F/V %.4g / %.4g",
-            P6_STRENGTHS[:fixed][strength_index],
-            P6_STRENGTHS[:varying][strength_index],
-        )
+        complete = go_evaluations(data, strength_index)
+        selected = thin_evaluation_cloud(complete, y_range)
+        original_count += length(complete)
+        displayed_count += length(selected)
+        label = strength_label(strength_index)
         if showlegend
             add_trace!(plot_handle, scatter(
                 x = [NaN], y = [NaN], mode = "markers", name = label,
-                marker = attr(color = EVALUATION_STRENGTH_COLORS[strength_index], size = 8, opacity = 1.0),
+                marker = attr(color = EVALUATION_STRENGTH_COLORS[strength_index], size = 10, opacity = 1.0),
                 legendgroup = "evaluation_strength_$strength_index", showlegend = true,
             ); row, col)
         end
-        add_trace!(plot_handle, scattergl(
+        add_trace!(plot_handle, scatter(
             x = [int_value(item, :active_groups) for item in selected],
             y = [float_value(item, :validation_matching) for item in selected],
             mode = "markers", name = label,
@@ -728,6 +772,7 @@ function add_all_evaluations_panel!(plot_handle, data, row, col; showlegend)
         ); row, col)
     end
 
+    println("$(data.protocol) full GO Pareto display retained $displayed_count of $original_count evaluations (16 log-MSE bins).")
     pooled_front = sort([
         item for item in data.fronts if
         string_value(item, :front_scope) == "global_method" &&
@@ -737,32 +782,34 @@ function add_all_evaluations_panel!(plot_handle, data, row, col; showlegend)
     add_trace!(plot_handle, scatter(
         x = [int_value(item, :active_groups) for item in pooled_front],
         y = [float_value(item, :validation_matching) for item in pooled_front],
-        mode = "lines", name = "Pooled GO Pareto front",
-        line = attr(color = NEUTRAL_COLOR, width = 2.5),
+        mode = "lines+markers", name = "Pooled GO Pareto front",
+        line = attr(color = GO_COLOR, width = 3),
+        marker = attr(color = GO_COLOR, size = 7),
         legendgroup = "all_evaluations_pooled_front", showlegend = showlegend,
     ); row, col)
 end
 
 function add_alternative_evaluations_panel!(plot_handle, data, row, col; showlegend)
+    y_range = [pareto_y_range(data)[1], 0.0]
+    original_count = eligible_count = displayed_count = 0
     for strength_index in eachindex(P6_STRENGTHS[data.protocol])
-        selected = filter(
-            item -> float_value(item, :validation_matching) <= 1.0,
-            go_evaluations(data, strength_index),
-        )
+        complete = go_evaluations(data, strength_index)
+        eligible = filter(item -> float_value(item, :validation_matching) <= 1.0, complete)
+        selected = thin_evaluation_cloud(eligible, y_range)
+        original_count += length(complete)
+        eligible_count += length(eligible)
+        displayed_count += length(selected)
         isempty(selected) && continue
-        label = @sprintf(
-            "GO strength F/V %.4g / %.4g",
-            P6_STRENGTHS[:fixed][strength_index],
-            P6_STRENGTHS[:varying][strength_index],
-        )
+        label = strength_label(strength_index)
         if showlegend
             add_trace!(plot_handle, scatter(
                 x = [NaN], y = [NaN], mode = "markers", name = label,
-                marker = attr(color = EVALUATION_STRENGTH_COLORS[strength_index], size = 8, opacity = 1.0),
+                marker = attr(color = ALTERNATIVE_EVALUATION_COLORS[strength_index], size = 12, opacity = 1.0),
                 legendgroup = "alternative_evaluation_strength_$strength_index", showlegend = true,
+                legend = "legend3",
             ); row, col)
         end
-        add_trace!(plot_handle, scattergl(
+        add_trace!(plot_handle, scatter(
             x = [int_value(item, :active_groups) for item in selected],
             y = [float_value(item, :validation_matching) for item in selected],
             mode = "markers", name = label,
@@ -775,6 +822,7 @@ function add_alternative_evaluations_panel!(plot_handle, data, row, col; showleg
             legendgroup = "alternative_evaluation_strength_$strength_index", showlegend = false,
         ); row, col)
     end
+    println("$(data.protocol) main GO Pareto display retained $displayed_count of $eligible_count evaluations with MSE <= 1 ($original_count finite positive evaluations before the display cutoff; 16 log-MSE bins).")
 end
 
 function move_glimages_behind_cartesian!(path)
@@ -806,34 +854,35 @@ function make_all_evaluations_pareto_figure(data_by_protocol, output)
     plot_handle = make_subplots(
         rows = 1, cols = 2, horizontal_spacing = 0.10,
         subplot_titles = reshape([
-            "A  Fixed IC: all GO evaluations",
-            "B  Varying IC: all GO evaluations",
+            "(a) Fixed IC: all GO evaluations",
+            "(b) Varying IC: all GO evaluations",
         ], :, 1),
     )
     style_subplot_titles!(plot_handle)
     add_all_evaluations_panel!(plot_handle, data_by_protocol[:fixed], 1, 1; showlegend = true)
     add_all_evaluations_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false)
 
-    layout = common_layout(width = 1400, height = 650, title = "Package 6: pooled evaluation landscape and Pareto front")
+    layout = common_layout(width = 1400, height = 650)
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Active SC groups"; range = [0, 96])),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = all_evaluations_y_range(data_by_protocol[:fixed]))),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups"; range = [0, 96])),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = all_evaluations_y_range(data_by_protocol[:varying]))),
-        :legend => row_legend(-0.16),
-        :margin => attr(l = 115, r = 45, t = 125, b = 165),
+        :legend => row_legend(-0.2; title = STRENGTH_LEGEND_TITLE),
+        :margin => attr(l = 115, r = 45, t = 60, b = 200),
     )))
     PlotlyJS.savefig(plot_handle, output; width = 1400, height = 650)
+    PlotlyJS.savefig(plot_handle, splitext(output)[1] * ".pdf"; width = 1400, height = 650)
     return output
 end
 
 function make_main_figure(data_by_protocol, metrics, output; include_evaluations = false)
     plot_handle = make_subplots(
         rows = 2, cols = 2,
-        horizontal_spacing = 0.10, vertical_spacing = 0.32,
+        horizontal_spacing = 0.10, vertical_spacing = 0.34,
         subplot_titles = reshape([
-            "A  Fixed IC: Pareto attainment", "B  Varying IC: Pareto attainment",
-            "C  Fixed IC: strength-sparsity response", "D  Varying IC: strength-sparsity response",
+            "(a) Fixed IC: Pareto performance", "(b) Varying IC: Pareto performance",
+            "(c) Fixed IC: strength-sparsity response", "(d) Varying IC: strength-sparsity response",
         ], :, 1),
     )
     style_subplot_titles!(plot_handle)
@@ -846,11 +895,13 @@ function make_main_figure(data_by_protocol, metrics, output; include_evaluations
     response_legend_labels = Dict(replicate => begin
         fixed = only(filter(item -> item.replicate == replicate, metrics.responses[:fixed].trends))
         varying = only(filter(item -> item.replicate == replicate, metrics.responses[:varying].trends))
-        @sprintf(
-            "Replicate %d: ρ_fixed=%.3f (n=%d), ρ_varying=%.3f (n=%d)",
-            replicate, fixed.spearman_rho, fixed.qualified_strengths,
-            varying.spearman_rho, varying.qualified_strengths,
-        )
+        # The strength count n is shown only when a replicate misses a strength.
+        complete = fixed.qualified_strengths == varying.qualified_strengths == length(P6_STRENGTHS[:fixed])
+        minus_sign(@sprintf(
+            "Replicate %d: ρ<sub>s</sub> = %.3f (Fixed), %.3f (Varying)%s",
+            replicate, fixed.spearman_rho, varying.spearman_rho,
+            complete ? "" : @sprintf("; n = %d / %d", fixed.qualified_strengths, varying.qualified_strengths),
+        ))
     end for replicate in P6_REPLICATES)
     fixed_response = add_response_panel!(
         plot_handle, data_by_protocol[:fixed], metrics.responses[:fixed], 2, 1;
@@ -869,22 +920,24 @@ function make_main_figure(data_by_protocol, metrics, output; include_evaluations
     end
     fixed_top = fixed_response.has_missing ? fixed_response.missing_level + 0.6 : fixed_response.maximum_group + 1
     varying_top = varying_response.has_missing ? varying_response.missing_level + 0.5 : varying_response.maximum_group + 1
-    layout = common_layout(width = 1400, height = 1120, title = "GO sensitivity, reproducibility, and Pareto performance")
+    layout = common_layout(width = 1400, height = 1180)
+    # The evaluation cloud has its own strength legend above the front/candidate legend.
+    include_evaluations && (layout.fields[:legend3] = row_legend(0.545; title = STRENGTH_LEGEND_TITLE))
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Active SC groups")),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Validation MSE"; log = true, range = include_evaluations ? [pareto_y_range(data_by_protocol[:fixed])[1], 0.0] : pareto_y_range(data_by_protocol[:fixed]))),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Active SC groups")),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Validation MSE"; log = true, range = include_evaluations ? [pareto_y_range(data_by_protocol[:varying])[1], 0.0] : pareto_y_range(data_by_protocol[:varying]))),
         :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:fixed]), ticktext = string.(P6_STRENGTHS[:fixed]))),
-        :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE <= $(QUALITY_THRESHOLDS[:fixed]))"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
+        :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Active groups (MSE ≤ $(QUALITY_THRESHOLDS[:fixed]))"; range = [0, fixed_top], tickmode = "array", tickvals = fixed_ticks, ticktext = fixed_ticktext)),
         :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength"; log = true, tickmode = "array", tickvals = collect(P6_STRENGTHS[:varying]), ticktext = string.(P6_STRENGTHS[:varying]))),
-        :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Active groups (MSE <= $(QUALITY_THRESHOLDS[:varying]))"; range = [0, varying_top])),
-        :legend => row_legend(0.555; font_size = 16),
-        :legend2 => row_legend(-0.085),
-        :margin => attr(l = 115, r = 45, t = 125, b = 155),
+        :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Active groups (MSE ≤ $(QUALITY_THRESHOLDS[:varying]))"; range = [0, varying_top])),
+        :legend => row_legend(include_evaluations ? 0.475 : 0.545),
+        :legend2 => row_legend(-0.105),
+        :margin => attr(l = 120, r = 45, t = 60, b = 200),
     )))
-    PlotlyJS.savefig(plot_handle, output; width = 1400, height = 1120)
-    include_evaluations && move_glimages_behind_cartesian!(output)
+    PlotlyJS.savefig(plot_handle, output; width = 1400, height = 1180)
+    PlotlyJS.savefig(plot_handle, splitext(output)[1] * ".pdf"; width = 1400, height = 1180)
     return output
 end
 
@@ -895,7 +948,7 @@ end
 function make_terminal_figure(data_by_protocol, output)
     plot_handle = make_subplots(
         rows = 1, cols = 2, horizontal_spacing = 0.11,
-        subplot_titles = reshape(["A  Fixed IC: test trajectory", "B  Varying IC: paired test episodes"], :, 1),
+        subplot_titles = reshape(["(a) Fixed IC: test trajectory", "(b) Varying IC: paired test episodes"], :, 1),
     )
     style_subplot_titles!(plot_handle)
     fixed = data_by_protocol[:fixed]
@@ -947,13 +1000,13 @@ function make_terminal_figure(data_by_protocol, output)
             marker = attr(color = CONTROLLER_COLORS[role], size = 14, symbol = "diamond", line = attr(color = "white", width = 1.2)),
         ); row = 1, col = 2)
     end
-    layout = common_layout(width = 1350, height = 600, title = "Validation-selected controllers on the terminal test set")
+    layout = common_layout(width = 1350, height = 600)
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Control step")),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Nu")),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, attr(title = attr(text = "Controller", standoff = 12, font = attr(size = PAPER_AXIS_TITLE_SIZE)), tickfont = attr(size = PAPER_TICK_SIZE), showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside", type = "category")),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Mean episode Nu")),
-        :margin => attr(l = 115, r = 45, t = 125, b = 120),
+        :margin => attr(l = 115, r = 45, t = 60, b = 120),
     )))
     PlotlyJS.savefig(plot_handle, output; width = 1350, height = 600)
     return output
@@ -973,9 +1026,9 @@ function add_hitting_panel!(plot_handle, data, row, col; showlegend, legend_id =
         end
         add_trace!(plot_handle, scatter(
             x = collect(HITTING_TARGETS), y = values, mode = "lines+markers",
-            name = @sprintf("GO F/V %.4g / %.4g", P6_STRENGTHS[:fixed][strength_index], P6_STRENGTHS[:varying][strength_index]), legendgroup = "strength_$strength_index",
-            line = attr(color = STRENGTH_COLORS[strength_index], width = 2),
-            marker = attr(color = STRENGTH_COLORS[strength_index], size = 6), showlegend = showlegend,
+            name = strength_label(strength_index), legendgroup = "strength_$strength_index",
+            line = attr(color = STRENGTH_COLORS[strength_index], width = 2.5),
+            marker = attr(color = STRENGTH_COLORS[strength_index], size = 8), showlegend = showlegend,
             legend = legend_id,
         ); row, col)
     end
@@ -1013,7 +1066,7 @@ function add_reset_panel!(plot_handle, data, row, col; showlegend, legend_id = "
             append_x = [strength_index + offsets[index] for index in eachindex(values)]
             add_trace!(plot_handle, scatter(
                 x = append_x, y = values, mode = "markers", showlegend = false, legend = legend_id,
-                marker = attr(color = rgba(color, 0.55), size = 6, symbol = ("circle", "square", "diamond")),
+                marker = attr(color = rgba(color, 0.55), size = 6, symbol = "circle"),
                 hovertemplate = "Seed %{customdata}<br>rate=%{y:.3f}<extra></extra>", customdata = collect(1:3),
             ); row, col)
             push!(medians, median(values))
@@ -1029,7 +1082,7 @@ function add_reset_panel!(plot_handle, data, row, col; showlegend, legend_id = "
         add_trace!(plot_handle, scatter(
             x = [6 + offsets[index] for index in eachindex(gr_values)], y = gr_values,
             mode = "markers", showlegend = false, legend = legend_id,
-            marker = attr(color = rgba(color, 0.55), size = 6, symbol = ("circle", "square", "diamond")),
+            marker = attr(color = rgba(color, 0.55), size = 6, symbol = "circle"),
         ); row, col)
         add_trace!(plot_handle, scatter(
             x = [6.0], y = [median(gr_values)], mode = "markers", showlegend = false, legend = legend_id,
@@ -1063,9 +1116,10 @@ function archive_series(data, method, strength_index, grid)
     )
 end
 
+# Former panels E/F; currently disabled in make_supplement_figure.
 function add_archive_panel!(plot_handle, data, row, col; showlegend, legend_id = "legend")
     grid = collect(range(0.0, 1.0; length = 51))
-    specifications = [("go", index, @sprintf("GO F/V %.4g / %.4g", P6_STRENGTHS[:fixed][index], P6_STRENGTHS[:varying][index]), STRENGTH_COLORS[index], "solid") for index in 1:5]
+    specifications = [("go", index, strength_label(index), STRENGTH_COLORS[index], "solid") for index in 1:5]
     push!(specifications, ("gr", 0, "GR reference", NEUTRAL_COLOR, "dash"))
     for (method, strength_index, label, color, dash) in specifications
         series = archive_series(data, method, strength_index, grid)
@@ -1087,12 +1141,15 @@ function add_archive_panel!(plot_handle, data, row, col; showlegend, legend_id =
 end
 
 function make_supplement_figure(data_by_protocol, output)
+    # Panels E/F (archive convergence) are disabled. To restore them, use
+    # rows = 3 with vertical_spacing = 0.15, re-enable the commented lines below,
+    # and restore height 1750, legend y positions 0.70/0.315/-0.10, and bottom margin 175.
     plot_handle = make_subplots(
-        rows = 3, cols = 2, horizontal_spacing = 0.10, vertical_spacing = 0.15,
+        rows = 2, cols = 2, horizontal_spacing = 0.08, vertical_spacing = 0.27,
         subplot_titles = reshape([
-            "A  Fixed IC: first hitting times", "B  Varying IC: first hitting times",
-            "C  Fixed IC: reset rates", "D  Varying IC: reset rates",
-            "E  Fixed IC: archive convergence", "F  Varying IC: archive convergence",
+            "(a) Fixed IC: first hitting times", "(b) Varying IC: first hitting times",
+            "(c) Fixed IC: reset rates", "(d) Varying IC: reset rates",
+            # "(e) Fixed IC: archive convergence", "(f) Varying IC: archive convergence",
         ], :, 1),
     )
     style_subplot_titles!(plot_handle)
@@ -1100,33 +1157,34 @@ function make_supplement_figure(data_by_protocol, output)
     add_hitting_panel!(plot_handle, data_by_protocol[:varying], 1, 2; showlegend = false, legend_id = "legend")
     add_reset_panel!(plot_handle, data_by_protocol[:fixed], 2, 1; showlegend = true, legend_id = "legend2")
     add_reset_panel!(plot_handle, data_by_protocol[:varying], 2, 2; showlegend = false, legend_id = "legend2")
-    add_archive_panel!(plot_handle, data_by_protocol[:fixed], 3, 1; showlegend = true, legend_id = "legend3")
-    add_archive_panel!(plot_handle, data_by_protocol[:varying], 3, 2; showlegend = false, legend_id = "legend3")
+    # add_archive_panel!(plot_handle, data_by_protocol[:fixed], 3, 1; showlegend = true, legend_id = "legend3")
+    # add_archive_panel!(plot_handle, data_by_protocol[:varying], 3, 2; showlegend = false, legend_id = "legend3")
 
     fixed_strength_ticktext = [string(value) for value in P6_STRENGTHS[:fixed]]
     varying_strength_ticktext = [string(value) for value in P6_STRENGTHS[:varying]]
     push!(fixed_strength_ticktext, "GR ref")
     push!(varying_strength_ticktext, "GR ref")
-    layout = common_layout(width = 1450, height = 1750, title = "GO sensitivity: supplementary stability diagnostics")
+    layout = common_layout(width = 1450, height = 1170)
     relayout!(plot_handle, merge(layout.fields, Dict{Symbol, Any}(
         :xaxis => preserved_subplot_axis(plot_handle, :xaxis, paper_axis("Target active SC groups"; reversed = true, tickmode = "array", tickvals = collect(HITTING_TARGETS), ticktext = string.(HITTING_TARGETS))),
         :yaxis => preserved_subplot_axis(plot_handle, :yaxis, paper_axis("Median first update")),
         :xaxis2 => preserved_subplot_axis(plot_handle, :xaxis2, paper_axis("Target active SC groups"; reversed = true, tickmode = "array", tickvals = collect(HITTING_TARGETS), ticktext = string.(HITTING_TARGETS))),
         :yaxis2 => preserved_subplot_axis(plot_handle, :yaxis2, paper_axis("Median first update")),
-        :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength / GR reference"; tickmode = "array", tickvals = collect(1:6), ticktext = fixed_strength_ticktext, range = [0.6, 6.4])),
+        :xaxis3 => preserved_subplot_axis(plot_handle, :xaxis3, paper_axis("GO strength / GR reference"; tickmode = "array", tickvals = collect(1:6), ticktext = fixed_strength_ticktext, range = [0.6, 6.4], tickfont = attr(size = PAPER_TICK_SIZE - 3), tickangle = 0)),
         :yaxis3 => preserved_subplot_axis(plot_handle, :yaxis3, paper_axis("Events per 1,000 updates")),
-        :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength / GR reference"; tickmode = "array", tickvals = collect(1:6), ticktext = varying_strength_ticktext, range = [0.6, 6.4])),
+        :xaxis4 => preserved_subplot_axis(plot_handle, :xaxis4, paper_axis("GO strength / GR reference"; tickmode = "array", tickvals = collect(1:6), ticktext = varying_strength_ticktext, range = [0.6, 6.4], tickfont = attr(size = PAPER_TICK_SIZE - 3), tickangle = 0)),
         :yaxis4 => preserved_subplot_axis(plot_handle, :yaxis4, paper_axis("Events per 1,000 updates")),
-        :xaxis5 => preserved_subplot_axis(plot_handle, :xaxis5, paper_axis("Normalized training progress"; range = [0, 1])),
-        :yaxis5 => preserved_subplot_axis(plot_handle, :yaxis5, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
-        :xaxis6 => preserved_subplot_axis(plot_handle, :xaxis6, paper_axis("Normalized training progress"; range = [0, 1])),
-        :yaxis6 => preserved_subplot_axis(plot_handle, :yaxis6, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
-        :legend => row_legend(0.70; font_size = 16),
-        :legend2 => row_legend(0.315),
-        :legend3 => row_legend(-0.10; font_size = 16),
-        :margin => attr(l = 120, r = 45, t = 125, b = 175),
+        # :xaxis5 => preserved_subplot_axis(plot_handle, :xaxis5, paper_axis("Normalized training progress"; range = [0, 1])),
+        # :yaxis5 => preserved_subplot_axis(plot_handle, :yaxis5, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
+        # :xaxis6 => preserved_subplot_axis(plot_handle, :xaxis6, paper_axis("Normalized training progress"; range = [0, 1])),
+        # :yaxis6 => preserved_subplot_axis(plot_handle, :yaxis6, paper_axis("Final-front envelope coverage"; range = [0, 1.02])),
+        :legend => row_legend(0.545; title = STRENGTH_LEGEND_TITLE),
+        :legend2 => row_legend(-0.105),
+        # :legend3 => row_legend(-0.10; title = STRENGTH_LEGEND_TITLE),
+        :margin => attr(l = 125, r = 45, t = 60, b = 150),
     )))
-    PlotlyJS.savefig(plot_handle, output; width = 1450, height = 1750)
+    PlotlyJS.savefig(plot_handle, output; width = 1450, height = 1170)
+    PlotlyJS.savefig(plot_handle, splitext(output)[1] * ".pdf"; width = 1450, height = 1170)
     return output
 end
 
@@ -1258,13 +1316,13 @@ function write_metrics_report(output_dir, data_by_protocol, metrics)
         end
 
         println(io, "\n## Supplementary diagnostics\n")
-        println(io, "Panels A/B show the existing unconstrained first-hitting time `T_B`: the median is taken among reachable seeds, so a missing line segment means no seed reached that target. Panels C/D show individual replicate reset rates and their medians; GR appears as a separate categorical reference because GO and GR strength magnitudes are not directly comparable. Panels E/F aggregate the existing monotone archive-coverage definition: for each run, it is the fraction of final-front group-count envelopes already reached within 10%. Lines are seed medians and ribbons are seed minima-to-maxima. This is not a hypervolume ratio.\n")
+        println(io, "Panels A/B show the existing unconstrained first-hitting time `T_B`: the median is taken among reachable seeds, so a missing line segment means no seed reached that target. Panels C/D show individual replicate reset rates and their medians; GR appears as a separate categorical reference because GO and GR strength magnitudes are not directly comparable. The former archive-convergence panels E/F are disabled in the figure.\n")
 
         println(io, "## Figure files\n")
         println(io, "- [`figure_1_main.svg`](figure_1_main.svg): Pareto/attainment and quality-constrained strength response.")
         println(io, "- [`figure_1_main_alternative.svg`](figure_1_main_alternative.svg): main figure with all GO evaluations at `MSE <= 1` in the Pareto panels.")
         println(io, "- [`figure_2_terminal_test.svg`](figure_2_terminal_test.svg): Fixed `state_Nu` trajectory and Varying paired test episodes.")
-        println(io, "- [`figure_s1_stability_diagnostics.svg`](figure_s1_stability_diagnostics.svg): hitting times, reset rates, and aggregate archive convergence.")
+        println(io, "- [`figure_s1_stability_diagnostics.svg`](figure_s1_stability_diagnostics.svg): hitting times and reset rates.")
         println(io, "- [`figure_s2_all_evaluations_pareto.svg`](figure_s2_all_evaluations_pareto.svg): all GO evaluation points pooled across replicates, colored by strength, with the pooled Pareto front.")
         println(io, "- [`table_1_summary.md`](table_1_summary.md): compact paper table.")
     end
@@ -1308,7 +1366,7 @@ function run_self_tests()
     @assert length(scientific_front(records)) == 2
     @assert rgba("#277DA1", 0.5) == "rgba(39,125,161,0.5)"
     @assert length(EVALUATION_STRENGTH_COLORS) == 5
-    @assert last(EVALUATION_STRENGTH_COLORS) == GR_COLOR
+    @assert EVALUATION_STRENGTH_COLORS == STRENGTH_COLORS
     @assert length(ALTERNATIVE_EVALUATION_COLORS) == 5
     mktempdir() do directory
         previous = get(ENV, "REVISION_BASELINE_RESULTS_DIR", nothing)

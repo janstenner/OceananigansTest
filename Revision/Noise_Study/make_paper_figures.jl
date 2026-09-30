@@ -25,7 +25,7 @@ const PAPER_CONTROLLER_LABELS = Dict(
 const PAPER_PLOT_LABELS = Dict(
     :expert => "Dense expert",
     :sparse => "Sparse apprentice",
-    :c_match => "C_match",
+    :c_match => "C<sub>match</sub>",
 )
 # Reuse the three principal colors from the MAT-stability figures in the
 # requested expert, sparse-apprentice, C_match order.
@@ -40,19 +40,16 @@ const PAPER_CONTROLLER_SYMBOLS = Dict(
     :c_match => "square",
 )
 const PAPER_PROTOCOL_LABELS = Dict(:fixed => "Fixed IC", :varying => "Varying IC")
-const PAPER_FIGURE_STEMS = Dict(
-    :fixed => "figure_1a_noise_robustness_fixed",
-    :varying => "figure_1b_noise_robustness_varying",
-)
+const PAPER_ROBUSTNESS_STEM = "figure_1_noise_robustness"
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
 const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
 const PAPER_INACTIVE_COLOR = "#F2F2F2"
-const PAPER_FONT_SIZE = 22
-const PAPER_AXIS_TITLE_SIZE = 22
-const PAPER_TICK_SIZE = 18
-const PAPER_TITLE_SIZE = 30
-const PAPER_SUBPLOT_TITLE_SIZE = 22
-const PAPER_LEGEND_SIZE = 18
+# Sized for about 7.5 pt ticks and axis titles at full text width, matching the MAT figures.
+const PAPER_FONT_SIZE = 26
+const PAPER_AXIS_TITLE_SIZE = 26
+const PAPER_TICK_SIZE = 26
+const PAPER_SUBPLOT_TITLE_SIZE = 30
+const PAPER_LEGEND_SIZE = 24
 const STRIPE_CHANNEL_WIDTH = 4
 const STRIPE_SENSOR_WIDTH = 3 * STRIPE_CHANNEL_WIDTH + 1
 const STRIPE_COLUMN_COUNT = 48 * STRIPE_SENSOR_WIDTH - 1
@@ -490,7 +487,7 @@ function write_c_match_mask_plot(output, candidates)
             name = name,
             marker = PlotlyJS.attr(
                 color = color,
-                size = 11,
+                size = 14,
                 symbol = "square",
                 line = PlotlyJS.attr(color = "#444444", width = index == 1 ? 1 : 0),
             ),
@@ -501,21 +498,15 @@ function write_c_match_mask_plot(output, candidates)
         :template => "plotly_white",
         :width => 1450,
         :height => 650,
-        :title => PlotlyJS.attr(
-            text = "Noise robustness: selected C_match sensor masks",
-            x = 0.5,
-            xanchor = "center",
-            font = PlotlyJS.attr(size = PAPER_TITLE_SIZE, color = "#252525"),
-        ),
         :paper_bgcolor => "white",
         :plot_bgcolor => "white",
         :font => PlotlyJS.attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
-        :margin => PlotlyJS.attr(l = 105, r = 35, t = 120, b = 130),
+        :margin => PlotlyJS.attr(l = 105, r = 35, t = 60, b = 150),
         :legend => PlotlyJS.attr(
             orientation = "h",
             x = 0.5,
             xanchor = "center",
-            y = -0.20,
+            y = -0.27,
             yanchor = "top",
             font = PlotlyJS.attr(size = PAPER_LEGEND_SIZE),
         ),
@@ -571,77 +562,62 @@ function keep_first_pdf_page!(path)
     return path
 end
 
-function write_protocol_plot(output, rows, protocol::Symbol)
-    protocol_rows = filter(row -> row.protocol === protocol, rows)
-    isempty(protocol_rows) && return nothing
-    traces = PlotlyJS.GenericTrace[]
-    for controller in PAPER_PLOT_CONTROLLERS
-        selected = filter(row -> row.controller === controller, protocol_rows)
-        isempty(selected) && continue
-        length(selected) == 1 || error("Expected one $protocol/$controller paper row, found $(length(selected)).")
-        row = only(selected)
-        values = [row.values_by_level[Float64(level)] for level in NOISE_LEVELS]
-        y_values = [ismissing(value) ? NaN : Float64(value) for value in values]
-        all(isnan, y_values) && continue
-        push!(traces, PlotlyJS.scatter(
-            x = Float64.(collect(NOISE_LEVELS)),
-            y = y_values,
-            customdata = Float64.(collect(NOISE_LEVELS)),
-            mode = "lines+markers",
-            name = PAPER_PLOT_LABELS[controller],
-            connectgaps = false,
-            line = PlotlyJS.attr(color = PAPER_CONTROLLER_COLORS[controller], width = 3),
-            marker = PlotlyJS.attr(
-                color = PAPER_CONTROLLER_COLORS[controller],
-                symbol = PAPER_CONTROLLER_SYMBOLS[controller],
-                size = 10,
-                line = PlotlyJS.attr(color = "white", width = 1),
-            ),
-            hovertemplate = "Noise level α=%{customdata:.2f}<br>Mean test-set Nu=%{y:.5f}<extra>$(PAPER_PLOT_LABELS[controller])</extra>",
-        ))
+function write_robustness_plot(output, rows)
+    plot = PlotlyJS.make_subplots(
+        rows = 1,
+        cols = 2,
+        horizontal_spacing = 0.09,
+        subplot_titles = reshape(["(a) $(PAPER_PROTOCOL_LABELS[:fixed])", "(b) $(PAPER_PROTOCOL_LABELS[:varying])"], :, 1),
+    )
+    annotations = get(plot.plot.layout.fields, :annotations, Any[])
+    for annotation in annotations
+        annotation.fields[:font] = PlotlyJS.attr(size = PAPER_SUBPLOT_TITLE_SIZE, color = "#252525")
     end
-    if isempty(traces)
-        @warn "No complete Noise-Study points are available for a paper plot." protocol
+    shown_controllers = Set{Symbol}()
+    for (column, protocol) in enumerate(PAPER_PROTOCOLS)
+        protocol_rows = filter(row -> row.protocol === protocol, rows)
+        for controller in PAPER_PLOT_CONTROLLERS
+            selected = filter(row -> row.controller === controller, protocol_rows)
+            isempty(selected) && continue
+            length(selected) == 1 || error("Expected one $protocol/$controller paper row, found $(length(selected)).")
+            row = only(selected)
+            values = [row.values_by_level[Float64(level)] for level in NOISE_LEVELS]
+            y_values = [ismissing(value) ? NaN : Float64(value) for value in values]
+            all(isnan, y_values) && continue
+            PlotlyJS.add_trace!(plot, PlotlyJS.scatter(
+                x = Float64.(collect(NOISE_LEVELS)),
+                y = y_values,
+                customdata = Float64.(collect(NOISE_LEVELS)),
+                mode = "lines+markers",
+                name = PAPER_PLOT_LABELS[controller],
+                legendgroup = string(controller),
+                showlegend = !(controller in shown_controllers),
+                connectgaps = false,
+                line = PlotlyJS.attr(color = PAPER_CONTROLLER_COLORS[controller], width = 3),
+                marker = PlotlyJS.attr(
+                    color = PAPER_CONTROLLER_COLORS[controller],
+                    symbol = PAPER_CONTROLLER_SYMBOLS[controller],
+                    size = 11,
+                    line = PlotlyJS.attr(color = "white", width = 1),
+                ),
+                hovertemplate = "Noise level α=%{customdata:.2f}<br>Mean test-set Nu=%{y:.5f}<extra>$(PAPER_PLOT_LABELS[controller])</extra>",
+            ); row = 1, col = column)
+            push!(shown_controllers, controller)
+        end
+    end
+    if isempty(shown_controllers)
+        @warn "No complete Noise-Study points are available for a paper plot."
         return nothing
     end
-    figure = PlotlyJS.Plot(traces, PlotlyJS.Layout(
-        template = "plotly_white",
-        width = 950,
-        height = 620,
-        title = PlotlyJS.attr(
-            text = "$(PAPER_PROTOCOL_LABELS[protocol]) sensor-noise robustness",
-            x = 0.5,
-            xanchor = "center",
-            font = PlotlyJS.attr(size = 28, color = "#252525"),
-        ),
-        font = PlotlyJS.attr(family = "Arial, sans-serif", size = 22, color = "#303030"),
-        xaxis = PlotlyJS.attr(
-            title = PlotlyJS.attr(text = "Evaluated relative noise level α", standoff = 12, font = PlotlyJS.attr(size = 22)),
-            tickmode = "linear",
-            tick0 = 0.0,
-            dtick = 0.1,
-            tickformat = ".1f",
-            tickfont = PlotlyJS.attr(size = 18),
-            range = [-0.03, 1.03],
-            showline = true,
-            mirror = true,
-            linecolor = "#3A3A3A",
-            ticks = "outside",
-            gridcolor = "#E6E6E6",
-            zeroline = false,
-        ),
-        yaxis = PlotlyJS.attr(
-            title = PlotlyJS.attr(text = "Mean test-set Nusselt number", standoff = 12, font = PlotlyJS.attr(size = 22)),
-            tickfont = PlotlyJS.attr(size = 18),
-            tickformat = ".2f",
-            showline = true,
-            mirror = true,
-            linecolor = "#3A3A3A",
-            ticks = "outside",
-            gridcolor = "#E6E6E6",
-            zeroline = false,
-        ),
-        legend = PlotlyJS.attr(
+    layout = Dict{Symbol, Any}(
+        :template => "plotly_white",
+        :width => 1500,
+        :height => 700,
+        :paper_bgcolor => "white",
+        :plot_bgcolor => "white",
+        :font => PlotlyJS.attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => PlotlyJS.attr(l = 120, r = 35, t = 60, b = 165),
+        :legend => PlotlyJS.attr(
             orientation = "h",
             x = 0.5,
             y = -0.24,
@@ -651,16 +627,41 @@ function write_protocol_plot(output, rows, protocol::Symbol)
             bgcolor = "rgba(255, 255, 255, 0.92)",
             bordercolor = "#CFCFCF",
             borderwidth = 1,
-            font = PlotlyJS.attr(size = 18),
+            font = PlotlyJS.attr(size = PAPER_LEGEND_SIZE),
         ),
-        hovermode = "x unified",
-        margin = PlotlyJS.attr(l = 110, r = 35, t = 90, b = 145),
-    ))
-    stem = PAPER_FIGURE_STEMS[protocol]
-    svg_path = abspath(joinpath(output, "$stem.svg"))
-    pdf_path = abspath(joinpath(output, "$stem.pdf"))
-    PlotlyJS.savefig(figure, svg_path; width = 950, height = 620)
-    PlotlyJS.savefig(figure, pdf_path; width = 950, height = 620)
+        :hovermode => "x unified",
+    )
+    for index in 1:2
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            "Evaluated relative noise level α",
+            tickmode = "linear",
+            tick0 = 0.0,
+            dtick = 0.1,
+            tickformat = ".1f",
+            range = [-0.03, 1.03],
+            showline = true,
+            mirror = true,
+            linecolor = "#3A3A3A",
+            ticks = "outside",
+            gridcolor = "#E6E6E6",
+            zeroline = false,
+        ))
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            index == 1 ? "Mean test-set Nusselt number" : "",
+            tickformat = ".2f",
+            showline = true,
+            mirror = true,
+            linecolor = "#3A3A3A",
+            ticks = "outside",
+            gridcolor = "#E6E6E6",
+            zeroline = false,
+        ))
+    end
+    PlotlyJS.relayout!(plot, layout)
+    svg_path = abspath(joinpath(output, "$PAPER_ROBUSTNESS_STEM.svg"))
+    pdf_path = abspath(joinpath(output, "$PAPER_ROBUSTNESS_STEM.pdf"))
+    PlotlyJS.savefig(plot, svg_path; width = 1500, height = 700)
+    PlotlyJS.savefig(plot, pdf_path; width = 1500, height = 700)
     keep_first_pdf_page!(pdf_path)
     return (; svg_path, pdf_path)
 end
@@ -711,11 +712,7 @@ function main(arguments = ARGS)
     mkpath(options.output)
     csv_path = write_csv(options.output, rows)
     markdown_path = write_markdown(options.output, rows, options.experiments)
-    figure_paths = Dict{Symbol, Any}()
-    for protocol in PAPER_PROTOCOLS
-        paths = write_protocol_plot(options.output, rows, protocol)
-        isnothing(paths) || (figure_paths[protocol] = paths)
-    end
+    figure_paths = write_robustness_plot(options.output, rows)
     c_match_mask_paths = write_c_match_mask_plot(options.output, c_match_masks)
     provenance_path = write_provenance(options.output, source_files, options.experiments)
     metrics_path = atomic_save(
@@ -737,10 +734,9 @@ function main(arguments = ARGS)
     println("Package-10 paper figures and tables written to $(options.output)")
     println("  CSV: $csv_path")
     println("  Markdown: $markdown_path")
-    for protocol in PAPER_PROTOCOLS
-        haskey(figure_paths, protocol) || continue
-        println("  $(PAPER_PROTOCOL_LABELS[protocol]) SVG: $(figure_paths[protocol].svg_path)")
-        println("  $(PAPER_PROTOCOL_LABELS[protocol]) PDF: $(figure_paths[protocol].pdf_path)")
+    if !isnothing(figure_paths)
+        println("  Robustness SVG: $(figure_paths.svg_path)")
+        println("  Robustness PDF: $(figure_paths.pdf_path)")
     end
     println("  C_match masks SVG: $(c_match_mask_paths.svg_path)")
     println("  C_match masks PDF: $(c_match_mask_paths.pdf_path)")

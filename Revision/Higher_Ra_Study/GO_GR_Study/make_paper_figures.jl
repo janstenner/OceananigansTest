@@ -18,21 +18,25 @@ const PAPER_STUDIES = (:ra5e4, :ra1e5)
 const PAPER_METHODS = ("go", "gr")
 const PAPER_GROUPINGS = ("gc", "sc")
 const PAPER_METHOD_NAMES = Dict("go" => "GO", "gr" => "GR")
-const PAPER_ZERO_THRESHOLD_COLOR = "#277DA1"
-const PAPER_THRESHOLD_COLORS = ("#F2A13A", "#EE8D32", "#E6782B")
-const PAPER_QUALITY_COLORS = ("#FCAE91", "#FB6A4A", "#CB181D")
+# Cloud colors: base palette blended 72% toward white, matching the GO-Sensitivity cloud tints.
+const PAPER_ZERO_THRESHOLD_COLOR = "#C3DBE5"
+const PAPER_THRESHOLD_COLORS = ("#FBE5C8", "#FADFC6", "#F8D9C4")
+const PAPER_QUALITY_COLORS = ("#555555", "#555555", "#555555")
 const PAPER_QUALITY_SYMBOL = "star"
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
 const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
 const PAPER_INACTIVE_COLOR = "#F2F2F2"
 const PAPER_GRID_COLOR = "#E6E6E6"
-const PAPER_FONT_SIZE = 22
-const PAPER_AXIS_TITLE_SIZE = 22
-const PAPER_TICK_SIZE = 18
-const PAPER_TITLE_SIZE = 30
-const PAPER_SUBPLOT_TITLE_SIZE = 22
-const PAPER_LEGEND_SIZE = 18
-const PAPER_EVALUATION_LOG_BINS = 24
+# Sized for about 7.5 pt ticks and axis titles at the manuscript's 0.85 text width,
+# matching the effective size of the other paper figures.
+const PAPER_FONT_SIZE = 30
+const PAPER_AXIS_TITLE_SIZE = 30
+const PAPER_TICK_SIZE = 30
+const PAPER_SUBPLOT_TITLE_SIZE = 34
+const PAPER_LEGEND_SIZE = 28
+# Larger 6-pixel cloud markers use 16 log-MSE bins to limit overplotting.
+const PAPER_EVALUATION_LOG_BINS = 16
+# Thinned clouds use vector scatter so fronts and candidates stay above them in PDF exports.
 const PAPER_FIGURE_WIDTH = 1450
 const PAPER_FIGURE_HEIGHT = 950
 const STRIPE_CHANNEL_WIDTH = 4
@@ -650,27 +654,16 @@ function panel_position(configuration_name)
     return (findfirst(==(method), PAPER_METHODS), findfirst(==(grouping), PAPER_GROUPINGS))
 end
 
-function mask_panel_titles(mask_selection, expert_mean)
-    titles = String[]
-    for method in PAPER_METHODS, grouping in PAPER_GROUPINGS
-        configuration_name = "$method-$grouping"
-        frozen = mask_selection[configuration_name]
-        candidate = frozen[:candidate]
-        delta = 100 * (Float64(frozen[:mean_state_nusselt]) - expert_mean) / abs(expert_mean)
-        push!(titles,
-            "$(PAPER_METHOD_NAMES[method]) - $(uppercase(grouping))" *
-            "<br><sup>q ≤ $(quality_label(frozen[:quality_thresholds])); " *
-            "$(candidate[:active_groups]) groups; ΔNu=$(Printf.format(Printf.Format("%+.2f"), delta))%</sup>",
-        )
-    end
-    return reshape(titles, :, 1)
-end
+panel_titles() = reshape([
+    "$(PAPER_METHOD_NAMES[method]) - $(uppercase(grouping))"
+    for method in PAPER_METHODS for grouping in PAPER_GROUPINGS
+], :, 1)
 
-function make_mask_figure(mask_choice, output, study_tag, expert_mean, tolerance)
+function make_mask_figure(mask_choice, output, study_tag)
     selected = mask_choice.selected
     plot = make_subplots(
-        rows = 2, cols = 2, vertical_spacing = 0.13, horizontal_spacing = 0.07,
-        subplot_titles = mask_panel_titles(selected, expert_mean),
+        rows = 2, cols = 2, vertical_spacing = 0.2, horizontal_spacing = 0.07,
+        subplot_titles = panel_titles(),
     )
     style_subplot_titles!(plot)
     for configuration_name in HR_CONFIGURATION_NAMES
@@ -691,23 +684,19 @@ function make_mask_figure(mask_choice, output, study_tag, expert_mean, tolerance
         add_trace!(plot, scatter(
             x = [NaN], y = [NaN], mode = "markers", name = name,
             marker = attr(
-                color = color, size = 11, symbol = "square",
+                color = color, size = 16, symbol = "square",
                 line = attr(color = "#444444", width = index == 1 ? 1 : 0),
             ),
-            legendgroup = "mask_legend", showlegend = true,
+            showlegend = true,
         ); row = 1, col = 1)
     end
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => PAPER_FIGURE_WIDTH, :height => PAPER_FIGURE_HEIGHT,
-        :title => attr(
-            text = "$(study(study_tag).label): sparsest test-near-expert masks (≤ $(100 * tolerance)% degradation)",
-            x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525"),
-        ),
         :paper_bgcolor => "white", :plot_bgcolor => "white",
         :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
-        :margin => attr(l = 105, r = 35, t = 135, b = 135),
+        :margin => attr(l = 115, r = 35, t = 70, b = 190),
         :legend => attr(
-            orientation = "h", x = 0.5, xanchor = "center", y = -0.10, yanchor = "top",
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.20, yanchor = "top",
             font = attr(size = PAPER_LEGEND_SIZE),
         ),
     )
@@ -783,13 +772,9 @@ end
 
 function make_pareto_figure(configurations, output, study_tag)
     thresholds, colors, legend_ranks = threshold_styles(configurations)
-    titles = reshape([
-        "$(PAPER_METHOD_NAMES[method]) - $(uppercase(grouping))"
-        for method in PAPER_METHODS for grouping in PAPER_GROUPINGS
-    ], :, 1)
     plot = make_subplots(
-        rows = 2, cols = 2, vertical_spacing = 0.13, horizontal_spacing = 0.07,
-        subplot_titles = titles,
+        rows = 2, cols = 2, vertical_spacing = 0.19, horizontal_spacing = 0.08,
+        subplot_titles = panel_titles(),
     )
     style_subplot_titles!(plot)
     shapes = Any[]
@@ -830,20 +815,20 @@ function make_pareto_figure(configurations, output, study_tag)
                     showlegend = true, legendgroup = "threshold_$threshold",
                     legendrank = legend_ranks[threshold],
                     marker = attr(
-                        color = colors[threshold], size = 8, opacity = 1.0,
+                        color = colors[threshold], size = 11, opacity = 1.0,
                         symbol = "circle",
                     ),
                 ); row, col)
             end
-            add_trace!(plot, scattergl(
+            add_trace!(plot, scatter(
                 x = Int.(getproperty.(selected, :active_groups)),
                 y = getproperty.(selected, :validation_mse),
                 mode = "markers", name = "τ=$(threshold)",
                 showlegend = false, legendgroup = "threshold_$threshold",
                 legendrank = legend_ranks[threshold],
                 marker = attr(
-                    color = colors[threshold], size = 4, opacity = 0.32,
-                    symbol = [("circle", "diamond", "square")[Int(point.replicate)] for point in selected],
+                    color = colors[threshold], size = 6, opacity = 1.0,
+                    symbol = "circle",
                 ),
                 customdata = hcat(
                     Int.(getproperty.(selected, :active_inputs)),
@@ -861,25 +846,22 @@ function make_pareto_figure(configurations, output, study_tag)
             y = getproperty.(front, :validation_mse),
             mode = "lines+markers", name = "Pooled Pareto front",
             legendgroup = "pooled_front", legendrank = 300, showlegend = index == 1,
-            line = attr(color = "#111111", width = 2.2),
-            marker = attr(color = "#111111", size = 6, symbol = "circle-open"),
+            line = attr(color = "#277DA1", width = 3),
+            marker = attr(color = "#277DA1", size = 7, symbol = "circle"),
         ); row, col)
         for frozen in data.candidates
             candidate = frozen[:candidate]
             quality_thresholds = sort(Float64.(frozen[:quality_thresholds]); rev = true)
-            strictest = minimum(quality_thresholds)
-            qindex = quality_index(strictest)
             label = "q≤" * join((@sprintf("%.4g", value) for value in quality_thresholds), "/")
             add_trace!(plot, scatter(
                 x = [Int(candidate[:active_groups])],
                 y = [Float64(candidate[:validation_matching])],
-                mode = "markers+text", text = [label], textposition = "top center",
-                textfont = attr(size = 10, color = PAPER_QUALITY_COLORS[qindex]),
+                mode = "markers",
                 name = "Selected $label", showlegend = false,
                 marker = attr(
-                    color = PAPER_QUALITY_COLORS[qindex], size = 14,
+                    color = "#B41A5C", size = 14,
                     symbol = PAPER_QUALITY_SYMBOL,
-                    line = attr(color = "#111111", width = 1.0),
+                    line = attr(color = "white", width = 1.2),
                 ),
                 customdata = [[Int(candidate[:active_inputs]), Float64(frozen[:mean_state_nusselt])]],
                 hovertemplate = "groups=%{x}<br>inputs=%{customdata[0]}<br>MSE=%{y:.4e}<br>test mean(state_Nu)=%{customdata[1]:.6f}<extra>$label</extra>",
@@ -897,28 +879,22 @@ function make_pareto_figure(configurations, output, study_tag)
         if index == 1
             for (qindex, quality_threshold) in enumerate(HR_QUALITY_THRESHOLDS)
                 add_trace!(plot, scatter(
-                    x = [NaN], y = [NaN], mode = "lines+markers",
-                    name = "Quality q≤$(quality_threshold)",
+                    x = [NaN], y = [NaN], mode = "lines",
+                    name = "Quality q ≤ $(quality_threshold)",
                     legendgroup = "quality_$quality_threshold", legendrank = 400 + qindex,
                     line = attr(color = PAPER_QUALITY_COLORS[qindex], width = 1.4,
                                 dash = ("dash", "dot", "dashdot")[qindex]),
-                    marker = attr(color = PAPER_QUALITY_COLORS[qindex], size = 10,
-                                  symbol = PAPER_QUALITY_SYMBOL),
                 ); row, col)
             end
         end
     end
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => PAPER_FIGURE_WIDTH, :height => PAPER_FIGURE_HEIGHT,
-        :title => attr(
-            text = "$(study(study_tag).label): evaluation landscapes and pooled Pareto fronts",
-            x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525"),
-        ),
         :paper_bgcolor => "white", :plot_bgcolor => "white", :shapes => shapes,
         :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
-        :margin => attr(l = 110, r = 35, t = 125, b = 150),
+        :margin => attr(l = 130, r = 35, t = 70, b = 190),
         :legend => attr(
-            orientation = "h", x = 0.5, xanchor = "center", y = -0.10, yanchor = "top",
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.14, yanchor = "top",
             font = attr(size = PAPER_LEGEND_SIZE),
         ),
     )
@@ -931,6 +907,7 @@ function make_pareto_figure(configurations, output, study_tag)
         ))
         layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
             isodd(index) ? "Validation MSE" : ""; type = "log", range = y_range,
+            dtick = 1, exponentformat = "power",
             showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
             gridcolor = PAPER_GRID_COLOR, zeroline = false,
         ))
@@ -940,7 +917,6 @@ function make_pareto_figure(configurations, output, study_tag)
     svg_path = joinpath(output, "$stem.svg")
     pdf_path = joinpath(output, "$stem.pdf")
     PlotlyJS.savefig(plot, svg_path; width = PAPER_FIGURE_WIDTH, height = PAPER_FIGURE_HEIGHT)
-    move_glimages_behind_cartesian!(svg_path)
     PlotlyJS.savefig(plot, pdf_path; width = PAPER_FIGURE_WIDTH, height = PAPER_FIGURE_HEIGHT)
     println("$(study(study_tag).label) Pareto display retained $displayed_point_count of $original_point_count evaluations after deterministic log-MSE binning; fronts and candidate selection still use all evaluations.")
     return [svg_path, pdf_path]
@@ -986,10 +962,7 @@ function build_study_artifacts(options, study_tag)
     output = output_directory(options, study_tag)
     mkpath(output)
     table = write_table(output, rows, study_tag)
-    mask_paths = make_mask_figure(
-        mask_choice, output, study_tag, expert.mean_state_nusselt,
-        options.near_expert_relative_tolerance,
-    )
+    mask_paths = make_mask_figure(mask_choice, output, study_tag)
     pareto_paths = make_pareto_figure(configurations, output, study_tag)
     provenance = write_provenance(output, configurations, expert, unactuated, study_tag)
     metrics_path = atomic_save(

@@ -13,9 +13,9 @@ const CONFIG_NAMES = Tuple(config.name for config in MAT_CONFIGS)
 const PROTOCOLS = (:fixed, :varying)
 const FINAL_WINDOW = 100
 const CONFIG_DISPLAY_NAMES = Dict(
-    :python_like => "non-modified",
-    :modified_half => "modified 1",
-    :modified_full => "modified 2",
+    :python_like => "Non-modified",
+    :modified_half => "Modified 1",
+    :modified_full => "Modified 2",
 )
 const CONFIG_COLORS = Dict(
     :python_like => "#277DA1",
@@ -456,7 +456,7 @@ function plot_learning_curves(records, output_directory)
         zeroline = false,
     )
     yaxis_fields = Dict{Symbol, Any}(yaxis_style.fields)
-    yaxis_fields[:title] = attr(text = "Score (rolling mean, window=$WINDOW)", standoff = 12)
+    yaxis_fields[:title] = attr(text = "Reward ($WINDOW-episode rolling mean)", standoff = 12)
     yaxis_with_title = attr(; yaxis_fields...)
     left_xaxis_fields = Dict{Symbol, Any}(xaxis_style.fields)
     left_xaxis_fields[:domain] = [0.0, 0.46]
@@ -498,7 +498,9 @@ function plot_learning_curves(records, output_directory)
     )
     output = joinpath(output_directory, "learning_curves_combined.svg")
     PlotlyJS.savefig(plot_handle, output; width = 1500, height = 700)
-    return [output]
+    pdf_output = splitext(output)[1] * ".pdf"
+    PlotlyJS.savefig(plot_handle, pdf_output; width = 1500, height = 700)
+    return [output, pdf_output]
 end
 
 function plot_final_performance(rows, output_directory)

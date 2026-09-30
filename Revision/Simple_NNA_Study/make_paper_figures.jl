@@ -19,27 +19,30 @@ const PAPER_GROUPINGS = ("gc", "sc")
 const PAPER_METHOD_NAMES = Dict(
     "go" => "GO", "gr" => "GR",
 )
-const PAPER_ZERO_THRESHOLD_COLOR = "#277DA1"
-const PAPER_DEFAULT_THRESHOLD_COLORS = ("#F2A13A", "#EE8D32", "#E6782B", "#D96624")
-const PAPER_EXTRA_THRESHOLD_COLORS = ("#D73027", "#B2182B", "#8B0A1A", "#67000D")
+# Cloud colors: base palette blended 72% toward white, matching the GO-Sensitivity cloud tints.
+const PAPER_ZERO_THRESHOLD_COLOR = "#C3DBE5"
+const PAPER_DEFAULT_THRESHOLD_COLORS = ("#FBE5C8", "#FADFC6", "#F8D9C4", "#F4D4C2")
+const PAPER_EXTRA_THRESHOLD_COLORS = ("#F4C5C3", "#E9BEC4", "#DFBABF", "#D4B8BB")
 const PAPER_QUALITY_DASHES = ("dash",)
 const PAPER_QUALITY_SYMBOL = "star"
 const PAPER_QUALITY_LINE_COLOR = "#555555"
-const PAPER_SELECTED_CANDIDATE_COLOR = "#F2C14E"
-const PAPER_SWEEP_COLOR = "#7B3294"
+const PAPER_SELECTED_CANDIDATE_COLOR = "#B41A5C"
+const PAPER_SWEEP_COLOR = "#4D4D4D"
 const PAPER_CHANNEL_COLORS = ("#277DA1", "#F2A13A", "#B41A5C")
 const PAPER_CHANNEL_NAMES = ("Temperature", "Vertical velocity", "Horizontal velocity")
 const PAPER_INACTIVE_COLOR = "#F2F2F2"
 const PAPER_GRID_COLOR = "#E6E6E6"
-const PAPER_FONT_SIZE = 22
-const PAPER_AXIS_TITLE_SIZE = 22
-const PAPER_TICK_SIZE = 18
-const PAPER_TITLE_SIZE = 30
-const PAPER_SUBPLOT_TITLE_SIZE = 22
-const PAPER_LEGEND_SIZE = 18
-const PAPER_EVALUATION_LOG_BINS = 24
+# Sized for about 7.5 pt ticks and axis titles at full text width, matching the MAT figures.
+const PAPER_FONT_SIZE = 26
+const PAPER_AXIS_TITLE_SIZE = 26
+const PAPER_TICK_SIZE = 26
+const PAPER_SUBPLOT_TITLE_SIZE = 30
+const PAPER_LEGEND_SIZE = 24
+# Larger 6-pixel cloud markers use 16 log-MSE bins to limit overplotting.
+const PAPER_EVALUATION_LOG_BINS = 16
+# Thinned clouds use vector scatter so fronts and candidates stay above them in PDF exports.
 const PAPER_PARETO_WIDTH = 1450
-const PAPER_PARETO_HEIGHT = 850
+const PAPER_PARETO_HEIGHT = 900
 const PAPER_CHANNEL_RUN_COLORS = (
     "rgba(39, 125, 161, 0.22)",
     "rgba(242, 161, 58, 0.22)",
@@ -637,7 +640,6 @@ function make_mask_figure(
     output;
     methods = PAPER_METHODS,
     stem = "figure_1_selected_sensor_masks",
-    title = "Simple NNA Study: selected global input masks",
 )
     row_count = length(methods)
     height = row_count == 4 ? 1550 : 850
@@ -647,7 +649,7 @@ function make_mask_figure(
         data = configurations["$method-$grouping"]
         displayed = mask_display_candidate(data)
         if isnothing(displayed)
-            add_trace!(plot, scatter(x = [72], y = [4.5], mode = "text", text = ["NR"], textfont = attr(size = 22, color = "#777777"), showlegend = false); row, col)
+            add_trace!(plot, scatter(x = [72], y = [4.5], mode = "text", text = ["NR"], textfont = attr(size = PAPER_FONT_SIZE, color = "#777777"), showlegend = false); row, col)
         else
             values, text = stripe_matrix(displayed[:global_mask])
             add_trace!(plot, heatmap(
@@ -662,19 +664,18 @@ function make_mask_figure(
     for (index, (name, color)) in enumerate(zip(("Inactive", PAPER_CHANNEL_NAMES...), (PAPER_INACTIVE_COLOR, PAPER_CHANNEL_COLORS...)))
         add_trace!(plot, scatter(
             x = [NaN], y = [NaN], mode = "markers", name = name,
-            marker = attr(color = color, size = 11, symbol = "square", line = attr(color = "#444444", width = index == 1 ? 1 : 0)),
-            legendgroup = "mask_legend", showlegend = true,
+            marker = attr(color = color, size = 14, symbol = "square", line = attr(color = "#444444", width = index == 1 ? 1 : 0)),
+            showlegend = true,
         ); row = 1, col = 1)
     end
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => 1450, :height => height,
-        :title => attr(text = title, x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         :paper_bgcolor => "white", :plot_bgcolor => "white",
         :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
-        :margin => attr(l = 105, r = 35, t = 120, b = 125),
+        :margin => attr(l = 105, r = 35, t = 60, b = 150),
         :legend => attr(
             orientation = "h", x = 0.5, xanchor = "center",
-            y = row_count == 4 ? -0.055 : -0.13, yanchor = "top",
+            y = row_count == 4 ? -0.075 : -0.17, yanchor = "top",
             font = attr(size = PAPER_LEGEND_SIZE),
         ),
     )
@@ -754,7 +755,7 @@ end
 function make_pareto_figure(configurations, output)
     thresholds, colors, legend_ranks = threshold_styles(configurations)
     row_count = length(PAPER_METHODS)
-    plot = make_subplots(rows = row_count, cols = 2, vertical_spacing = 0.10, horizontal_spacing = 0.07, subplot_titles = panel_titles())
+    plot = make_subplots(rows = row_count, cols = 2, vertical_spacing = 0.17, horizontal_spacing = 0.07, subplot_titles = panel_titles())
     style_subplot_titles!(plot)
     shapes = Any[]
     all_losses = [
@@ -793,17 +794,17 @@ function make_pareto_figure(configurations, output)
                     x = [NaN], y = [NaN], mode = "markers", name = "τ=$(threshold)",
                     showlegend = true, legendgroup = "threshold_$threshold",
                     legendrank = legend_ranks[threshold],
-                    marker = attr(color = colors[threshold], size = 8, opacity = 1.0, symbol = "circle"),
+                    marker = attr(color = colors[threshold], size = 10, opacity = 1.0, symbol = "circle"),
                 ); row, col)
             end
-            add_trace!(plot, scattergl(
+            add_trace!(plot, scatter(
                 x = int_value.(selected, Ref(:active_groups)),
                 y = float_value.(selected, Ref(:validation_matching)),
                 mode = "markers", name = "τ=$(threshold)", showlegend = false,
                 legendgroup = "threshold_$threshold", legendrank = legend_ranks[threshold],
                 marker = attr(
-                    color = colors[threshold], size = 4, opacity = 0.32,
-                    symbol = [("circle", "diamond", "square")[int_value(item, :replicate)] for item in selected],
+                    color = colors[threshold], size = 6, opacity = 1.0,
+                    symbol = "circle",
                 ),
                 customdata = hcat(
                     int_value.(selected, Ref(:active_inputs)),
@@ -820,8 +821,8 @@ function make_pareto_figure(configurations, output)
             y = float_value.(front, Ref(:validation_matching)),
             mode = "lines+markers", name = "Pooled Pareto front",
             legendgroup = "pooled_front", legendrank = 300, showlegend = index == 1,
-            line = attr(color = "#111111", width = 2.2),
-            marker = attr(color = "#111111", size = 6, symbol = "circle-open"),
+            line = attr(color = "#277DA1", width = 3),
+            marker = attr(color = "#277DA1", size = 7, symbol = "circle"),
         ); row, col)
         for frozen in data.candidates
             candidate = frozen[:candidate]
@@ -835,9 +836,9 @@ function make_pareto_figure(configurations, output)
                 showlegend = false,
                 marker = attr(
                     color = is_quality_selection ? PAPER_SELECTED_CANDIDATE_COLOR : PAPER_SWEEP_COLOR,
-                    size = 14,
-                    symbol = PAPER_QUALITY_SYMBOL,
-                    line = attr(color = "#111111", width = 1.0),
+                    size = is_quality_selection ? 14 : 12,
+                    symbol = is_quality_selection ? PAPER_QUALITY_SYMBOL : "diamond-open",
+                    line = attr(color = "white", width = 1.2),
                 ),
             ); row, col)
         end
@@ -857,28 +858,27 @@ function make_pareto_figure(configurations, output)
                 x = [NaN], y = [NaN], mode = "markers",
                 name = "Selected test candidate",
                 legendgroup = "selected", legendrank = 400,
-                marker = attr(color = PAPER_SELECTED_CANDIDATE_COLOR, size = 12,
+                marker = attr(color = PAPER_SELECTED_CANDIDATE_COLOR, size = 14,
                               symbol = PAPER_QUALITY_SYMBOL,
-                              line = attr(color = "#111111", width = 1.0)),
+                              line = attr(color = "white", width = 1.2)),
             ); row, col)
             add_trace!(plot, scatter(
                 x = [NaN], y = [NaN], mode = "markers",
                 name = "Additional GR-SC candidates",
                 legendgroup = "gr_sc_sweep", legendrank = 410,
                 marker = attr(color = PAPER_SWEEP_COLOR, size = 12,
-                              symbol = PAPER_QUALITY_SYMBOL,
-                              line = attr(color = "#111111", width = 1.0)),
+                              symbol = "diamond-open",
+                              line = attr(color = "white", width = 1.2)),
             ); row, col)
         end
     end
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => PAPER_PARETO_WIDTH, :height => PAPER_PARETO_HEIGHT,
-        :title => attr(text = "Simple-NNA Varying-IC sparsity distillation: evaluation landscapes and pooled Pareto fronts", x = 0.5, xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         :paper_bgcolor => "white", :plot_bgcolor => "white", :shapes => shapes,
         :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
-        :margin => attr(l = 110, r = 35, t = 120, b = 190),
+        :margin => attr(l = 120, r = 35, t = 60, b = 200),
         :legend => attr(
-            orientation = "h", x = 0.5, xanchor = "center", y = -0.14, yanchor = "top",
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.16, yanchor = "top",
             font = attr(size = PAPER_LEGEND_SIZE),
         ),
     )
@@ -891,6 +891,7 @@ function make_pareto_figure(configurations, output)
         ))
         layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
             isodd(index) ? "Validation MSE" : "", type = "log", range = y_range,
+            dtick = 1, exponentformat = "power",
             showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
             gridcolor = PAPER_GRID_COLOR, zeroline = false,
         ))
@@ -899,7 +900,6 @@ function make_pareto_figure(configurations, output)
     svg_path = joinpath(output, "figure_s1_pareto_comparison.svg")
     pdf_path = joinpath(output, "figure_s1_pareto_comparison.pdf")
     PlotlyJS.savefig(plot, svg_path; width = PAPER_PARETO_WIDTH, height = PAPER_PARETO_HEIGHT)
-    move_glimages_behind_cartesian!(svg_path)
     PlotlyJS.savefig(plot, pdf_path; width = PAPER_PARETO_WIDTH, height = PAPER_PARETO_HEIGHT)
     println("Pareto display retained $displayed_point_count of $original_point_count evaluations after deterministic log-MSE binning; fronts and candidate selection still use all evaluations.")
     return [svg_path, pdf_path]
@@ -1025,11 +1025,9 @@ function make_channel_pruning_figure(options, output)
     end
     layout = Dict{Symbol, Any}(
         :template => "plotly_white", :width => 1450, :height => 850,
-        :title => attr(text = "Simple-NNA input-channel pruning trajectories", x = 0.5,
-                       xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         :paper_bgcolor => "white", :plot_bgcolor => "white",
         :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
-        :margin => attr(l = 115, r = 35, t = 120, b = 165),
+        :margin => attr(l = 120, r = 35, t = 60, b = 175),
         :legend => attr(
             orientation = "h", x = 0.5, xanchor = "center", y = -0.13, yanchor = "top",
             traceorder = "normal", font = attr(size = PAPER_LEGEND_SIZE),
@@ -1102,11 +1100,9 @@ function make_gr_sc_channel_pruning_figure(options, output)
     end
     relayout!(plot,
         template = "plotly_white", width = 1100, height = 650,
-        title = attr(text = "GR-SC Channel Pruning Trajectories", x = 0.5,
-                     xanchor = "center", font = attr(size = PAPER_TITLE_SIZE, color = "#252525")),
         paper_bgcolor = "white", plot_bgcolor = "white",
         font = attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
-        margin = attr(l = 120, r = 35, t = 95, b = 150),
+        margin = attr(l = 120, r = 35, t = 30, b = 160),
         xaxis = paper_axis(
             "Update", range = [0, SNN_UPDATES], tickformat = ",d",
             showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
