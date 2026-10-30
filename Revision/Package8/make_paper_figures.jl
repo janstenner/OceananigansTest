@@ -38,6 +38,7 @@ const PAPER_EVALUATION_LOG_BINS = 16
 # Thinned clouds use vector scatter so fronts and candidates stay above them in PDF exports.
 const PAPER_PARETO_WIDTH = 1450
 const PAPER_PARETO_HEIGHT = 1450
+const PAPER_SC_PARETO_HEIGHT = 860
 const DEFAULT_P8_RESULTS = joinpath(@__DIR__, "results")
 const STRIPE_CHANNEL_WIDTH = 4
 const STRIPE_SENSOR_WIDTH = 3 * STRIPE_CHANNEL_WIDTH + 1
@@ -709,6 +710,131 @@ function make_pareto_figure(configurations, output)
     return [svg_path, pdf_path]
 end
 
+# Main-text 2x2 SC comparison. Native and thresholded evaluations are pooled
+# into one candidate cloud, matching how the pooled front is constructed.
+function make_varying_sc_pareto_figure(
+    configurations,
+    output;
+    stem = "figure_2_varying_sc_pareto",
+    width = PAPER_PARETO_WIDTH,
+    height = PAPER_SC_PARETO_HEIGHT,
+)
+    methods = PAPER_METHODS
+    titles = reshape(["$(PAPER_METHOD_NAMES[method]) - SC" for method in methods], 1, :)
+    plot = make_subplots(rows = 2, cols = 2, vertical_spacing = 0.19, horizontal_spacing = 0.07, subplot_titles = titles)
+    style_subplot_titles!(plot)
+    eligible_rows = Dict(
+        method => filter(item ->
+            isfinite(float_value(item, :validation_matching)) &&
+            float_value(item, :validation_matching) > 0,
+            configurations["$method-sc"].evaluations,
+        )
+        for method in methods
+    )
+    all_losses = [float_value(item, :validation_matching) for rows in values(eligible_rows) for item in rows]
+    isempty(all_losses) && error("No finite Package-8 SC evaluation losses were found.")
+    y_range = [log10(minimum(all_losses)) - 0.15, log10(10.0)]
+    max_groups = maximum(int_value(item, :active_groups) for rows in values(eligible_rows) for item in rows)
+    shapes = Any[]
+    original_point_count = 0
+    displayed_point_count = 0
+    for (index, method) in enumerate(methods)
+        data = configurations["$method-sc"]
+        row, col = fld1(index, 2), mod1(index, 2)
+        eligible = eligible_rows[method]
+        if !isempty(eligible)
+            selected = thin_evaluation_cloud(eligible, y_range)
+            original_point_count += length(eligible)
+            displayed_point_count += length(selected)
+            if index == 1
+                add_trace!(plot, scatter(
+                    x = [NaN], y = [NaN], mode = "markers", name = "Candidates",
+                    showlegend = true, legendgroup = "candidates", legendrank = 100,
+                    marker = attr(color = PAPER_ZERO_THRESHOLD_COLOR, size = 10, opacity = 1.0, symbol = "circle"),
+                ); row, col)
+            end
+            add_trace!(plot, scatter(
+                x = int_value.(selected, Ref(:active_groups)),
+                y = float_value.(selected, Ref(:validation_matching)),
+                mode = "markers", name = "Candidates", showlegend = false,
+                legendgroup = "candidates", legendrank = 100,
+                marker = attr(color = PAPER_ZERO_THRESHOLD_COLOR, size = 6, opacity = 1.0, symbol = "circle"),
+                customdata = hcat(
+                    int_value.(selected, Ref(:active_inputs)),
+                    int_value.(selected, Ref(:replicate)),
+                    float_value.(selected, Ref(:strength)),
+                    int_value.(selected, Ref(:update)),
+                    float_value.(selected, Ref(:threshold_value)),
+                ),
+                hovertemplate = "groups=%{x}<br>inputs=%{customdata[0]}<br>MSE=%{y:.4e}<br>replicate=%{customdata[1]}<br>strength=%{customdata[2]:.4g}<br>update=%{customdata[3]}<br>τ=%{customdata[4]}<extra></extra>",
+            ); row, col)
+        end
+        front = sort(filter(item -> float_value(item, :validation_matching) > 0, data.front); by = item -> int_value(item, :active_inputs))
+        add_trace!(plot, scatter(
+            x = int_value.(front, Ref(:active_groups)),
+            y = float_value.(front, Ref(:validation_matching)),
+            mode = "lines+markers", name = "Pooled Pareto front",
+            legendgroup = "pooled_front", legendrank = 300, showlegend = index == 1,
+            line = attr(color = "#277DA1", width = 3),
+            marker = attr(color = "#277DA1", size = 7, symbol = "circle"),
+        ); row, col)
+        if !isnothing(data.selected)
+            add_trace!(plot, scatter(
+                x = [Int(data.selected[:active_groups])],
+                y = [Float64(data.selected[:validation_matching])],
+                mode = "markers", name = "Selected test candidate",
+                legendgroup = "selected", legendrank = 400, showlegend = true,
+                marker = attr(color = "#B41A5C", size = 14, symbol = "star", line = attr(color = "white", width = 1.2)),
+            ); row, col)
+        end
+        axis_suffix = index == 1 ? "" : string(index)
+        push!(shapes, attr(
+            type = "line", xref = "x$axis_suffix domain", x0 = 0, x1 = 1,
+            yref = "y$axis_suffix", y0 = P8_QUALITY_THRESHOLD, y1 = P8_QUALITY_THRESHOLD,
+            line = attr(color = "#555555", width = 1.3, dash = "dash"),
+        ))
+    end
+    # Show the selected-candidate legend entry once, even if GO-SC has none.
+    shown_selected = false
+    for trace in plot.plot.data
+        get(trace.fields, :legendgroup, "") == "selected" || continue
+        trace.fields[:showlegend] = !shown_selected
+        shown_selected = true
+    end
+    layout = Dict{Symbol, Any}(
+        :template => "plotly_white", :width => width, :height => height,
+        :paper_bgcolor => "white", :plot_bgcolor => "white", :shapes => shapes,
+        :font => attr(family = "Arial, sans-serif", size = PAPER_FONT_SIZE, color = "#303030"),
+        :margin => attr(l = 120, r = 35, t = 60, b = 140),
+        :legend => attr(
+            orientation = "h", x = 0.5, xanchor = "center", y = -0.17, yanchor = "top",
+            font = attr(size = PAPER_LEGEND_SIZE),
+        ),
+    )
+    for index in 1:4
+        layout[axis_key("xaxis", index)] = preserved_axis(plot, axis_key("xaxis", index), paper_axis(
+            index > 2 ? "Active groups" : "", range = [-0.5, max_groups + 1],
+            showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
+            gridcolor = PAPER_GRID_COLOR, zeroline = false,
+        ))
+        layout[axis_key("yaxis", index)] = preserved_axis(plot, axis_key("yaxis", index), paper_axis(
+            isodd(index) ? "Validation MSE" : "", type = "log", range = y_range,
+            dtick = 1, exponentformat = "power",
+            showline = true, mirror = true, linecolor = "#3A3A3A", ticks = "outside",
+            gridcolor = PAPER_GRID_COLOR, zeroline = false,
+        ))
+    end
+    relayout!(plot, layout)
+    paths = String[]
+    for extension in ("svg", "pdf")
+        path = joinpath(output, "$stem.$extension")
+        PlotlyJS.savefig(plot, path; width, height)
+        push!(paths, path)
+    end
+    println("SC Pareto display retained $displayed_point_count of $original_point_count pooled evaluations after deterministic log-MSE binning; fronts and candidate selection still use all evaluations.")
+    return paths
+end
+
 function write_provenance(output, configurations, expert, unactuated)
     files = String[expert.path, unactuated.path]
     for data in values(configurations)
@@ -761,7 +887,10 @@ function main(arguments = ARGS)
             stem = "figure_1b_selected_sensor_masks_group_lasso_growl",
         ),
     )
-    pareto_paths = make_pareto_figure(configurations, options.output)
+    pareto_paths = vcat(
+        make_pareto_figure(configurations, options.output),
+        make_varying_sc_pareto_figure(configurations, options.output),
+    )
     provenance = write_provenance(options.output, configurations, expert, unactuated)
     atomic_save(
         joinpath(options.output, "paper_metrics.jld2");

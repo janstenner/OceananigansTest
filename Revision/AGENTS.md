@@ -187,6 +187,10 @@ Sparse Sensing paper.
   supplementary Pareto cloud uses the same deterministic display-only thinning,
   while the full evaluation set remains authoritative for fronts and selection;
   its threshold markers likewise use opaque legend-only representatives.
+  It also writes the main-text 2x2 Varying-IC SC comparison
+  `figure_2_varying_sc_pareto` (GO/GR above Group Lasso/GrOWL), whose cloud
+  pools all mask thresholds into one light-blue "Candidates" series. Kaleido
+  appends an empty second PDF page; copy only page 1 into the manuscript.
 - `Simple_NNA_Study/`: Package-8-derived Varying-IC study for a shared dense
   IPPO-style apprentice. It retains only GO/GR under GC/SC, uses the unchanged
   Package-8 seeds, strengths, budgets, split isolation, mask thresholds, Pareto
